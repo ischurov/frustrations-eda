@@ -17,83 +17,7 @@ def make_unpacked_configurations(states, number_spins):
     )[states]
 
 
-class HeisenbergJ1J2:
-    def __init__(
-        self,
-        lat: SpinLattice,
-        J1: float = 1.0,
-        J2: float = 1.0,
-        use_symmetries=True,
-        spin_inversion=1,
-    ):
-        self.lat = lat
-
-        self.number_spins = len(lat.sites)  # System size
-
-        print(f"{self.number_spins=}")
-        hamming_weight = (
-            self.number_spins // 2
-        )  # Hamming weight (i.e. number of spin ups)
-
-        # Constructing symmetries
-
-        if use_symmetries:
-            symmetries = [
-                ls.Symmetry(automorphism, sector=0)
-                for automorphism in lat.get_automorphisms()
-            ]
-        else:
-            symmetries = []
-
-        # Constructing the group
-        self.symmetry_group = ls.Group(symmetries)
-        print("Symmetry group contains {} elements".format(len(self.symmetry_group)))
-
-        # Constructing the basis
-        self.basis = ls.SpinBasis(
-            self.symmetry_group,
-            number_spins=self.number_spins,
-            hamming_weight=hamming_weight,
-            spin_inversion=spin_inversion,
-        )
-        self.basis.build()  # Build the list of representatives, we need it since we're doing ED
-        print("Hilbert space dimension is {}".format(self.basis.number_states))
-
-        self.canonical_basis = ls.SpinBasis(
-            ls.Group([]),
-            number_spins=self.number_spins,
-            hamming_weight=hamming_weight,
-            spin_inversion=None,
-        )
-
-        # this can probably be optimized / avoided
-        self.canonical_basis.build()
-
-        # Heisenberg Hamiltonian
-        # fmt: off
-        σ_x = np.array([ [0, 1]
-                       , [1, 0] ])
-        σ_y = np.array([ [0 , -1j]
-                       , [1j,   0] ])
-        σ_z = np.array([ [1,  0]
-                       , [0, -1] ])
-        # fmt: on
-        σ_p = σ_x + 1j * σ_y
-        σ_m = σ_x - 1j * σ_y
-
-        matrix = 0.5 * (np.kron(σ_p, σ_m) + np.kron(σ_m, σ_p)) + np.kron(σ_z, σ_z)
-
-        self.hamiltonian = ls.Operator(
-            self.basis,
-            [
-                ls.Interaction(J * matrix, edges)
-                for J, (_, edges) in zip([J1, J2], sorted(lat.kind_to_edges.items()))
-            ],
-        )
-
-        self.ground_state = None
-        self.ground_energy = None
-
+class SpinSystem:
     def unpack_configurations(self):
         """
         Unpacks all configurations in the basis into an np.array
@@ -240,3 +164,81 @@ class HeisenbergJ1J2:
             f"Plotted {k}'s most probable state, wavefunction value "
             f"= {df.iloc[k]['ground_state_coeff']}"
         )
+
+
+class HeisenbergJ1J2(SpinSystem):
+    def __init__(
+        self,
+        lat: SpinLattice,
+        J1: float = 1.0,
+        J2: float = 1.0,
+        use_symmetries=True,
+        spin_inversion=1,
+    ):
+        self.lat = lat
+
+        self.number_spins = len(lat.sites)  # System size
+
+        print(f"{self.number_spins=}")
+        hamming_weight = (
+            self.number_spins // 2
+        )  # Hamming weight (i.e. number of spin ups)
+
+        # Constructing symmetries
+
+        if use_symmetries:
+            symmetries = [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in lat.get_automorphisms()
+            ]
+        else:
+            symmetries = []
+
+        # Constructing the group
+        self.symmetry_group = ls.Group(symmetries)
+        print("Symmetry group contains {} elements".format(len(self.symmetry_group)))
+
+        # Constructing the basis
+        self.basis = ls.SpinBasis(
+            self.symmetry_group,
+            number_spins=self.number_spins,
+            hamming_weight=hamming_weight,
+            spin_inversion=spin_inversion,
+        )
+        self.basis.build()  # Build the list of representatives, we need it since we're doing ED
+        print("Hilbert space dimension is {}".format(self.basis.number_states))
+
+        self.canonical_basis = ls.SpinBasis(
+            ls.Group([]),
+            number_spins=self.number_spins,
+            hamming_weight=hamming_weight,
+            spin_inversion=None,
+        )
+
+        # this can probably be optimized / avoided
+        self.canonical_basis.build()
+
+        # Heisenberg Hamiltonian
+        # fmt: off
+        σ_x = np.array([ [0, 1]
+                       , [1, 0] ])
+        σ_y = np.array([ [0 , -1j]
+                       , [1j,   0] ])
+        σ_z = np.array([ [1,  0]
+                       , [0, -1] ])
+        # fmt: on
+        σ_p = σ_x + 1j * σ_y
+        σ_m = σ_x - 1j * σ_y
+
+        matrix = 0.5 * (np.kron(σ_p, σ_m) + np.kron(σ_m, σ_p)) + np.kron(σ_z, σ_z)
+
+        self.hamiltonian = ls.Operator(
+            self.basis,
+            [
+                ls.Interaction(J * matrix, edges)
+                for J, (_, edges) in zip([J1, J2], sorted(lat.kind_to_edges.items()))
+            ],
+        )
+
+        self.ground_state = None
+        self.ground_energy = None
