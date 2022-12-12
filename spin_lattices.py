@@ -56,12 +56,7 @@ class SpinLattice:
             for site in named_sites.values():
                 sites.append(site + shift)
             for (start, end), kind in edges:
-                self.edges.append(
-                    (
-                        (start + shift, end + shift),
-                        kind,
-                    )
-                )
+                self.edges.append(((start + shift, end + shift), kind,))
 
         self.site_to_num = {}
         new_num = 0
@@ -143,13 +138,14 @@ class SpinLattice:
             for (start, end), kind in self.edges:
                 fg.ax.plot(
                     *zip(self.lattice_basis @ start, self.lattice_basis @ end),
-                    color="gray", linestyle=['solid', 'dashed', 'dotted', 'dashdot'][kind - 1]
+                    color="gray",
+                    linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1]
                 )
 
         for site, num in self.site_to_num.items():
             fg.ax.annotate("  " + str(num), self.lattice_basis @ site)
 
-        fg.ax.axis('equal')
+        fg.ax.axis("equal")
         return fg
 
 
@@ -182,6 +178,7 @@ class ChainLattice(SpinLattice):
             width=width,
             height=height,
         )
+
 
 class SquareLattice(SpinLattice):
     def __init__(self, width=1, height=1):
