@@ -150,6 +150,9 @@ class SpinSystem:
                     "basis_state_x": "basis_state",
                 }
             )
+            .set_index('basis_state')
+            .reindex(self.canonical_basis.states)
+            .reset_index()
         )
 
     def visualize_probable_configurations(self, k=0):
