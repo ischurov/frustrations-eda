@@ -143,8 +143,134 @@ class SpinLattice:
             for (start, end), kind in self.edges:
                 fg.ax.plot(
                     *zip(self.lattice_basis @ start, self.lattice_basis @ end),
-                    color=f"C{kind}",
+                    color="gray", linestyle=['solid', 'dashed', 'dotted', 'dashdot'][kind - 1]
                 )
 
         for site, num in self.site_to_num.items():
             fg.ax.annotate("  " + str(num), self.lattice_basis @ site)
+
+        fg.ax.axis('equal')
+        return fg
+
+
+class ChainLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        """
+
+        A ----- B
+
+        Size of the fundamentail domain is 1×0
+        """
+        u = np.array([1, 0])
+        v = np.array([0, 1])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+        }
+
+        named_edges = [
+            ("AB", 1),
+        ]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=np.array([1, 1]),
+            width=width,
+            height=height,
+        )
+
+class SquareLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        """
+        Generates square J1-J2 lattice.
+
+        The fundamental domain:
+
+        C ----- D
+        | \\ // |
+        |  \V/  |
+        |  /Ʌ\  |
+        | // \\ |
+        A ----- B
+
+        Size of the fundamentail domain is 1×1
+        """
+        u = np.array([1, 0])
+        v = np.array([0, 1])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([0, 1]),
+            "D": np.array([1, 1]),
+        }
+
+        named_edges = [("AB", 1), ("AC", 1), ("CD", 1), ("BD", 1), ("CB", 2), ("AD", 2)]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=1,
+            width=width,
+            height=height,
+        )
+
+
+class KagomeLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        """
+        Generates Kagome lattice.
+
+        The fundamental domain:
+
+             F -- G -- H
+            /      \\ /
+           D         E
+         /  \\      /
+        A -- B -- C
+
+        Size of the fundamental domain is 2×2
+        """
+        theta = np.pi / 3
+        u = np.array([1, 0])
+        v = np.array([np.cos(theta), np.sin(theta)])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([2, 0]),
+            "D": np.array([0, 1]),
+            "E": np.array([2, 1]),
+            "F": np.array([0, 2]),
+            "G": np.array([1, 2]),
+            "H": np.array([2, 2]),
+        }
+
+        named_edges = [
+            ("AB", 1),
+            ("BC", 1),
+            ("AD", 1),
+            ("BD", 2),
+            ("DF", 1),
+            ("FG", 1),
+            ("GE", 2),
+            ("GH", 1),
+            ("EH", 1),
+            ("CE", 1),
+        ]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=2,
+            width=width,
+            height=height,
+        )
