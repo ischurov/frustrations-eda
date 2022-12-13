@@ -7,6 +7,40 @@ from bitarray.util import int2ba
 import pandas as pd
 import seaborn as sns
 
+# BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
+
+def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
+    if scatter_kws is None:
+        scatter_kws = {}
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    # Get Unique continents
+    color_labels = sorted(data[color].unique())
+
+    # List of colors in the color palettes
+    rgb_values = sns.color_palette("Set2", len(color_labels))
+
+    # Map continents to the colors
+    color_map = dict(zip(color_labels, rgb_values))
+
+    for key, group in data.groupby(color):
+        group.plot(
+            ax=ax,
+            kind="scatter",
+            x=x,
+            y=y,
+            label=key,
+            color=color_map[key], **scatter_kws
+        )
+
+    return ax
+
+# END BASED
+
 
 class SpinLattice:
     def __init__(
@@ -123,7 +157,7 @@ class SpinLattice:
         g = self.as_igraph()
         return g.get_automorphisms_vf2(edge_color=g.es["kind"])
 
-    def plot(self, spins=None, show_edges=True):
+    def plot(self, spins=None, show_edges=True, ax=None):
         """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is not None:
             spins_df = pd.DataFrame(dict(spin=spins))
@@ -131,28 +165,31 @@ class SpinLattice:
         else:
             sites_df = self.sites_df
 
-        fg = sns.lmplot(
+        if ax is None:
+            _, ax = plt.subplots()
+
+        scatter_plot(
             sites_df,
-            hue="spin" if spins is not None else None,
             x="emb_x",
             y="emb_y",
-            fit_reg=False,
+            color="spin" if spins is not None else None,
+            ax=ax,
             scatter_kws={"s": 100, "zorder": 10},
         )
 
         if show_edges:
             for (start, end), kind in self.edges:
-                fg.ax.plot(
+                ax.plot(
                     *zip(self.lattice_basis @ start, self.lattice_basis @ end),
                     color="gray",
                     linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1],
                 )
 
         for site, num in self.site_to_num.items():
-            fg.ax.annotate("  " + str(num), self.lattice_basis @ site)
+            ax.annotate("  " + str(num), self.lattice_basis @ site)
 
-        fg.ax.axis("equal")
-        return fg
+        ax.axis("equal")
+        return ax
 
 
 class ChainLattice(SpinLattice):
