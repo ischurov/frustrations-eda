@@ -42,6 +42,8 @@ class SpinLattice:
         """
 
         self.lattice_basis = np.c_[u, v]
+        self.height = height
+        self.width = width
 
         edges = [
             ((named_sites[start], named_sites[end]), kind)
@@ -109,6 +111,10 @@ class SpinLattice:
             k_to_e[kind].append(edge)
         return k_to_e
 
+    @property
+    def file_stem(self):
+        return f"{self.__class__.__name__}{self.width}x{self.height}"
+
     def as_igraph(self) -> ig.Graph:
         edges, kinds = zip(*self.edges_to_kind.items())
         return ig.Graph(edges=edges, edge_attrs={"kind": kinds})
@@ -139,7 +145,7 @@ class SpinLattice:
                 fg.ax.plot(
                     *zip(self.lattice_basis @ start, self.lattice_basis @ end),
                     color="gray",
-                    linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1]
+                    linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1],
                 )
 
         for site, num in self.site_to_num.items():

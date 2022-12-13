@@ -7,8 +7,12 @@ import seaborn as sns
 import lattice_symmetries as ls
 from more_itertools import sliced
 import yaml
+from pathlib import Path
+import pickle
 
 from spin_lattices import SpinLattice
+
+GROUND_STATE_DIR = Path("groundstates")
 
 
 def make_unpacked_configurations(states, number_spins):
@@ -41,8 +45,16 @@ class SpinSystem:
             eigenvalues
 
         """
-        # Diagonalize the Hamiltonian using ARPACK
-        eigenvalues, eigenstates = ls.diagonalize(self.hamiltonian, k=k)
+        if self.ground_state_path and self.ground_state_path.exists():
+            print("Using cached version of eigenvalues / eigenstates")
+            eigenvalues, eigenstates = pickle.loads(self.ground_state_path.read_bytes())
+        else:
+            # Diagonalize the Hamiltonian using ARPACK
+            print("Calculating eigenvalues / eigenstates")
+            eigenvalues, eigenstates = ls.diagonalize(self.hamiltonian, k=k)
+            GROUND_STATE_DIR.mkdir(exist_ok=True)
+            self.ground_state_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
+
         print("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
         self.ground_energy = eigenvalues[0]
@@ -150,7 +162,7 @@ class SpinSystem:
                     "basis_state_x": "basis_state",
                 }
             )
-            .set_index('basis_state')
+            .set_index("basis_state")
             .reindex(self.canonical_basis.states)
             .reset_index()
         )
@@ -178,6 +190,9 @@ class HeisenbergJ1J2(SpinSystem):
         use_symmetries=True,
         spin_inversion=1,
     ):
+        J1 = float(J1)
+        J2 = float(J2)
+
         self.lat = lat
 
         self.number_spins = len(lat.sites)  # System size
@@ -243,5 +258,9 @@ class HeisenbergJ1J2(SpinSystem):
             ],
         )
 
+        self.ground_state_path = (
+            GROUND_STATE_DIR / f"{self.__class__.__name__}-{lat.file_stem}-"
+            f"{J1!r}-{J2!r}-{use_symmetries}-{spin_inversion}.pickle"
+        )
         self.ground_state = None
         self.ground_energy = None
