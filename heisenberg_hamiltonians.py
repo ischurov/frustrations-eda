@@ -15,6 +15,28 @@ from spin_lattices import SpinLattice
 GROUND_STATE_DIR = Path("groundstates")
 
 
+def pad_right(arr, n):
+    # Pad the array with zeros to the left to create an n x 8 matrix
+    arr = arr.reshape(-1, 1)
+    return np.pad(arr, [(0, 0), (0, n - 1)], "constant", constant_values=0)
+
+
+assert (
+    pad_right(np.array([1, 2, 3]), 8)
+    == np.array(
+        [[1, 0, 0, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0, 0, 0], [3, 0, 0, 0, 0, 0, 0, 0],]
+    )
+).all()
+
+
+def batched_state_info_df(basis, bits):
+    representative, eigenvalue, norm = basis.batched_state_info(pad_right(bits, 8))
+    representative = representative[:, 0]
+    return pd.DataFrame(
+        dict(representative=representative, character=eigenvalue, norm=norm), index=bits
+    )
+
+
 def make_unpacked_configurations(states, number_spins):
     return (
         (np.arange(2 ** number_spins).reshape(-1, 1) >> np.arange(number_spins)) & 1
@@ -77,7 +99,7 @@ class SpinSystem:
             raise ValueError("Ground State not found; run .get_ground_state() first")
 
         df = pd.DataFrame(
-            dict(basis_state=self.basis.states, ground_state_coeff=self.ground_state)
+            dict(ground_state_coeff=self.ground_state), index=self.basis.states,
         )
 
         if canonical_basis:
@@ -87,84 +109,38 @@ class SpinSystem:
 
         if unpack_configurations:
             unpacked_configurations = make_unpacked_configurations(
-                df["basis_state"], self.number_spins
+                df.index, self.number_spins
             )
             if expand_basis_columns:
                 spins_df = pd.DataFrame(
                     unpacked_configurations,
                     columns=[f"s{i}" for i in range(self.number_spins)],
+                    index=df.index,
                 )
             else:
                 spins_df = pd.DataFrame(
-                    dict(configuration=list(unpacked_configurations))
+                    dict(configuration=list(unpacked_configurations)), index=df.index
                 )
             return df.join(spins_df)
 
         return df
 
     def transform_df_to_canonical(self, df):
-        def pad_right(arr, n):
-            # Pad the array with zeros to the left to create an n x 8 matrix
-            arr = arr.reshape(-1, 1)
-            return np.pad(arr, [(0, 0), (0, n - 1)], "constant", constant_values=0)
 
-        assert (
-            pad_right(np.array([1, 2, 3]), 8)
-            == np.array(
-                [
-                    [1, 0, 0, 0, 0, 0, 0, 0],
-                    [2, 0, 0, 0, 0, 0, 0, 0],
-                    [3, 0, 0, 0, 0, 0, 0, 0],
-                ]
-            )
-        ).all()
-
-        def my_batched_state_info(basis, bits):
-            representative, eigenvalue, norm = basis.batched_state_info(
-                pad_right(bits, 8)
-            )
-            representative = representative[:, 0]
-            return representative, eigenvalue, norm
-
-        representative, eigenvalue, norm = my_batched_state_info(
-            self.basis, self.canonical_basis.states
-        )
-
-        state_info_df = pd.DataFrame(
-            dict(
-                basis_state=self.canonical_basis.states,
-                representative=representative,
-                character=eigenvalue,
-                norm=norm,
-            )
-        )
+        state_info_df = batched_state_info_df(self.basis, self.canonical_basis.states)
 
         return (
-            state_info_df.merge(df, left_on="representative", right_on="basis_state")
+            state_info_df.merge(df, left_on="representative", right_index=True)
             .assign(
                 ground_state_adjusted=lambda x: np.real_if_close(
                     x["ground_state_coeff"] * x["character"] * x["norm"]
                 )
             )
             .drop(
-                [
-                    "ground_state_coeff",
-                    "basis_state_y",
-                    "representative",
-                    "character",
-                    "norm",
-                ],
-                axis=1,
+                ["ground_state_coeff", "representative", "character", "norm",], axis=1,
             )
-            .rename(
-                columns={
-                    "ground_state_adjusted": "ground_state_coeff",
-                    "basis_state_x": "basis_state",
-                }
-            )
-            .set_index("basis_state")
+            .rename(columns={"ground_state_adjusted": "ground_state_coeff",})
             .reindex(self.canonical_basis.states)
-            .reset_index()
         )
 
     def visualize_probable_configurations(self, k=0):
