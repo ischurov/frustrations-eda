@@ -82,6 +82,9 @@ class SpinSystem:
         self.ground_energy = eigenvalues[0]
         self.ground_state = eigenstates[:, 0]
 
+        self.eigenvalues = eigenvalues
+        self.eigenstates = eigenstates
+
         return eigenvalues, eigenstates
         # assert np.isclose(eigenvalues[0], -18.06178542)
 
