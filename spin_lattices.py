@@ -9,6 +9,7 @@ import seaborn as sns
 
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
+
 def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
     if scatter_kws is None:
         scatter_kws = {}
@@ -34,10 +35,12 @@ def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
             x=x,
             y=y,
             label=key,
-            color=color_map[key], **scatter_kws
+            color=color_map[key],
+            **scatter_kws,
         )
 
     return ax
+
 
 # END BASED
 

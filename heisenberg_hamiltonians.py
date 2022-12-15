@@ -51,11 +51,12 @@ class SpinSystem:
         """
         return make_unpacked_configurations(self.basis.states, self.number_spins)
 
-    def get_ground_state(self, k=1) -> tuple[np.array, np.array]:
+    def get_eigenstates(self, k=1) -> tuple[np.array, np.array]:
         """
         Records ground_energy and ground_state into to self.ground_energy and
-        self.ground_state (only one value, the smallest energy) and returns k
-        smallest eigenvalue / eigenvectors
+        self.ground_state (only one value, the smallest energy),returns k
+        smallest eigenvalue / eigenvectors and records them into 
+        self.eigenvalues / self.eigenstates
 
         Returns
         -------
@@ -67,15 +68,19 @@ class SpinSystem:
             eigenvalues
 
         """
-        if self.ground_state_path and self.ground_state_path.exists():
-            print("Using cached version of eigenvalues / eigenstates")
-            eigenvalues, eigenstates = pickle.loads(self.ground_state_path.read_bytes())
+        for eigenstate in range(k, 20):
+            eigenstate_path = self.eigenstate_path(eigenstate)
+            if eigenstate_path and eigenstate_path.exists():
+                print(f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}")
+                eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
+                break
         else:
             # Diagonalize the Hamiltonian using ARPACK
             print("Calculating eigenvalues / eigenstates")
             eigenvalues, eigenstates = ls.diagonalize(self.hamiltonian, k=k)
             GROUND_STATE_DIR.mkdir(exist_ok=True)
-            self.ground_state_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
+            if eigenstate_path := self.eigenstate_path(k):
+                eigenstate_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
 
         print("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
@@ -88,27 +93,34 @@ class SpinSystem:
         return eigenvalues, eigenstates
         # assert np.isclose(eigenvalues[0], -18.06178542)
 
-    def get_df_ground_state(
+    def get_df_eigenstate(
         self,
+        k: int,
         unpack_configurations=False,
         expand_basis_columns=False,
         canonical_basis=False,
     ) -> pd.DataFrame:
         """
-        Returns the dataframe with two columns: unpacked configuration and the corresponding
-        value in the ground state
+        Returns the dataframe with the k'th eigenstate indexed by basis states
+        Optionally, basis configurations can be unpacked
+        If expand_basis_columns, they will be unpacked as separate columns
         """
-        if self.ground_state is None:
-            raise ValueError("Ground State not found; run .get_ground_state() first")
+
+        if self.eigenstates is None:
+            raise ValueError("Eigenstate not found; run .get_eigenstates({k}) first")
+        elif self.eigenstates.shape[1] <= k:
+            raise ValueError(
+                f"Not enough eigenstates found; run .get_eigenstates({k}) first"
+            )
 
         df = pd.DataFrame(
-            dict(ground_state_coeff=self.ground_state), index=self.basis.states,
+            dict(eigenstate_coeff=self.eigenstates[:, k]), index=self.basis.states,
         )
 
         if canonical_basis:
             df = self.transform_df_to_canonical(df)
 
-        df["amplitude"] = np.abs(df["ground_state_coeff"])
+        df["amplitude"] = np.abs(df["eigenstate_coeff"])
 
         if unpack_configurations:
             unpacked_configurations = make_unpacked_configurations(
@@ -128,6 +140,22 @@ class SpinSystem:
 
         return df
 
+    def get_df_ground_state(
+        self,
+        unpack_configurations=False,
+        expand_basis_columns=False,
+        canonical_basis=False,
+    ) -> pd.DataFrame:
+        """
+        Alias for get_df_eigenstate(k=0, ...)
+        """
+        return self.get_df_eigenstate(
+            k=0,
+            unpack_configurations=unpack_configurations,
+            expand_basis_columns=expand_basis_columns,
+            canonical_basis=canonical_basis,
+        )
+
     def transform_df_to_canonical(self, df):
 
         state_info_df = batched_state_info_df(self.basis, self.canonical_basis.states)
@@ -135,28 +163,26 @@ class SpinSystem:
         return (
             state_info_df.merge(df, left_on="representative", right_index=True)
             .assign(
-                ground_state_adjusted=lambda x: np.real_if_close(
-                    x["ground_state_coeff"] * x["character"] * x["norm"]
+                eigenstate_adjusted=lambda x: np.real_if_close(
+                    x["eigenstate_coeff"] * x["character"] * x["norm"]
                 )
             )
-            .drop(
-                ["ground_state_coeff", "representative", "character", "norm",], axis=1,
-            )
-            .rename(columns={"ground_state_adjusted": "ground_state_coeff",})
+            .drop(["eigenstate_coeff", "representative", "character", "norm",], axis=1,)
+            .rename(columns={"eigenstate_adjusted": "eigenstate_coeff",})
             .reindex(self.canonical_basis.states)
         )
 
-    def visualize_probable_configurations(self, k=0):
+    def visualize_probable_configurations(self, m=0):
         """
-        Visualizes k'th most probable configuration
+        Visualizes m'th most probable configuration
         """
         df = self.get_df_ground_state(unpack_configurations=True).sort_values(
             "amplitude", ascending=False
         )
-        self.lat.plot(spins=df.iloc[k]["configuration"])
+        self.lat.plot(spins=df.iloc[m]["configuration"])
         plt.title(
-            f"Plotted {k}'s most probable state, wavefunction value "
-            f"= {df.iloc[k]['ground_state_coeff']}"
+            f"Plotted {m}'s most probable state, wavefunction value "
+            f"= {df.iloc[m]['eigenstate_coeff']}"
         )
 
 
@@ -171,6 +197,10 @@ class HeisenbergJ1J2(SpinSystem):
     ):
         J1 = float(J1)
         J2 = float(J2)
+        self.J1 = J1
+        self.J2 = J2
+        self.use_symmetries = use_symmetries
+        self.spin_inversion = spin_inversion
 
         self.lat = lat
 
@@ -237,9 +267,11 @@ class HeisenbergJ1J2(SpinSystem):
             ],
         )
 
-        self.ground_state_path = (
-            GROUND_STATE_DIR / f"{self.__class__.__name__}-{lat.file_stem}-"
-            f"{J1!r}-{J2!r}-{use_symmetries}-{spin_inversion}.pickle"
-        )
         self.ground_state = None
         self.ground_energy = None
+
+    def eigenstate_path(self, k: int):
+        return (
+            GROUND_STATE_DIR / f"{self.__class__.__name__}-{self.lat.file_stem}-"
+            f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}-{k}.pickle"
+        )

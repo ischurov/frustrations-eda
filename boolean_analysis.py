@@ -10,7 +10,6 @@ import pandas as pd
 import lattice_symmetries as ls
 from tqdm import tqdm
 from typing import Literal, Optional
-from dotmap import DotMap
 
 from hashlib import md5
 
@@ -21,6 +20,8 @@ from heisenberg_hamiltonians import (
     batched_state_info_df,
     pad_right,
 )
+
+from dataclasses import dataclass
 
 
 from scipy.stats import entropy
@@ -163,7 +164,10 @@ def calculate_fourier_transform_matrix(
     return parities.astype("int8") * 2 - 1
 
 
-SignalOption = Literal["sign", "value"]
+@dataclass(frozen=True)
+class SignalOption:
+    kind: Literal["sign", "value"] = "sign"
+    eigenstate: int = 0
 
 
 class BooleanFourierAnalyser:
@@ -172,6 +176,7 @@ class BooleanFourierAnalyser:
         system: SpinSystem,
         use_symmetries=True,
         fourier_transform_matrix_cache=None,
+        eigenstates: int = 1,
     ):
 
         self.system = system
@@ -228,28 +233,27 @@ class BooleanFourierAnalyser:
             self.canonical_fourier_transform_matrix = self.fourier_transform_matrix
 
         print("Finding system ground state")
-        self.system.get_ground_state()
+        self.system.get_eigenstates(eigenstates)
 
-        self.spectre_df = DotMap(
-            {
-                signal: self.get_fourier_spectre_df(signal=signal)
-                for signal in ["sign", "value"]
-            }
-        )
+        self.spectre_cache = {}
 
     def fourier_decomposition(self, signal):
         return (
             self.fourier_transform_matrix.T @ signal / (2 ** self.system.number_spins)
         )
 
-    def get_fourier_spectre_df(self, signal: SignalOption):
-        signal_ = self.system.get_df_ground_state(canonical_basis=True)[
-            "ground_state_coeff"
-        ]
-        if signal == "sign":
+    def get_spectre_df(self, signal: SignalOption = SignalOption()):
+        if signal in self.spectre_cache:
+            return self.spectre_cache[signal]
+
+        signal_ = self.system.get_df_eigenstate(
+            k=signal.eigenstate, canonical_basis=True
+        )["eigenstate_coeff"]
+
+        if signal.kind == "sign":
             signal_ = np.sign(signal_)
 
-        return (
+        spectre_df = (
             pd.DataFrame(
                 dict(
                     subset=list(
@@ -266,38 +270,47 @@ class BooleanFourierAnalyser:
             .sort_values("abs_coeff", ascending=False)
         )
 
+        self.spectre_cache[signal] = spectre_df
+
+        return spectre_df
+
     def visualize_spectre_support_barplot(
-        self, signal: SignalOption, abs=False, elements=20, ax=None
+        self, signal: SignalOption = SignalOption(), abs=False, elements=20, ax=None
     ):
         if ax is None:
             ax = plt.gca()
         return (
-            self.spectre_df[signal]
+            self.get_spectre_df(signal)
             .iloc[:elements]
             .plot.bar(y="abs_coeff" if abs else "coeff", ax=ax)
         )
 
-    def visualize_spectre_support_lattice(self, signal: SignalOption, k=0, ax=None):
-        if ax is None:
-            ax = plt.gca()
-        self.system.lat.plot(spins=self.spectre_df[signal]["subset"].iloc[k], ax=ax)
-        ax.set_title(f"subset: {self.spectre_df[signal].index[k]}")
-
-    def visualize_spectre_values_hist(
-        self, signal: SignalOption, abs=False, bins=50, ax=None
+    def visualize_spectre_support_lattice(
+        self, signal: SignalOption = SignalOption(), m: int = 0, ax=None
     ):
         if ax is None:
             ax = plt.gca()
-        return self.spectre_df[signal]["abs_coeff" if abs else "coeff"].hist(
+        spectre = self.get_spectre_df(signal)
+        self.system.lat.plot(spins=spectre["subset"].iloc[m], ax=ax)
+        ax.set_title(f"subset: {spectre.index[m]}")
+
+    def visualize_spectre_values_hist(
+        self, signal: SignalOption = SignalOption(), abs=False, bins=50, ax=None
+    ):
+        if ax is None:
+            ax = plt.gca()
+        return self.get_spectre_df(signal)["abs_coeff" if abs else "coeff"].hist(
             bins=bins, ax=ax
         )
 
-    def spectre_entropy(self, signal: SignalOption):
-        abs_coeff = self.spectre_df[signal]["abs_coeff"]
+    def spectre_entropy(self, signal: SignalOption = SignalOption()):
+        abs_coeff = self.get_spectre_df(signal)["abs_coeff"]
         return entropy(abs_coeff / abs_coeff.sum())
 
-    def predict(self, signal: SignalOption, keep_first=None) -> np.array:
-        coeffs = self.spectre_df[signal]["coeff"]
+    def predict(
+        self, signal: SignalOption = SignalOption(), keep_first=None
+    ) -> np.array:
+        coeffs = self.get_spectre_df(signal)["coeff"]
         if keep_first is not None:
             coeffs = coeffs.iloc[:keep_first]
 
