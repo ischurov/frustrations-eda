@@ -38,7 +38,10 @@ def batched_state_info_df(basis, bits):
 
 
 def make_unpacked_configurations(states, number_spins):
-    return (np.array(states, dtype='uint64').reshape(-1, 1) >> np.arange(number_spins, dtype='uint64')) & 1
+    return (
+        np.array(states, dtype="uint64").reshape(-1, 1)
+        >> np.arange(number_spins, dtype="uint64")
+    ) & 1
 
 
 class SpinSystem:
@@ -69,7 +72,9 @@ class SpinSystem:
         for eigenstate in range(k, 20):
             eigenstate_path = self.eigenstate_path(eigenstate)
             if eigenstate_path and eigenstate_path.exists():
-                print(f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}")
+                print(
+                    f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
+                )
                 eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
                 break
         else:
