@@ -256,12 +256,6 @@ class BooleanFourierAnalyser:
         spectre_df = (
             pd.DataFrame(
                 dict(
-                    subset=list(
-                        make_unpacked_configurations(
-                            self.fourier_basis.states,
-                            number_spins=self.system.number_spins,
-                        )
-                    ),
                     coeff=self.fourier_decomposition(signal_),
                 ),
                 index=self.fourier_basis.states,
@@ -291,8 +285,10 @@ class BooleanFourierAnalyser:
         if ax is None:
             ax = plt.gca()
         spectre = self.get_spectre_df(signal)
-        self.system.lat.plot(spins=spectre["subset"].iloc[m], ax=ax)
-        ax.set_title(f"subset: {spectre.index[m]}")
+        subset = np.array(spectre.index[m: m+1])
+        subset_configuration = make_unpacked_configurations(subset, self.system.number_spins)[0] 
+        self.system.lat.plot(spins=subset_configuration, ax=ax)
+        ax.set_title(f"subset: {subset}")
 
     def visualize_spectre_values_hist(
         self, signal: SignalOption = SignalOption(), abs=False, bins=50, ax=None

@@ -38,9 +38,7 @@ def batched_state_info_df(basis, bits):
 
 
 def make_unpacked_configurations(states, number_spins):
-    return (
-        (np.arange(2 ** number_spins).reshape(-1, 1) >> np.arange(number_spins)) & 1
-    )[states]
+    return (np.array(states, dtype='uint64').reshape(-1, 1) >> np.arange(number_spins, dtype='uint64')) & 1
 
 
 class SpinSystem:
