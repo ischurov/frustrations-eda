@@ -23,7 +23,7 @@ from heisenberg_hamiltonians import (
 
 from dataclasses import dataclass
 
-
+from sklearn.metrics import accuracy_score
 from scipy.stats import entropy
 
 
@@ -69,6 +69,7 @@ def get_fourier_transform_matrix(
     subsets: np.ndarray,
     number_spins: int,
     fourier_transform_matrix_cache: Optional[dict[str, np.ndarray]] = None,
+    show_progress: bool = False,
 ) -> np.ndarray:
     """
     Fourier Transform Matrix (FTM) is a matrix defined as follows:
@@ -113,12 +114,16 @@ def get_fourier_transform_matrix(
         if (
             cached_basis := fourier_transform_matrix_cache.get(fourier_basis_id)
         ) is not None:
-            print("Found cached fourier basis, will use it")
+            if show_progress:
+                print("Found cached fourier basis, will use it")
             fourier_transform_matrix = cached_basis
 
     if fourier_transform_matrix is None:
         if fourier_transform_matrix_path.exists():
-            print(f"Fourier transform matrix found at {fourier_transform_matrix_path}")
+            if show_progress:
+                print(
+                    f"Fourier transform matrix found at {fourier_transform_matrix_path}"
+                )
             fourier_transform_matrix_df = pd.read_feather(
                 fourier_transform_matrix_path
             ).set_index("index")
@@ -130,16 +135,21 @@ def get_fourier_transform_matrix(
             fourier_transform_matrix = fourier_transform_matrix_df.values.astype("int8")
 
     if fourier_transform_matrix is None:
-        print(
-            "Fourier transform matrix not found, we have to calculate it. "
-            "This can take some time, you can get a coffee."
-        )
+        if show_progress:
+            print(
+                "Fourier transform matrix not found, we have to calculate it. "
+                "This can take some time, you can get a coffee."
+            )
         fourier_transform_matrix = calculate_fourier_transform_matrix(
-            states=states, subsets=subsets, number_spins=number_spins
+            states=states,
+            subsets=subsets,
+            number_spins=number_spins,
+            show_progress=show_progress,
         )
 
     if not fourier_transform_matrix_path.exists():
-        print(f"Saving basis to file {fourier_transform_matrix_path}")
+        if show_progress:
+            print(f"Saving basis to file {fourier_transform_matrix_path}")
         pd.DataFrame(
             fourier_transform_matrix, index=states, columns=[str(i) for i in subsets],
         ).reset_index().to_feather(fourier_transform_matrix_path)
@@ -150,7 +160,7 @@ def get_fourier_transform_matrix(
 
 
 def calculate_fourier_transform_matrix(
-    states: np.ndarray, subsets: np.ndarray, number_spins: int
+    states: np.ndarray, subsets: np.ndarray, number_spins: int, show_progress=False
 ) -> np.ndarray:
     """
     This is a low-level function that calculates the Fourier Transform Matrix.
@@ -160,7 +170,7 @@ def calculate_fourier_transform_matrix(
 
     masks = subsets.reshape(1, -1)
     masked = states.reshape(-1, 1) & masks
-    parities = parity_of_1s(masked, number_spins, show_progress=True)
+    parities = parity_of_1s(masked, number_spins, show_progress=show_progress)
     return parities.astype("int8") * 2 - 1
 
 
@@ -221,6 +231,7 @@ class BooleanFourierAnalyser:
             self.fourier_basis.states,
             number_spins,
             fourier_transform_matrix_cache=self.fourier_transform_matrix_cache,
+            show_progress=True,
         )
 
         if use_symmetries:
@@ -323,16 +334,36 @@ class BooleanFourierAnalyser:
                     subsets=self.canonical_fourier_basis.states,
                     number_spins=self.system.number_spins,
                     fourier_transform_matrix_cache=self.fourier_transform_matrix_cache,
+                    show_progress=True,
                 )
 
             coeffs = coeffs.loc[self.canonical_fourier_basis.states]
 
             return self.canonical_fourier_transform_matrix @ coeffs
         else:
-            transform_matrix = calculate_fourier_transform_matrix(
+            transform_matrix = get_fourier_transform_matrix(
                 states=self.system.canonical_basis.states,
                 subsets=np.array(coeffs.index, dtype="uint64"),
                 number_spins=self.system.number_spins,
+                fourier_transform_matrix_cache=self.fourier_transform_matrix_cache,
             )
 
             return transform_matrix @ coeffs
+
+    def sign_prediction_accuracy(
+        self, eigenstate: int = 0, keep_first=None, weighted=False
+    ) -> float:
+        eigenstate_coeffs = self.system.get_df_eigenstate(
+            k=eigenstate, canonical_basis=True
+        )["eigenstate_coeff"]
+        if weighted:
+            sample_weight = np.abs(eigenstate_coeffs) ** 2
+        else:
+            sample_weight = None
+        return accuracy_score(
+            np.sign(
+                self.predict(SignalOption("sign", eigenstate), keep_first=keep_first)
+            ),
+            np.sign(eigenstate_coeffs),
+            sample_weight=sample_weight,
+        )
