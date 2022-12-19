@@ -24,7 +24,11 @@ def pad_right(arr, n):
 assert (
     pad_right(np.array([1, 2, 3]), 8)
     == np.array(
-        [[1, 0, 0, 0, 0, 0, 0, 0], [2, 0, 0, 0, 0, 0, 0, 0], [3, 0, 0, 0, 0, 0, 0, 0],]
+        [
+            [1, 0, 0, 0, 0, 0, 0, 0],
+            [2, 0, 0, 0, 0, 0, 0, 0],
+            [3, 0, 0, 0, 0, 0, 0, 0],
+        ]
     )
 ).all()
 
@@ -56,7 +60,7 @@ class SpinSystem:
         """
         Records ground_energy and ground_state into to self.ground_energy and
         self.ground_state (only one value, the smallest energy),returns k
-        smallest eigenvalue / eigenvectors and records them into 
+        smallest eigenvalue / eigenvectors and records them into
         self.eigenvalues / self.eigenstates
 
         Returns
@@ -117,7 +121,8 @@ class SpinSystem:
             )
 
         df = pd.DataFrame(
-            dict(eigenstate_coeff=self.eigenstates[:, k]), index=self.basis.states,
+            dict(eigenstate_coeff=self.eigenstates[:, k]),
+            index=self.basis.states,
         )
 
         if canonical_basis:
@@ -170,8 +175,20 @@ class SpinSystem:
                     x["eigenstate_coeff"] * x["character"] * x["norm"]
                 )
             )
-            .drop(["eigenstate_coeff", "representative", "character", "norm",], axis=1,)
-            .rename(columns={"eigenstate_adjusted": "eigenstate_coeff",})
+            .drop(
+                [
+                    "eigenstate_coeff",
+                    "representative",
+                    "character",
+                    "norm",
+                ],
+                axis=1,
+            )
+            .rename(
+                columns={
+                    "eigenstate_adjusted": "eigenstate_coeff",
+                }
+            )
             .reindex(self.canonical_basis.states)
         )
 

@@ -73,30 +73,35 @@ def get_fourier_transform_matrix(
     show_progress: bool = False,
 ) -> np.ndarray:
     """
+    Warning! This function returns np.array with dtype int8! This is memory-efficient,
+    but can lead to overfulls. When using this matrix, make sure that other operands
+    are of larger type (i.e. float64).
+
+
     Fourier Transform Matrix (FTM) is a matrix defined as follows:
-    
+
     - rows: state vectors (usually of a canonical basis)
     - columns: subset masks
-    - values: value of the parity function defined by the subset 
+    - values: value of the parity function defined by the subset
               mask on the state
-              
+
     This function returns the FTM with the following caching:
-    - First, local cache tried (if fourier_transform_matrix_cache specified) 
+    - First, local cache tried (if fourier_transform_matrix_cache specified)
     - Then FOURIER_BASIS_DIR is looked up for the saved matrix
     - Finally, the matrix is calculated using calculate_fourier_transform_matrix
-    
+
     After this function is invoked, the caches are updated accordingly
-              
+
     Params
     ------
-    
+
     states, subsets: rows and columns of a matrix
     number_spins: number of spins
     fourier_transform_matrix_cache: a dictionary that stores local cache
-    
+
     Returns
     -------
-    
+
     Fourier Transform Matrix
     """
     if states.dtype != "uint64" or subsets.dtype != "uint64":
@@ -159,7 +164,9 @@ def get_fourier_transform_matrix(
         if show_progress:
             print(f"Saving basis to file {fourier_transform_matrix_path}")
         pd.DataFrame(
-            fourier_transform_matrix, index=states, columns=[str(i) for i in subsets],
+            fourier_transform_matrix,
+            index=states,
+            columns=[str(i) for i in subsets],
         ).reset_index().to_feather(fourier_transform_matrix_path)
 
     if fourier_transform_matrix_cache is not None:
@@ -172,7 +179,11 @@ def calculate_fourier_transform_matrix(
 ) -> np.ndarray:
     """
     This is a low-level function that calculates the Fourier Transform Matrix.
-    
+
+    Warning! This function returns np.array with dtype int8! This is memory-efficient,
+    but can lead to overfulls. When using this matrix, make sure that other operands
+    are of larger type (i.e. float64).
+
     See details in get_fourier_transform_matrix
     """
 
@@ -248,7 +259,9 @@ class BooleanFourierAnalyser:
 
     def fourier_decomposition(self, signal):
         return (
-            self.fourier_transform_matrix.T @ signal / (2 ** self.system.number_spins)
+            self.fourier_transform_matrix.T
+            @ signal.astype("float64")
+            / (2**self.system.number_spins)
         )
 
     def get_spectre_df(self, signal: SignalOption = SignalOption()):
@@ -264,7 +277,9 @@ class BooleanFourierAnalyser:
 
         spectre_df = (
             pd.DataFrame(
-                dict(coeff=self.fourier_decomposition(signal_),),
+                dict(
+                    coeff=self.fourier_decomposition(signal_),
+                ),
                 index=self.fourier_basis.states,
             )
             .assign(abs_coeff=lambda x: np.abs(x["coeff"]))

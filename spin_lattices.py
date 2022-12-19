@@ -95,7 +95,12 @@ class SpinLattice:
             for site in named_sites.values():
                 sites.append(site + shift)
             for (start, end), kind in edges:
-                self.edges.append(((start + shift, end + shift), kind,))
+                self.edges.append(
+                    (
+                        (start + shift, end + shift),
+                        kind,
+                    )
+                )
 
         self.site_to_num = {}
         new_num = 0
