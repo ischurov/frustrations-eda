@@ -175,13 +175,13 @@ class SpinSystem:
             .reindex(self.canonical_basis.states)
         )
 
-    def visualize_probable_configurations(self, m=0):
+    def visualize_probable_configurations(self, m=0, canonical_basis=True):
         """
         Visualizes m'th most probable configuration
         """
-        df = self.get_df_ground_state(unpack_configurations=True).sort_values(
-            "amplitude", ascending=False
-        )
+        df = self.get_df_ground_state(
+            unpack_configurations=True, canonical_basis=canonical_basis
+        ).sort_values("amplitude", ascending=False)
         self.lat.plot(spins=df.iloc[m]["configuration"])
         plt.title(
             f"Plotted {m}'s most probable state, wavefunction value "

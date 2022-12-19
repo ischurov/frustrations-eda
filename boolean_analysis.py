@@ -69,6 +69,7 @@ def get_fourier_transform_matrix(
     subsets: np.ndarray,
     number_spins: int,
     fourier_transform_matrix_cache: Optional[dict[str, np.ndarray]] = None,
+    fourier_basis_dir=FOURIER_BASIS_DIR,
     show_progress: bool = False,
 ) -> np.ndarray:
     """
@@ -80,7 +81,7 @@ def get_fourier_transform_matrix(
               mask on the state
               
     This function returns the FTM with the following caching:
-    - First local cache tried (if fourier_transform_matrix_cache specified) 
+    - First, local cache tried (if fourier_transform_matrix_cache specified) 
     - Then FOURIER_BASIS_DIR is looked up for the saved matrix
     - Finally, the matrix is calculated using calculate_fourier_transform_matrix
     
@@ -100,13 +101,14 @@ def get_fourier_transform_matrix(
     """
     if states.dtype != "uint64" or subsets.dtype != "uint64":
         raise ValueError("states and subsets dtype should be uint64")
-    fourier_basis_id = md5(
-        f"{number_spins}{states.tolist()!r}{subsets.tolist()!r}".encode("utf8"),
-        usedforsecurity=False,
-    ).hexdigest()
-    fourier_transform_matrix_path = FOURIER_BASIS_DIR / Path(
-        f"fourier_transform_matrix-{fourier_basis_id}.feather"
-    )
+    if fourier_basis_dir is not None:
+        fourier_basis_id = md5(
+            f"{number_spins}{states.tolist()!r}{subsets.tolist()!r}".encode("utf8"),
+            usedforsecurity=False,
+        ).hexdigest()
+        fourier_transform_matrix_path = FOURIER_BASIS_DIR / Path(
+            f"fourier_transform_matrix-{fourier_basis_id}.feather"
+        )
 
     fourier_transform_matrix = None
 
@@ -119,7 +121,7 @@ def get_fourier_transform_matrix(
             fourier_transform_matrix = cached_basis
 
     if fourier_transform_matrix is None:
-        if fourier_transform_matrix_path.exists():
+        if fourier_basis_dir and fourier_transform_matrix_path.exists():
             if show_progress:
                 print(
                     f"Fourier transform matrix found at {fourier_transform_matrix_path}"
@@ -153,7 +155,7 @@ def get_fourier_transform_matrix(
             show_progress=show_progress,
         )
 
-    if not fourier_transform_matrix_path.exists():
+    if fourier_basis_dir and not fourier_transform_matrix_path.exists():
         if show_progress:
             print(f"Saving basis to file {fourier_transform_matrix_path}")
         pd.DataFrame(
@@ -221,16 +223,6 @@ class BooleanFourierAnalyser:
             self.fourier_basis = self.canonical_fourier_basis
 
         self.fourier_basis.build()
-
-        fourier_basis_id = md5(
-            f"{number_spins}{canonical_basis.hamming_weight}"
-            f"{self.fourier_basis.states!r}".encode("utf8"),
-            usedforsecurity=False,
-        ).hexdigest()
-
-        fourier_transform_matrix_path = FOURIER_BASIS_DIR / Path(
-            f"fourier_transform_matrix-{fourier_basis_id}.feather"
-        )
 
         self.fourier_transform_matrix = get_fourier_transform_matrix(
             self.system.canonical_basis.states,
