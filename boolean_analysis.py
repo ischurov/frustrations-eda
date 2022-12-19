@@ -101,7 +101,7 @@ def get_fourier_transform_matrix(
     if states.dtype != "uint64" or subsets.dtype != "uint64":
         raise ValueError("states and subsets dtype should be uint64")
     fourier_basis_id = md5(
-        f"{number_spins}{states!r}" f"{subsets!r}".encode("utf8"),
+        f"{number_spins}{states.tolist()!r}{subsets.tolist()!r}".encode("utf8"),
         usedforsecurity=False,
     ).hexdigest()
     fourier_transform_matrix_path = FOURIER_BASIS_DIR / Path(
@@ -132,6 +132,12 @@ def get_fourier_transform_matrix(
                     f"basis states in file {fourier_transform_matrix_path} do not coincide with "
                     f"states argument"
                 )
+            if (fourier_transform_matrix_df.columns.astype("uint64") != subsets).any():
+                raise ValueError(
+                    f"subsets in file {fourier_transform_matrix_path} do not coincide with "
+                    f"subsets argument: {fourier_transform_matrix_df.columns} vs {subsets}"
+                )
+
             fourier_transform_matrix = fourier_transform_matrix_df.values.astype("int8")
 
     if fourier_transform_matrix is None:
