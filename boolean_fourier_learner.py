@@ -34,13 +34,13 @@ class BooleanFourierLearner:
         sample_size = len(x)
 
         if not (
-            not pickle_progress
+            not pickle_progress_to
             or stochastic_iterations
             or batch_size is None
             or sample_size % batch_size == 0
         ):
             raise NotImplementedError(
-                "If pickle_progress is specified, either stochastic_iteration should be True, "
+                "If pickle_progress_to is specified, either stochastic_iteration should be True, "
                 "or sample size should be a factor of batch_size"
             )
 
