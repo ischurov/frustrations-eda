@@ -9,6 +9,7 @@ from more_itertools import sliced
 import yaml
 from pathlib import Path
 import pickle
+from utils import make_unpacked_configurations
 
 from spin_lattices import SpinLattice
 
@@ -41,11 +42,6 @@ def batched_state_info_df(basis, bits):
     )
 
 
-def make_unpacked_configurations(states, number_spins):
-    return (
-        np.array(states, dtype="uint64").reshape(-1, 1)
-        >> np.arange(number_spins, dtype="uint64")
-    ) & 1
 
 
 class SpinSystem:

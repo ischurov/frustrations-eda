@@ -21,8 +21,10 @@ from spin_lattices import (
 
 from boolean_fourier_learner import BooleanFourierLearner
 
+J2 = 0.8
+
 system = HeisenbergJ1J2(
-    KagomeLattice(width=2, height=4), J1=1, J2=0, use_symmetries=True
+    KagomeLattice(width=2, height=4), J1=1, J2=J2, use_symmetries=True
 )
 system.get_eigenstates()
 
@@ -41,11 +43,13 @@ learner = BooleanFourierLearner(number_spins=number_spins, subsets=fourier_basis
 gs = ground_state[lambda x: x["amplitude"] > 5e-6]
 x = np.array(gs.index, dtype="uint64")
 y = np.sign(gs["eigenstate_coeff"]).astype("float64").values
-learner.fit(
-    x,
-    y,
-    batch_size=100,
-    stochastic_iterations=10000,
-    pickle_progress_to="kagome24/fourier-learner-{i}.pickle",
-    pickle_each=100,
-)
+
+if __name__ == "__main__":
+    learner.fit(
+        x,
+        y,
+        batch_size=100,
+        stochastic_iterations=10000,
+        pickle_progress_to=f"kagome24/fourier-learner-{J2}-{{i}}.pickle.lz",
+        pickle_each=100,
+    )
