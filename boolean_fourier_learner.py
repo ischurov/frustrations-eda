@@ -91,8 +91,8 @@ class BooleanFourierLearner:
             if equal_batches:
                 sumprod += sumprod_delta / batch_size / n_batches
                 self.coeffs_ = sumprod
-                if pickle_progress_to and i % pickle_each == 0:
-                    with lzma.open(pickle_progress_to.format(i=i), "wb") as f:
+                if pickle_progress_to and (i % pickle_each) == (pickle_each - 1):
+                    with lzma.open(pickle_progress_to.format(i=i + 1), "wb") as f:
                         pickle.dump(self, f)
             else:
                 sumprod += sumprod_delta

@@ -285,6 +285,7 @@ class HeisenbergJ1J2(SpinSystem):
 
         self.ground_state = None
         self.ground_energy = None
+        self.eigenstates = None
 
     def eigenstate_path(self, k: int):
         return (
