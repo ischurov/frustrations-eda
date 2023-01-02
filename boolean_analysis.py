@@ -197,6 +197,7 @@ def calculate_fourier_transform_matrix(
 class SignalOption:
     kind: Literal["sign", "value"] = "sign"
     eigenstate: int = 0
+    weighted: bool = False
 
 
 class BooleanFourierAnalyser:
@@ -272,13 +273,18 @@ class BooleanFourierAnalyser:
             k=signal.eigenstate, canonical_basis=True
         )["eigenstate_coeff"]
 
+        if signal.weighted:
+            weights = signal_ ** 2 * (2**self.system.number_spins)
+        else:
+            weights = 1
+
         if signal.kind == "sign":
             signal_ = np.sign(signal_)
 
         spectre_df = (
             pd.DataFrame(
                 dict(
-                    coeff=self.fourier_decomposition(signal_),
+                    coeff=self.fourier_decomposition(signal_ * weights),
                 ),
                 index=self.fourier_basis.states,
             )
