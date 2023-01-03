@@ -3,7 +3,6 @@ from itertools import product
 import igraph as ig
 import numpy as np
 from collections import defaultdict
-from bitarray.util import int2ba
 import pandas as pd
 import seaborn as sns
 from utils import make_unpacked_configurations

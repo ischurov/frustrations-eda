@@ -45,6 +45,18 @@ def batched_state_info_df(basis, bits):
 
 
 class SpinSystem:
+
+    def __init__(self, lat: SpinLattice, basis: ls.SpinBasis, hamiltonian: ls.Operator):
+        self.lat = lat
+        self.basis = basis
+        self.hamiltonian = hamiltonian
+        self.number_spins = len(lat.sites)
+        self.eigenstates = None
+        self.eigenvalues = None
+        self.ground_energy = None
+        self.ground_state = None
+
+
     def unpack_configurations(self):
         """
         Unpacks all configurations in the basis into an np.array
@@ -203,6 +215,7 @@ class SpinSystem:
 
 
 class HeisenbergJ1J2(SpinSystem):
+    # noinspection NonAsciiCharacters
     def __init__(
         self,
         lat: SpinLattice,
@@ -217,14 +230,11 @@ class HeisenbergJ1J2(SpinSystem):
         self.J2 = J2
         self.use_symmetries = use_symmetries
         self.spin_inversion = spin_inversion
+        number_spins = len(lat.sites)
 
-        self.lat = lat
-
-        self.number_spins = len(lat.sites)  # System size
-
-        print(f"{self.number_spins=}")
+        print(f"{number_spins=}")
         hamming_weight = (
-            self.number_spins // 2
+            number_spins // 2
         )  # Hamming weight (i.e. number of spin ups)
 
         # Constructing symmetries
@@ -242,18 +252,19 @@ class HeisenbergJ1J2(SpinSystem):
         print("Symmetry group contains {} elements".format(len(self.symmetry_group)))
 
         # Constructing the basis
-        self.basis = ls.SpinBasis(
+        basis = ls.SpinBasis(
             self.symmetry_group,
-            number_spins=self.number_spins,
+            number_spins=number_spins,
             hamming_weight=hamming_weight,
             spin_inversion=spin_inversion,
         )
-        self.basis.build()  # Build the list of representatives, we need it since we're doing ED
-        print("Hilbert space dimension is {}".format(self.basis.number_states))
+
+        basis.build()  # Build the list of representatives, we need it since we're doing ED
+        print("Hilbert space dimension is {}".format(basis.number_states))
 
         self.canonical_basis = ls.SpinBasis(
             ls.Group([]),
-            number_spins=self.number_spins,
+            number_spins=number_spins,
             hamming_weight=hamming_weight,
             spin_inversion=None,
         )
@@ -275,17 +286,15 @@ class HeisenbergJ1J2(SpinSystem):
 
         matrix = 0.5 * (np.kron(σ_p, σ_m) + np.kron(σ_m, σ_p)) + np.kron(σ_z, σ_z)
 
-        self.hamiltonian = ls.Operator(
-            self.basis,
+        hamiltonian = ls.Operator(
+            basis,
             [
                 ls.Interaction(J * matrix, edges)
                 for J, (_, edges) in zip([J1, J2], sorted(lat.kind_to_edges.items()))
             ],
         )
 
-        self.ground_state = None
-        self.ground_energy = None
-        self.eigenstates = None
+        super().__init__(lat=lat, basis=basis, hamiltonian=hamiltonian)
 
     def eigenstate_path(self, k: int):
         return (

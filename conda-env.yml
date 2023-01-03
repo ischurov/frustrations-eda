@@ -1,0 +1,28 @@
+name: latsym
+channels:
+  - twesterhout
+  - conda-forge
+  # - weinbe58 # for quspin
+dependencies:
+  - python=3.9
+  - pip
+  - pip:
+    - black
+    - loguru
+  - numpy
+  - scipy
+  - hdf5
+  - pyyaml
+  - pandas
+  - matplotlib
+  - tqdm
+  - seaborn
+  - dataclasses
+  - more-itertools
+  - python-igraph
+  - ipykernel
+  - scikit-learn
+  - parse
+  - pyarrow
+  - jupyter
+  - lattice-symmetries
