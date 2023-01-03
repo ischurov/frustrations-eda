@@ -22,6 +22,7 @@ class BooleanFourierLearner:
         self,
         x: np.ndarray,
         y: np.ndarray,
+        weights: np.ndarray = None,
         batch_size=None,
         stochastic_iterations=None,
         pickle_progress_to=None,
@@ -30,6 +31,12 @@ class BooleanFourierLearner:
     ):
         if len(x) != len(y):
             raise ValueError("Lengths of x and y should coincide")
+
+        if weights is None:
+            weights = np.ones_like(x)
+
+        if len(x) != len(weights):
+            raise ValueError("Lengths of x and weights should coincide")
 
         sample_size = len(x)
 
@@ -53,7 +60,7 @@ class BooleanFourierLearner:
         if pickle_progress_to is not None:
             Path(pickle_progress_to).parent.mkdir(parents=True, exist_ok=True)
 
-        if batch_size and not stochastic_iterations:
+        if batch_size is not None and not stochastic_iterations:
             n_batches = sample_size // batch_size + (sample_size % batch_size != 0)
         elif not stochastic_iterations:
             n_batches = 1
@@ -70,12 +77,14 @@ class BooleanFourierLearner:
             if not stochastic_iterations:
                 x_batch = x[i * batch_size : (i + 1) * batch_size]
                 y_batch = y[i * batch_size : (i + 1) * batch_size]
+                weights_batch = weights[i * batch_size : (i + 1) * batch_size]
             else:
                 indicies = np.random.choice(
                     np.arange(sample_size), batch_size, replace=False
                 )
                 x_batch = x[indicies]
                 y_batch = y[indicies]
+                weights_batch = weights[indicies]
 
             fourier_transform_matrix = calculate_fourier_transform_matrix(
                 x_batch,
@@ -86,7 +95,9 @@ class BooleanFourierLearner:
 
             self.fourier_transform_matrix = fourier_transform_matrix
 
-            sumprod_delta = (fourier_transform_matrix.T @ y_batch).astype("float64")
+            sumprod_delta = (
+                fourier_transform_matrix.T @ (weights_batch * y_batch)
+            ).astype("float64")
 
             if equal_batches:
                 sumprod += sumprod_delta / batch_size / n_batches
