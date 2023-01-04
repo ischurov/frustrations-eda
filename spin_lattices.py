@@ -1,7 +1,9 @@
+from typing import Union
 import matplotlib.pyplot as plt
 from itertools import product
 import igraph as ig
 import numpy as np
+import numpy.typing as npt
 from collections import defaultdict
 import pandas as pd
 import seaborn as sns
@@ -24,8 +26,9 @@ def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
 
     # List of colors in the color palettes
     rgb_values = sns.color_palette("Set2", len(color_labels))
-
     # Map continents to the colors
+    assert isinstance(rgb_values, list)
+
     color_map = dict(zip(color_labels, rgb_values))
 
     for key, group in data.groupby(color):
@@ -52,7 +55,7 @@ class SpinLattice:
         v,
         named_sites,
         named_edges,
-        fundamental_domain_size=1,
+        fundamental_domain_size: Union[int, npt.NDArray[np.int_]] = 1,
         width=1,
         height=1,
     ):
@@ -169,7 +172,9 @@ class SpinLattice:
         """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is not None:
             if isinstance(spins, int):
-                spins = make_unpacked_configurations(np.array(spins, dtype="uint64"), len(self.sites))[0]
+                spins = make_unpacked_configurations(
+                    np.array(spins, dtype="uint64"), len(self.sites)
+                )[0]
             spins_df = pd.DataFrame(dict(spin=spins))
             sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
         else:
@@ -235,7 +240,7 @@ class ChainLattice(SpinLattice):
 
 class SquareLattice(SpinLattice):
     def __init__(self, width=1, height=1):
-        """
+        r"""
         Generates square J1-J2 lattice.
 
         The fundamental domain:

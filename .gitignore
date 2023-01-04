@@ -1,0 +1,8 @@
+*.pdf
+groundstates/
+fourier-bases/
+kagome24-*/
+*.pyc
+.idea/
+.ipynb_checkpoints/
+settings.json

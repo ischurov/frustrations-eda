@@ -104,14 +104,17 @@ def get_fourier_transform_matrix(
     """
     if states.dtype != "uint64" or subsets.dtype != "uint64":
         raise ValueError("states and subsets dtype should be uint64")
+    fourier_basis_id = md5(
+        f"{number_spins}{states.tolist()!r}{subsets.tolist()!r}".encode("utf8"),
+        usedforsecurity=False,
+    ).hexdigest()
+
     if fourier_basis_dir is not None:
-        fourier_basis_id = md5(
-            f"{number_spins}{states.tolist()!r}{subsets.tolist()!r}".encode("utf8"),
-            usedforsecurity=False,
-        ).hexdigest()
-        fourier_transform_matrix_path = FOURIER_BASIS_DIR / Path(
+        fourier_transform_matrix_path = fourier_basis_dir / Path(
             f"fourier_transform_matrix-{fourier_basis_id}.feather"
         )
+    else:
+        fourier_transform_matrix_path = None
 
     fourier_transform_matrix = None
 
@@ -124,7 +127,10 @@ def get_fourier_transform_matrix(
             fourier_transform_matrix = cached_basis
 
     if fourier_transform_matrix is None:
-        if fourier_basis_dir and fourier_transform_matrix_path.exists():
+        if (
+            fourier_transform_matrix_path is not None
+            and fourier_transform_matrix_path.exists()
+        ):
             if show_progress:
                 print(
                     f"Fourier transform matrix found at {fourier_transform_matrix_path}"
@@ -158,7 +164,10 @@ def get_fourier_transform_matrix(
             show_progress=show_progress,
         )
 
-    if fourier_basis_dir and not fourier_transform_matrix_path.exists():
+    if (
+        fourier_transform_matrix_path is not None
+        and not fourier_transform_matrix_path.exists()
+    ):
         if show_progress:
             print(f"Saving basis to file {fourier_transform_matrix_path}")
         pd.DataFrame(
@@ -272,7 +281,7 @@ class BooleanFourierAnalyser:
         )["eigenstate_coeff"]
 
         if signal.weighted:
-            weights = signal_ ** 2 * (2**self.system.number_spins)
+            weights = signal_**2 * (2**self.system.number_spins)
         else:
             weights = 1
 
@@ -333,7 +342,7 @@ class BooleanFourierAnalyser:
 
     def predict(
         self, signal: SignalOption = SignalOption(), keep_first=None
-    ) -> np.array:
+    ) -> np.ndarray:
         coeffs = self.get_spectre_df(signal)["coeff"]
         if keep_first is not None:
             coeffs = coeffs.iloc[:keep_first]
@@ -383,4 +392,4 @@ class BooleanFourierAnalyser:
             ),
             np.sign(eigenstate_coeffs),
             sample_weight=sample_weight,
-        )
+        )  # type: ignore

@@ -5,10 +5,11 @@ from tqdm import tqdm
 import pickle
 from pathlib import Path
 import lzma
+from typing import Optional
 
 
 class BooleanFourierLearner:
-    def __init__(self, number_spins: int, subsets: np.ndarray = None):
+    def __init__(self, number_spins: int, subsets: Optional[np.ndarray] = None):
         self.number_spins = number_spins
         if subsets is not None:
             self.subsets = subsets
@@ -22,7 +23,7 @@ class BooleanFourierLearner:
         self,
         x: np.ndarray,
         y: np.ndarray,
-        weights: np.ndarray = None,
+        weights: Optional[np.ndarray] = None,
         batch_size=None,
         stochastic_iterations=None,
         pickle_progress_to=None,
@@ -71,7 +72,7 @@ class BooleanFourierLearner:
         sumprod = np.zeros(len(self.subsets), dtype="float64")
         columns = 0
 
-        equal_batches = stochastic_iterations or sample_size % batch_size == 0
+        equal_batches = stochastic_iterations or sample_size % batch_size == 0  # type: ignore
 
         for i in [lambda _: _, tqdm][show_progress](range(n_batches)):
             if not stochastic_iterations:
