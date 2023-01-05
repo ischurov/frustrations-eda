@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from sklearn.metrics import accuracy_score
 from scipy.stats import entropy
 
-from parity import parity as parity_of_1s
+from parity import calculate_fourier_transform_matrix
 
 
 def get_fourier_transform_matrix(
@@ -144,25 +144,6 @@ def get_fourier_transform_matrix(
     if fourier_transform_matrix_cache is not None:
         fourier_transform_matrix_cache[fourier_basis_id] = fourier_transform_matrix
     return fourier_transform_matrix
-
-
-def calculate_fourier_transform_matrix(
-    states: np.ndarray, subsets: np.ndarray, number_spins: int, show_progress=False
-) -> np.ndarray:
-    """
-    This is a low-level function that calculates the Fourier Transform Matrix.
-
-    Warning! This function returns np.array with dtype int8! This is memory-efficient,
-    but can lead to overfulls. When using this matrix, make sure that other operands
-    are of larger type (i.e. float64).
-
-    See details in get_fourier_transform_matrix
-    """
-
-    masks = subsets.reshape(1, -1)
-    masked = states.reshape(-1, 1) & masks
-    parities = parity_of_1s(masked)
-    return parities.astype("int8") * 2 - 1
 
 
 @dataclass(frozen=True)
