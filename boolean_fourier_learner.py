@@ -1,5 +1,5 @@
 import numpy as np
-from boolean_analysis import calculate_fourier_transform_matrix, parity_of_1s
+from boolean_analysis import calculate_fourier_transform_matrix
 import pandas as pd
 from tqdm import tqdm
 import pickle

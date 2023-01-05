@@ -24,42 +24,7 @@ from dataclasses import dataclass
 from sklearn.metrics import accuracy_score
 from scipy.stats import entropy
 
-
-def parity_of_1s(x: np.ndarray, n: int, show_progress=False):
-    """
-    Calculates the parities of number of 1's for all elements of x
-
-    Params
-    ------
-    x : np.ndarray
-        should have dtype == 'uint64'
-
-    n : int
-        number of bits (all elements of x should be less than 2 ** n)
-
-    show_progress : bool
-                    whether to show progress bar
-
-    Returns
-    -------
-    parity : np.ndarray
-             dtype == 'uint8'
-    """
-
-    parity = np.zeros_like(x, dtype="uint8")
-    x = x.copy()
-    for i in [lambda _: _, tqdm][show_progress](range(n)):
-        parity ^= x & 1
-        x >>= 1
-    return parity
-
-
-assert (
-    np.isclose(
-        parity_of_1s(np.array([[1, 2, 3], [4, 5, 6]], dtype="uint64"), 3),
-        np.array([[1, 1, 0], [1, 0, 0]], dtype="uint64"),
-    )
-).all()
+from parity import parity as parity_of_1s
 
 
 def get_fourier_transform_matrix(
@@ -196,7 +161,7 @@ def calculate_fourier_transform_matrix(
 
     masks = subsets.reshape(1, -1)
     masked = states.reshape(-1, 1) & masks
-    parities = parity_of_1s(masked, number_spins, show_progress=show_progress)
+    parities = parity_of_1s(masked)
     return parities.astype("int8") * 2 - 1
 
 

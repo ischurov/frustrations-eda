@@ -6,3 +6,8 @@ kagome24-*/
 .idea/
 .ipynb_checkpoints/
 settings.json
+scratch.py
+temp.py
+test.py
+Untitled*.ipynb
+_*
