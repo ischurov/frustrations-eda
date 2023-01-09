@@ -6,6 +6,8 @@ FOURIER_BASIS_DIR.mkdir(exist_ok=True)
 
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.typing as npt
+
 import pandas as pd
 import lattice_symmetries as ls
 from tqdm import tqdm
@@ -24,7 +26,7 @@ from dataclasses import dataclass
 from sklearn.metrics import accuracy_score
 from scipy.stats import entropy
 
-from parity import calculate_fourier_transform_matrix
+from boolean_fourier_learner import BooleanFourierLearner
 
 
 def get_fourier_transform_matrix(
@@ -150,24 +152,22 @@ def get_fourier_transform_matrix(
 class SignalOption:
     kind: Literal["sign", "value"] = "sign"
     eigenstate: int = 0
-    weighted: bool = False
+    weights: Literal["none", "prob", "invprob"] = "none"
 
 
 class BooleanFourierAnalyser:
     def __init__(
         self,
         system: SpinSystem,
-        use_symmetries=True,
-        fourier_transform_matrix_cache=None,
+        use_subset_symmetries=True,
         eigenstates: int = 1,
+        show_progress: bool = False,
     ):
 
         self.system = system
-        self.use_symmetries = use_symmetries
-        self.fourier_transform_matrix_cache = fourier_transform_matrix_cache
+        self.use_subset_symmetries = use_subset_symmetries
 
         number_spins = self.system.number_spins
-        canonical_basis = self.system.canonical_basis
 
         self.canonical_fourier_basis = ls.SpinBasis(
             ls.Group([]),
@@ -177,46 +177,62 @@ class BooleanFourierAnalyser:
         )
         self.canonical_fourier_basis.build()
 
-        if use_symmetries:
+        if use_subset_symmetries:
             self.fourier_basis = ls.SpinBasis(
                 self.system.symmetry_group,
                 number_spins=number_spins,
                 hamming_weight=None,
-                spin_inversion=None,
+                spin_inversion=1,
             )
         else:
             self.fourier_basis = self.canonical_fourier_basis
 
         self.fourier_basis.build()
 
-        self.fourier_transform_matrix = get_fourier_transform_matrix(
-            self.system.canonical_basis.states,
-            self.fourier_basis.states,
-            number_spins,
-            fourier_transform_matrix_cache=self.fourier_transform_matrix_cache,
-            show_progress=True,
-        )
-
-        if use_symmetries:
-            self.canonical_fourier_transform_matrix = None
-            # FTM with full set of Fourier basis vectors
-            # if symmetries are used, it is much larger than self.fourier_transform_matrix
-            # we need it on inference, will calculate if needed
-
-        else:
-            self.canonical_fourier_transform_matrix = self.fourier_transform_matrix
-
         print("Finding system ground state")
         self.system.get_eigenstates(eigenstates)
 
-        self.spectre_cache = {}
+        self.show_progress = show_progress
 
-    def fourier_decomposition(self, signal):
-        return (
-            self.fourier_transform_matrix.T
-            @ signal.astype("float64")
-            / (2**self.system.number_spins)
+    def fit(
+        self,
+        states: npt.NDArray[np.uint64],
+        signal_opt: SignalOption = SignalOption(),
+        batch_size=100,
+    ) -> "BooleanFourierAnalyser":
+
+        train_df = (
+            self.system.get_df_eigenstate(k=signal_opt.eigenstate, canonical_basis=True)
+            .assign(prob=lambda x: x["amplitude"] ** 2)
+            .loc[states]
         )
+
+        x = np.array(train_df.index, dtype="uint64")
+        y = train_df["eigenstate_coeff"].astype("float64").values
+
+        if signal_opt.kind == "sign":
+            y = np.sign(y)
+
+        self.learner = BooleanFourierLearner(
+            self.system.number_spins, self.fourier_basis.states
+        )
+
+        if signal_opt.weights == "prob":
+            weights = train_df["prob"].values
+        elif signal_opt.weights == "invprob":
+            weights = 1 / train_df["prob"].values
+        else:
+            weights = None
+
+        self.learner.fit(
+            x,
+            y,
+            weights=weights,
+            batch_size=batch_size,
+            show_progress=self.show_progress,
+        )
+
+        return self
 
     def get_spectre_df(self, signal: SignalOption = SignalOption()):
         if signal in self.spectre_cache:
@@ -293,7 +309,7 @@ class BooleanFourierAnalyser:
         if keep_first is not None:
             coeffs = coeffs.iloc[:keep_first]
 
-        if self.use_symmetries:
+        if self.use_subset_symmetries:
             state_info_df = batched_state_info_df(
                 self.fourier_basis, self.canonical_fourier_basis.states
             )

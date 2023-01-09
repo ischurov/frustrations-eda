@@ -15,9 +15,9 @@ class BooleanFourierLearner:
             self.subsets = subsets
         else:
             self.subsets = np.arange(2**number_spins, dtype="uint64")
-        self.coeffs_ = None
-        self.x_ = None
-        self.y_ = None
+        self.coeffs_: np.ndarray
+        self.x_: np.ndarray
+        self.y_: np.ndarray
 
     def fit(
         self,
@@ -114,22 +114,20 @@ class BooleanFourierLearner:
             self.coeffs_ = sumprod / columns
         self.x_ = x
         self.y_ = y
-        self.coeffs_df_ = None
 
     def _assure_fitted(self):
-        if self.coeffs_ is None:
+        if not hasattr(self, "coeffs_"):
             raise ValueError("Model is not fitted; please, run .fit(x, y, ...) first")
 
     def get_coeffs_df(self):
         self._assure_fitted()
 
-        if self.coeffs_df_ is None:
-            df = (
+        if not hasattr(self, "coeffs_df_"):
+            self.coeffs_df_ = (
                 pd.DataFrame(dict(coeff=self.coeffs_), index=self.subsets)
                 .assign(abs_coeff=lambda x: np.abs(x["coeff"]))
                 .sort_values("abs_coeff", ascending=False)
                 .drop("abs_coeff", axis=1)
             )
-            self.coeffs_df_ = df
 
         return self.coeffs_df_

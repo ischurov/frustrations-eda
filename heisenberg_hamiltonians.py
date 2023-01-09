@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 import lattice_symmetries as ls
-from more_itertools import sliced
 import yaml
 from pathlib import Path
 import pickle

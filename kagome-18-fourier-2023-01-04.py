@@ -25,9 +25,9 @@ from itertools import chain
 
 
 def main():
-    train_size = 20000
+    train_size = 200000
 
-    experiment_dir = Path("kagome24-2023-01-03")
+    experiment_dir = Path("kagome18-2023-01-04")
     experiment_dir.mkdir(exist_ok=True)
 
     for J2 in [
@@ -60,14 +60,15 @@ def main():
         )
         fourier_basis.build()
 
-        ground_state = system.get_df_eigenstate(k=0, canonical_basis=True).assign(
+        ground_state = system.get_df_eigenstate(k=0).assign(
             prob=lambda x: x["amplitude"] ** 2
         )
 
         learner = BooleanFourierLearner(
             number_spins=number_spins, subsets=fourier_basis.states
         )
-        gs = ground_state[lambda x: x["amplitude"] > 5e-6]
+        gs = ground_state[lambda x: x["amplitude"] > 5e-6]  # type: ignore
+        # See (https://github.com/pandas-dev/pandas-stubs/issues/256)
 
         train = gs.sample(n=train_size, weights="prob")
         train.reset_index().to_feather(experiment_dir / f"train-{J2!r}.feather")
