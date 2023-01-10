@@ -1,11 +1,14 @@
-import numpy as np
-from boolean_analysis import calculate_fourier_transform_matrix
-import pandas as pd
-from tqdm import tqdm
+import lzma
 import pickle
 from pathlib import Path
-import lzma
 from typing import Optional
+
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+from tqdm import tqdm
+
+from parity import calculate_fourier_transform_matrix
 
 
 class BooleanFourierLearner:
@@ -23,7 +26,7 @@ class BooleanFourierLearner:
         self,
         x: np.ndarray,
         y: np.ndarray,
-        weights: Optional[np.ndarray] = None,
+        weights: Optional[npt.NDArray[np.float64]] = None,
         batch_size=None,
         stochastic_iterations=None,
         pickle_progress_to=None,
@@ -89,9 +92,7 @@ class BooleanFourierLearner:
 
             fourier_transform_matrix = calculate_fourier_transform_matrix(
                 x_batch,
-                self.subsets,
-                self.number_spins,
-                show_progress=show_progress,
+                self.subsets
             )
 
             self.fourier_transform_matrix = fourier_transform_matrix

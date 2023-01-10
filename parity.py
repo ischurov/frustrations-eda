@@ -1,5 +1,7 @@
-from _parity import ffi, lib
 import numpy as np
+import numpy.typing as npt
+
+from _parity import ffi, lib
 
 
 def parity(x: np.ndarray) -> np.ndarray:
@@ -28,8 +30,8 @@ def parity(x: np.ndarray) -> np.ndarray:
 
 
 def calculate_fourier_transform_matrix(
-    states: np.ndarray, subsets: np.ndarray, number_spins: int, show_progress=False
-) -> np.ndarray:
+    states: np.ndarray, subsets: np.ndarray
+) -> npt.NDArray[np.int8]:
     """
     Calculates the fourier transform matrix for a given set of states and subsets
 

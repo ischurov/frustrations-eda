@@ -1,10 +1,12 @@
 *.pdf
 groundstates/
 fourier-bases/
+kagome24/
 kagome24-*/
 *.pyc
 .idea/
 .ipynb_checkpoints/
+test-experiment/
 settings.json
 scratch.py
 temp.py

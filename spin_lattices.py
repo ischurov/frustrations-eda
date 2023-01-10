@@ -1,12 +1,14 @@
-from typing import Union
-import matplotlib.pyplot as plt
+from collections import defaultdict
 from itertools import product
+from typing import Union
+
 import igraph as ig
+import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-from collections import defaultdict
 import pandas as pd
 import seaborn as sns
+
 from utils import make_unpacked_configurations
 
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
@@ -171,7 +173,7 @@ class SpinLattice:
     def plot(self, spins=None, show_edges=True, ax=None):
         """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is not None:
-            if isinstance(spins, int):
+            if isinstance(spins, (int, np.uint64)):
                 spins = make_unpacked_configurations(
                     np.array(spins, dtype="uint64"), len(self.sites)
                 )[0]

@@ -1,17 +1,15 @@
-from typing import Optional
-import matplotlib.pyplot as plt
-from itertools import product
-import igraph as ig
-import numpy as np
-import pandas as pd
-import seaborn as sns
-import lattice_symmetries as ls
-import yaml
-from pathlib import Path
 import pickle
-from utils import make_unpacked_configurations
+from pathlib import Path
+from typing import Optional
+
+import lattice_symmetries as ls
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
 
 from spin_lattices import SpinLattice
+from utils import make_unpacked_configurations
 
 GROUND_STATE_DIR = Path("groundstates")  # type: ignore
 
@@ -22,23 +20,30 @@ def pad_right(arr, n):
     return np.pad(arr, [(0, 0), (0, n - 1)], "constant", constant_values=0)
 
 
-assert (
-    pad_right(np.array([1, 2, 3]), 8)
-    == np.array(
-        [
-            [1, 0, 0, 0, 0, 0, 0, 0],
-            [2, 0, 0, 0, 0, 0, 0, 0],
-            [3, 0, 0, 0, 0, 0, 0, 0],
-        ]
-    )
-).all()
+def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
+    """
+    Parameters
+    ----------
+    basis : ls.SpinBasis
+        Basis to use for the state info
+    states : npt.NDArray[np.uint64]
+        States to get the info for
 
+    Returns
+    -------
+    pd.DataFrame
 
-def batched_state_info_df(basis, bits):
-    representative, eigenvalue, norm = basis.batched_state_info(pad_right(bits, 8))
+    Returns a DataFrame with index states and the following columns:
+
+    - representative: representative of the group trajectory containing the state
+    - character: character of the group element that takes the representative to the state
+    - norm: normalizing coefficient
+    """
+    representative, eigenvalue, norm = basis.batched_state_info(pad_right(states, 8))
     representative = representative[:, 0]
     return pd.DataFrame(
-        dict(representative=representative, character=eigenvalue, norm=norm), index=bits
+        dict(representative=representative, character=eigenvalue, norm=norm),
+        index=states,
     )
 
 

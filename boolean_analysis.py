@@ -4,148 +4,26 @@ FOURIER_BASIS_DIR = Path("fourier-bases")
 FOURIER_BASIS_DIR.mkdir(exist_ok=True)
 
 
+from dataclasses import dataclass
+from hashlib import md5
+from typing import Callable, Literal, Optional, Union
+
+import lattice_symmetries as ls
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-
 import pandas as pd
-import lattice_symmetries as ls
-from tqdm import tqdm
-from typing import Literal, Optional
-
-from hashlib import md5
-
-from heisenberg_hamiltonians import (
-    make_unpacked_configurations,
-    SpinSystem,
-    batched_state_info_df,
-)
-
-from dataclasses import dataclass
-
-from sklearn.metrics import accuracy_score
 from scipy.stats import entropy
+from sklearn.metrics import accuracy_score
+from tqdm import tqdm
 
 from boolean_fourier_learner import BooleanFourierLearner
-
-
-def get_fourier_transform_matrix(
-    states: np.ndarray,
-    subsets: np.ndarray,
-    number_spins: int,
-    fourier_transform_matrix_cache: Optional[dict[str, np.ndarray]] = None,
-    fourier_basis_dir=FOURIER_BASIS_DIR,
-    show_progress: bool = False,
-) -> np.ndarray:
-    """
-    Warning! This function returns np.array with dtype int8! This is memory-efficient,
-    but can lead to overfulls. When using this matrix, make sure that other operands
-    are of larger type (i.e. float64).
-
-
-    Fourier Transform Matrix (FTM) is a matrix defined as follows:
-
-    - rows: state vectors (usually of a canonical basis)
-    - columns: subset masks
-    - values: value of the parity function defined by the subset
-              mask on the state
-
-    This function returns the FTM with the following caching:
-    - First, local cache tried (if fourier_transform_matrix_cache specified)
-    - Then FOURIER_BASIS_DIR is looked up for the saved matrix
-    - Finally, the matrix is calculated using calculate_fourier_transform_matrix
-
-    After this function is invoked, the caches are updated accordingly
-
-    Params
-    ------
-
-    states, subsets: rows and columns of a matrix
-    number_spins: number of spins
-    fourier_transform_matrix_cache: a dictionary that stores local cache
-
-    Returns
-    -------
-
-    Fourier Transform Matrix
-    """
-    if states.dtype != "uint64" or subsets.dtype != "uint64":
-        raise ValueError("states and subsets dtype should be uint64")
-    fourier_basis_id = md5(
-        f"{number_spins}{states.tolist()!r}{subsets.tolist()!r}".encode("utf8"),
-        usedforsecurity=False,
-    ).hexdigest()
-
-    if fourier_basis_dir is not None:
-        fourier_transform_matrix_path = fourier_basis_dir / Path(
-            f"fourier_transform_matrix-{fourier_basis_id}.feather"
-        )
-    else:
-        fourier_transform_matrix_path = None
-
-    fourier_transform_matrix = None
-
-    if fourier_transform_matrix_cache is not None:
-        if (
-            cached_basis := fourier_transform_matrix_cache.get(fourier_basis_id)
-        ) is not None:
-            if show_progress:
-                print("Found cached fourier basis, will use it")
-            fourier_transform_matrix = cached_basis
-
-    if fourier_transform_matrix is None:
-        if (
-            fourier_transform_matrix_path is not None
-            and fourier_transform_matrix_path.exists()
-        ):
-            if show_progress:
-                print(
-                    f"Fourier transform matrix found at {fourier_transform_matrix_path}"
-                )
-            fourier_transform_matrix_df = pd.read_feather(
-                fourier_transform_matrix_path
-            ).set_index("index")
-            if (fourier_transform_matrix_df.index != states).any():
-                raise ValueError(
-                    f"basis states in file {fourier_transform_matrix_path} do not coincide with "
-                    f"states argument"
-                )
-            if (fourier_transform_matrix_df.columns.astype("uint64") != subsets).any():
-                raise ValueError(
-                    f"subsets in file {fourier_transform_matrix_path} do not coincide with "
-                    f"subsets argument: {fourier_transform_matrix_df.columns} vs {subsets}"
-                )
-
-            fourier_transform_matrix = fourier_transform_matrix_df.values.astype("int8")
-
-    if fourier_transform_matrix is None:
-        if show_progress:
-            print(
-                "Fourier transform matrix not found, we have to calculate it. "
-                "This can take some time, you can get a coffee."
-            )
-        fourier_transform_matrix = calculate_fourier_transform_matrix(
-            states=states,
-            subsets=subsets,
-            number_spins=number_spins,
-            show_progress=show_progress,
-        )
-
-    if (
-        fourier_transform_matrix_path is not None
-        and not fourier_transform_matrix_path.exists()
-    ):
-        if show_progress:
-            print(f"Saving basis to file {fourier_transform_matrix_path}")
-        pd.DataFrame(
-            fourier_transform_matrix,
-            index=states,
-            columns=[str(i) for i in subsets],
-        ).reset_index().to_feather(fourier_transform_matrix_path)
-
-    if fourier_transform_matrix_cache is not None:
-        fourier_transform_matrix_cache[fourier_basis_id] = fourier_transform_matrix
-    return fourier_transform_matrix
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix
 
 
 @dataclass(frozen=True)
@@ -153,6 +31,26 @@ class SignalOption:
     kind: Literal["sign", "value"] = "sign"
     eigenstate: int = 0
     weights: Literal["none", "prob", "invprob"] = "none"
+
+
+ScorerType = Callable[[pd.DataFrame, npt.NDArray], float]
+
+scorers: dict[str, ScorerType] = {}
+
+
+def register_as_scorer(f: ScorerType):
+    scorers[f.__name__.removesuffix("_scorer")] = f
+    return f
+
+
+@register_as_scorer
+def overlap_scorer(true: pd.DataFrame, predict: npt.NDArray):
+    return (true["y"] * predict * true["amplitude"]).sum() / true["prob"].sum()
+
+
+@register_as_scorer
+def accuracy_scorer(true: pd.DataFrame, predict: npt.NDArray):
+    return (true["y"] == np.sign(predict)).mean()
 
 
 class BooleanFourierAnalyser:
@@ -163,6 +61,8 @@ class BooleanFourierAnalyser:
         eigenstates: int = 1,
         show_progress: bool = False,
     ):
+        if system.number_spins % 2 != 0:
+            raise ValueError("Only even number of spins are supported so far")
 
         self.system = system
         self.use_subset_symmetries = use_subset_symmetries
@@ -194,39 +94,77 @@ class BooleanFourierAnalyser:
 
         self.show_progress = show_progress
 
+        self.fourier_basis_state_info_df = batched_state_info_df(
+            self.fourier_basis, np.arange(2**self.system.number_spins, dtype="uint64")
+        )
+
+    def get_signal_df(
+        self, states: npt.NDArray[np.uint64], signal_opt: SignalOption = SignalOption()
+    ) -> pd.DataFrame:
+        """
+        Returns the data frame with the signal values for the given set of states
+        and the given signal option.
+
+        Parameters
+        ----------
+        states : npt.NDArray[np.uint64]
+
+            Array of states for which the signal values are to be calculated.
+
+        signal_opt : SignalOption
+            Signal option.
+
+        Returns
+        -------
+
+        pd.DataFrame
+
+        Data frame with the index of the states and the following columns:
+
+        - eigenstate_coeff: the coefficient of the given eigenstate
+        - amplitude: the amplitude of the given state
+        - prob: the probability of the given state
+        - y: the signal value (i.e. sign for signal_opt.kind == "sign")
+        """
+
+        signal_df = (
+            self.system.get_df_eigenstate(k=signal_opt.eigenstate, canonical_basis=True)
+            .assign(prob=lambda df: df["amplitude"] ** 2)
+            .loc[states, :]
+        )
+
+        y = signal_df["eigenstate_coeff"].values.astype("float64")
+
+        if signal_opt.kind == "sign":
+            y = np.sign(y)
+
+        signal_df["y"] = y
+
+        return signal_df
+
     def fit(
         self,
-        states: npt.NDArray[np.uint64],
+        x: npt.NDArray[np.uint64],
         signal_opt: SignalOption = SignalOption(),
         batch_size=100,
     ) -> "BooleanFourierAnalyser":
 
-        train_df = (
-            self.system.get_df_eigenstate(k=signal_opt.eigenstate, canonical_basis=True)
-            .assign(prob=lambda x: x["amplitude"] ** 2)
-            .loc[states]
-        )
-
-        x = np.array(train_df.index, dtype="uint64")
-        y = train_df["eigenstate_coeff"].astype("float64").values
-
-        if signal_opt.kind == "sign":
-            y = np.sign(y)
+        signal_df = self.get_signal_df(x, signal_opt)
 
         self.learner = BooleanFourierLearner(
             self.system.number_spins, self.fourier_basis.states
         )
 
         if signal_opt.weights == "prob":
-            weights = train_df["prob"].values
+            weights = signal_df["prob"].values.astype("float64")
         elif signal_opt.weights == "invprob":
-            weights = 1 / train_df["prob"].values
+            weights = 1.0 / signal_df["prob"].values.astype("float64")
         else:
             weights = None
 
         self.learner.fit(
             x,
-            y,
+            signal_df["y"].values.astype("float64"),
             weights=weights,
             batch_size=batch_size,
             show_progress=self.show_progress,
@@ -234,124 +172,97 @@ class BooleanFourierAnalyser:
 
         return self
 
-    def get_spectre_df(self, signal: SignalOption = SignalOption()):
-        if signal in self.spectre_cache:
-            return self.spectre_cache[signal]
+    def expand_fourier_coeffs_ser(self, coeffs: pd.Series) -> pd.Series:
+        """
+        Expands the Fourier coefficients to the full set of subsets. Each subset
+        is replaced by all its images under the action of the symmetry group
+        (including the sign symmetry), and the coefficients are duplicated accordingly.
 
-        signal_ = self.system.get_df_eigenstate(
-            k=signal.eigenstate, canonical_basis=True
-        )["eigenstate_coeff"]
+        Parameters
+        ----------
+        coeffs : pd.Series
+            Series with index of the subsets and values of the coefficients.
+            This can be produced by self.learner.get_coeffs_df() or contain
+            trimmed version (i.e. only the largest coefficients kept, etc.)
 
-        if signal.weighted:
-            weights = signal_**2 * (2**self.system.number_spins)
-        else:
-            weights = 1
+        Returns
+        -------
 
-        if signal.kind == "sign":
-            signal_ = np.sign(signal_)
+        pd.Series
+            Series with index of the full image of all subsets under the action of
+            the symmetry group, and values of the coefficients.
 
-        spectre_df = (
-            pd.DataFrame(
-                dict(
-                    coeff=self.fourier_decomposition(signal_ * weights),
-                ),
-                index=self.fourier_basis.states,
-            )
-            .assign(abs_coeff=lambda x: np.abs(x["coeff"]))
-            .sort_values("abs_coeff", ascending=False)
-        )
-
-        self.spectre_cache[signal] = spectre_df
-
-        return spectre_df
-
-    def visualize_spectre_support_barplot(
-        self, signal: SignalOption = SignalOption(), abs=False, elements=20, ax=None
-    ):
-        if ax is None:
-            ax = plt.gca()
-        return (
-            self.get_spectre_df(signal)
-            .iloc[:elements]
-            .plot.bar(y="abs_coeff" if abs else "coeff", ax=ax)
-        )
-
-    def visualize_spectre_support_lattice(
-        self, signal: SignalOption = SignalOption(), m: int = 0, ax=None
-    ):
-        if ax is None:
-            ax = plt.gca()
-        spectre = self.get_spectre_df(signal)
-        subset = np.array(spectre.index[m : m + 1])
-        subset_configuration = make_unpacked_configurations(
-            subset, self.system.number_spins
-        )[0]
-        self.system.lat.plot(spins=subset_configuration, ax=ax)
-        ax.set_title(f"subset: {subset}")
-
-    def visualize_spectre_values_hist(
-        self, signal: SignalOption = SignalOption(), abs=False, bins=50, ax=None
-    ):
-        if ax is None:
-            ax = plt.gca()
-        return self.get_spectre_df(signal)["abs_coeff" if abs else "coeff"].hist(
-            bins=bins, ax=ax
-        )
-
-    def spectre_entropy(self, signal: SignalOption = SignalOption()):
-        abs_coeff = self.get_spectre_df(signal)["abs_coeff"]
-        return entropy(abs_coeff / abs_coeff.sum())
+        """
+        return self.fourier_basis_state_info_df.join(coeffs, on="representative")[
+            "coeff"
+        ].dropna()
 
     def predict(
-        self, signal: SignalOption = SignalOption(), keep_first=None
-    ) -> np.ndarray:
-        coeffs = self.get_spectre_df(signal)["coeff"]
-        if keep_first is not None:
-            coeffs = coeffs.iloc[:keep_first]
+        self, x: npt.NDArray[np.uint64], coeffs: pd.Series
+    ) -> npt.NDArray[np.float64]:
 
-        if self.use_subset_symmetries:
-            state_info_df = batched_state_info_df(
-                self.fourier_basis, self.canonical_fourier_basis.states
-            )
-            coeffs = state_info_df.join(coeffs, on="representative")["coeff"].dropna()
+        transform_matrix = calculate_fourier_transform_matrix(
+            states=x, subsets=np.array(coeffs.index, dtype="uint64")
+        )
 
-        if keep_first is None:
-            if self.canonical_fourier_transform_matrix is None:
-                self.canonical_fourier_transform_matrix = get_fourier_transform_matrix(
-                    states=self.system.canonical_basis.states,
-                    subsets=self.canonical_fourier_basis.states,
-                    number_spins=self.system.number_spins,
-                    fourier_transform_matrix_cache=self.fourier_transform_matrix_cache,
-                    show_progress=True,
-                )
+        return np.array(
+            transform_matrix @ np.array(coeffs.values, dtype="float64"), dtype="float64"
+        )
 
-            coeffs = coeffs.loc[self.canonical_fourier_basis.states]
+    # def visualize_spectre_support_barplot(
+    #     self, signal: SignalOption = SignalOption(), abs=False, elements=20, ax=None
+    # ):
+    #     if ax is None:
+    #         ax = plt.gca()
+    #     return (
+    #         self.get_spectre_df(signal)
+    #         .iloc[:elements]
+    #         .plot.bar(y="abs_coeff" if abs else "coeff", ax=ax)
+    #     )
 
-            return self.canonical_fourier_transform_matrix @ coeffs
-        else:
-            transform_matrix = get_fourier_transform_matrix(
-                states=self.system.canonical_basis.states,
-                subsets=np.array(coeffs.index, dtype="uint64"),
-                number_spins=self.system.number_spins,
-                fourier_transform_matrix_cache=self.fourier_transform_matrix_cache,
-            )
+    # def visualize_spectre_support_lattice(
+    #     self, signal: SignalOption = SignalOption(), m: int = 0, ax=None
+    # ):
+    #     if ax is None:
+    #         ax = plt.gca()
+    #     spectre = self.get_spectre_df(signal)
+    #     subset = np.array(spectre.index[m : m + 1])
+    #     subset_configuration = make_unpacked_configurations(
+    #         subset, self.system.number_spins
+    #     )[0]
+    #     self.system.lat.plot(spins=subset_configuration, ax=ax)
+    #     ax.set_title(f"subset: {subset}")
 
-            return transform_matrix @ coeffs
+    # def visualize_spectre_values_hist(
+    #     self, signal: SignalOption = SignalOption(), abs=False, bins=50, ax=None
+    # ):
+    #     if ax is None:
+    #         ax = plt.gca()
+    #     return self.get_spectre_df(signal)["abs_coeff" if abs else "coeff"].hist(
+    #         bins=bins, ax=ax
+    #     )
 
-    def sign_prediction_accuracy(
-        self, eigenstate: int = 0, keep_first=None, weighted=False
+    # def spectre_entropy(self, signal: SignalOption = SignalOption()):
+    #     abs_coeff = self.get_spectre_df(signal)["abs_coeff"]
+    #     return entropy(abs_coeff / abs_coeff.sum())
+
+    def prediction_score(
+        self,
+        x: npt.NDArray[np.uint64],
+        coeffs: pd.Series,
+        signal_opt: SignalOption = SignalOption(),
+        scorer: Union[str, ScorerType] = "overlap",
     ) -> float:
-        eigenstate_coeffs = self.system.get_df_eigenstate(
-            k=eigenstate, canonical_basis=True
-        )["eigenstate_coeff"]
-        if weighted:
-            sample_weight = np.abs(eigenstate_coeffs) ** 2
+
+        if isinstance(scorer, str) and scorer in scorers:
+            scorer = scorers[scorer]
         else:
-            sample_weight = None
-        return accuracy_score(
-            np.sign(
-                self.predict(SignalOption("sign", eigenstate), keep_first=keep_first)
-            ),
-            np.sign(eigenstate_coeffs),
-            sample_weight=sample_weight,
-        )  # type: ignore
+            raise ValueError(
+                f"scorer {scorer} not found. Available scorers: {list(scorers.keys())}"
+            )
+
+        signal_df = self.get_signal_df(x, signal_opt)
+        prediction = self.predict(x, coeffs)
+        if signal_opt.kind == "sign":
+            prediction = np.sign(prediction)
+        return scorer(signal_df, prediction)
