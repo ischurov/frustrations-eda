@@ -7,17 +7,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import scipy
+import scipy.sparse.linalg
 
 from spin_lattices import SpinLattice
 from utils import make_unpacked_configurations
-
-GROUND_STATE_DIR = Path("groundstates")  # type: ignore
-
-
-def pad_right(arr, n):
-    # Pad the array with zeros to the left to create an n x 8 matrix
-    arr = arr.reshape(-1, 1)
-    return np.pad(arr, [(0, 0), (0, n - 1)], "constant", constant_values=0)
 
 
 def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
@@ -39,8 +33,8 @@ def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
     - character: character of the group element that takes the representative to the state
     - norm: normalizing coefficient
     """
-    representative, eigenvalue, norm = basis.batched_state_info(pad_right(states, 8))
-    representative = representative[:, 0]
+    representative, eigenvalue, norm = basis.state_info(states)
+
     return pd.DataFrame(
         dict(representative=representative, character=eigenvalue, norm=norm),
         index=states,
@@ -53,18 +47,20 @@ class SpinSystem:
         lat: SpinLattice,
         basis: ls.SpinBasis,
         hamiltonian: ls.Operator,
-        symmetry_group: ls.Group,
+        symmetries: ls.Symmetries,
+        ground_state_cache_dir: Path | None = None,
     ):
         self.lat = lat
         self.basis = basis
         self.hamiltonian = hamiltonian
         self.number_spins = len(lat.sites)
-        self.symmetry_group = symmetry_group
+        self.symmetries = symmetries
+        self.ground_state_cache_dir = ground_state_cache_dir
 
         self.canonical_basis = ls.SpinBasis(
-            ls.Group([]),
+            symmetries=ls.Symmetries([]),
             number_spins=self.number_spins,
-            hamming_weight=basis.hamming_weight,
+            hamming_weight=self.number_spins // 2,
             spin_inversion=None,
         )
 
@@ -81,6 +77,18 @@ class SpinSystem:
         of one-dimensional np.arrays with 0's and 1's
         """
         return make_unpacked_configurations(self.basis.states, self.number_spins)
+
+    def _find_cached_eigenstate(self, k) -> tuple[np.ndarray, np.ndarray] | None:
+        if self.ground_state_cache_dir is None:
+            return None
+        for eigenstate in range(k, 20):
+            eigenstate_path = self.eigenstate_path(eigenstate)
+            if eigenstate_path and eigenstate_path.exists():
+                print(
+                    f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
+                )
+                eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
+                return eigenvalues, eigenstates
 
     def get_eigenstates(self, k=1) -> tuple[np.ndarray, np.ndarray]:
         """
@@ -99,25 +107,24 @@ class SpinSystem:
             eigenvalues
 
         """
-        for eigenstate in range(k, 20):
-            eigenstate_path = self.eigenstate_path(eigenstate)
-            if eigenstate_path and eigenstate_path.exists():
-                print(
-                    f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
-                )
-                eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
-                break
+        if (cached_eigenstate := self._find_cached_eigenstate(k)) is not None:
+            eigenvalues, eigenstates = cached_eigenstate
         else:
             # Diagonalize the Hamiltonian using ARPACK
             print("Calculating eigenvalues / eigenstates")
-            eigenvalues, eigenstates = ls.diagonalize(self.hamiltonian, k=k)
+            eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(
+                self.hamiltonian, k=k, which="SA"
+            )
             eigenstates = eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1)
             # make sure that the first element of each eigenvector is positive
             # for reproducibility
 
-            GROUND_STATE_DIR.mkdir(exist_ok=True)
-            if eigenstate_path := self.eigenstate_path(k):
-                eigenstate_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
+            if self.ground_state_cache_dir is not None:
+                self.ground_state_cache_dir.mkdir(exist_ok=True)
+                if eigenstate_path := self.eigenstate_path(k):
+                    eigenstate_path.write_bytes(
+                        pickle.dumps((eigenvalues, eigenstates))
+                    )
 
         print("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
@@ -128,7 +135,6 @@ class SpinSystem:
         self.eigenstates = eigenstates
 
         return eigenvalues, eigenstates
-        # assert np.isclose(eigenvalues[0], -18.06178542)
 
     def get_df_eigenstate(
         self,
@@ -240,7 +246,6 @@ class SpinSystem:
 
 
 class HeisenbergJ1J2(SpinSystem):
-    # noinspection NonAsciiCharacters
     def __init__(
         self,
         lat: SpinLattice,
@@ -263,56 +268,47 @@ class HeisenbergJ1J2(SpinSystem):
         # Constructing symmetries
 
         if use_symmetries:
-            symmetries = [
+            symmetries_lst = [
                 ls.Symmetry(automorphism, sector=0)
                 for automorphism in lat.get_automorphisms()
             ]
         else:
-            symmetries = []
+            symmetries_lst = []
 
         # Constructing the group
-        symmetry_group = ls.Group(symmetries)
-        print("Symmetry group contains {} elements".format(len(symmetry_group)))
+        symmetries = ls.Symmetries(symmetries_lst)
+        print("Symmetry group contains {} elements".format(len(symmetries)))
 
         # Constructing the basis
         basis = ls.SpinBasis(
-            symmetry_group,
+            symmetries=symmetries,
             number_spins=number_spins,
-            hamming_weight=hamming_weight,
             spin_inversion=spin_inversion,
+            hamming_weight=hamming_weight,
         )
 
         basis.build()  # Build the list of representatives, we need it since we're doing ED
         print("Hilbert space dimension is {}".format(basis.number_states))
 
-        # Heisenberg Hamiltonian
+        # Constructing the Hamiltonian
+        expr_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
+
         # fmt: off
-        σ_x = np.array([ [0, 1]
-                       , [1, 0] ])
-        σ_y = np.array([ [0j, -1j]
-                       , [1j,   0j] ])
-        σ_z = np.array([ [1,  0]
-                       , [0, -1] ])
+        expr = (J1 * ls.Expr(expr_str, sites=lat.kind_to_edges[1]) + 
+                J2 * ls.Expr(expr_str, sites=lat.kind_to_edges[2]))
         # fmt: on
-        σ_p = σ_x + 1j * σ_y
-        σ_m = σ_x - 1j * σ_y
 
-        matrix = 0.5 * (np.kron(σ_p, σ_m) + np.kron(σ_m, σ_p)) + np.kron(σ_z, σ_z)
-
-        hamiltonian = ls.Operator(
-            basis,
-            [
-                ls.Interaction(J * matrix, edges)
-                for J, (_, edges) in zip([J1, J2], sorted(lat.kind_to_edges.items()))
-            ],
-        )
+        hamiltonian = ls.Operator(basis, expr)
 
         super().__init__(
-            lat=lat, basis=basis, hamiltonian=hamiltonian, symmetry_group=symmetry_group
+            lat=lat, basis=basis, hamiltonian=hamiltonian, symmetries=symmetries
         )
 
-    def eigenstate_path(self, k: int):
-        return (
-            GROUND_STATE_DIR / f"{self.__class__.__name__}-{self.lat.file_stem}-"
+    def eigenstate_path(self, k: int) -> Path | None:
+        if self.ground_state_cache_dir is None:
+            return None
+        return Path(
+            self.ground_state_cache_dir
+            / f"{self.__class__.__name__}-{self.lat.file_stem}-"
             f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}-{k}.pickle"
         )

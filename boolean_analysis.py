@@ -70,7 +70,7 @@ class BooleanFourierAnalyser:
         number_spins = self.system.number_spins
 
         self.canonical_fourier_basis = ls.SpinBasis(
-            ls.Group([]),
+            symmetries=ls.Symmetries([]),
             number_spins=number_spins,
             hamming_weight=None,
             spin_inversion=None,
@@ -79,7 +79,7 @@ class BooleanFourierAnalyser:
 
         if use_subset_symmetries:
             self.fourier_basis = ls.SpinBasis(
-                self.system.symmetry_group,
+                symmerties=self.system.symmerties,
                 number_spins=number_spins,
                 hamming_weight=None,
                 spin_inversion=1,
@@ -151,9 +151,7 @@ class BooleanFourierAnalyser:
 
         signal_df = self.get_signal_df(x, signal_opt)
 
-        self.learner = BooleanFourierLearner(
-            self.system.number_spins, self.fourier_basis.states
-        )
+        self.learner = BooleanFourierLearner(self.system.number_spins, self.fourier_basis.states)
 
         if signal_opt.weights == "prob":
             weights = signal_df["prob"].values.astype("float64")
@@ -193,13 +191,9 @@ class BooleanFourierAnalyser:
             the symmetry group, and values of the coefficients.
 
         """
-        return self.fourier_basis_state_info_df.join(coeffs, on="representative")[
-            "coeff"
-        ].dropna()
+        return self.fourier_basis_state_info_df.join(coeffs, on="representative")["coeff"].dropna()
 
-    def predict(
-        self, x: npt.NDArray[np.uint64], coeffs: pd.Series
-    ) -> npt.NDArray[np.float64]:
+    def predict(self, x: npt.NDArray[np.uint64], coeffs: pd.Series) -> npt.NDArray[np.float64]:
 
         transform_matrix = calculate_fourier_transform_matrix(
             states=x, subsets=np.array(coeffs.index, dtype="uint64")
