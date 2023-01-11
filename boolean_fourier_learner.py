@@ -6,9 +6,8 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from tqdm import tqdm
-
 from parity import calculate_fourier_transform_matrix
+from tqdm import tqdm
 
 
 class BooleanFourierLearner:
@@ -120,15 +119,14 @@ class BooleanFourierLearner:
         if not hasattr(self, "coeffs_"):
             raise ValueError("Model is not fitted; please, run .fit(x, y, ...) first")
 
-    def get_coeffs_df(self):
+    def get_coeffs_ser(self) -> pd.Series:
         self._assure_fitted()
 
         if not hasattr(self, "coeffs_df_"):
-            self.coeffs_df_ = (
+            self.coeffs_ser_ = (
                 pd.DataFrame(dict(coeff=self.coeffs_), index=self.subsets)
                 .assign(abs_coeff=lambda x: np.abs(x["coeff"]))
-                .sort_values("abs_coeff", ascending=False)
-                .drop("abs_coeff", axis=1)
+                .sort_values("abs_coeff", ascending=False)['coeff']
             )
 
-        return self.coeffs_df_
+        return self.coeffs_ser_

@@ -13,17 +13,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from parity import calculate_fourier_transform_matrix
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
-
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
-    SpinSystem,
-    batched_state_info_df,
-    make_unpacked_configurations,
-)
-from parity import calculate_fourier_transform_matrix
 
 
 @dataclass(frozen=True)
@@ -45,12 +40,27 @@ def register_as_scorer(f: ScorerType):
 
 @register_as_scorer
 def overlap_scorer(true: pd.DataFrame, predict: npt.NDArray):
-    return (true["y"] * predict * true["amplitude"]).sum() / true["prob"].sum()
+    return (true["y"] * predict * true["prob"]).sum() / true["prob"].sum()
 
 
 @register_as_scorer
 def accuracy_scorer(true: pd.DataFrame, predict: npt.NDArray):
     return (true["y"] == np.sign(predict)).mean()
+
+
+TruncateStrategy = Callable[[pd.Series], pd.Series]
+
+
+def keep_largest_n(n: int) -> TruncateStrategy:
+    def truncate(s: pd.Series) -> pd.Series:
+        return (
+            s.to_frame()
+            .assign(abs_value=lambda x: np.abs(x["coeff"]))
+            .sort_values("abs_value", ascending=False)["coeff"]
+            .iloc[:n]
+        )
+
+    return truncate
 
 
 class BooleanFourierAnalyser:
@@ -66,6 +76,7 @@ class BooleanFourierAnalyser:
 
         self.system = system
         self.use_subset_symmetries = use_subset_symmetries
+        self.truncate_strategy: TruncateStrategy = lambda s: s
 
         number_spins = self.system.number_spins
 
@@ -79,7 +90,7 @@ class BooleanFourierAnalyser:
 
         if use_subset_symmetries:
             self.fourier_basis = ls.SpinBasis(
-                symmerties=self.system.symmerties,
+                symmetries=self.system.symmetries,
                 number_spins=number_spins,
                 hamming_weight=None,
                 spin_inversion=1,
@@ -98,7 +109,7 @@ class BooleanFourierAnalyser:
             self.fourier_basis, np.arange(2**self.system.number_spins, dtype="uint64")
         )
 
-    def get_signal_df(
+    def _get_signal_df(
         self, states: npt.NDArray[np.uint64], signal_opt: SignalOption = SignalOption()
     ) -> pd.DataFrame:
         """
@@ -130,7 +141,7 @@ class BooleanFourierAnalyser:
         signal_df = (
             self.system.get_df_eigenstate(k=signal_opt.eigenstate, canonical_basis=True)
             .assign(prob=lambda df: df["amplitude"] ** 2)
-            .loc[states, :]
+            .loc[states]
         )
 
         y = signal_df["eigenstate_coeff"].values.astype("float64")
@@ -149,7 +160,8 @@ class BooleanFourierAnalyser:
         batch_size=100,
     ) -> "BooleanFourierAnalyser":
 
-        signal_df = self.get_signal_df(x, signal_opt)
+        self.signal_opt = signal_opt
+        signal_df = self._get_signal_df(x, signal_opt)
 
         self.learner = BooleanFourierLearner(self.system.number_spins, self.fourier_basis.states)
 
@@ -170,6 +182,10 @@ class BooleanFourierAnalyser:
 
         return self
 
+    def set_truncate_strategy(self, strategy: TruncateStrategy):
+        self.truncate_strategy = strategy
+        return self
+
     def expand_fourier_coeffs_ser(self, coeffs: pd.Series) -> pd.Series:
         """
         Expands the Fourier coefficients to the full set of subsets. Each subset
@@ -180,7 +196,7 @@ class BooleanFourierAnalyser:
         ----------
         coeffs : pd.Series
             Series with index of the subsets and values of the coefficients.
-            This can be produced by self.learner.get_coeffs_df() or contain
+            This can be produced by self.learner.get_coeffs_ser() or contain
             trimmed version (i.e. only the largest coefficients kept, etc.)
 
         Returns
@@ -193,14 +209,16 @@ class BooleanFourierAnalyser:
         """
         return self.fourier_basis_state_info_df.join(coeffs, on="representative")["coeff"].dropna()
 
-    def predict(self, x: npt.NDArray[np.uint64], coeffs: pd.Series) -> npt.NDArray[np.float64]:
+    def predict(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
+
+        coeffs = self.truncate_strategy(self.learner.get_coeffs_ser())
 
         transform_matrix = calculate_fourier_transform_matrix(
             states=x, subsets=np.array(coeffs.index, dtype="uint64")
         )
 
-        return np.array(
-            transform_matrix @ np.array(coeffs.values, dtype="float64"), dtype="float64"
+        return np.asarray(
+            transform_matrix @ np.asarray(coeffs.values, dtype="float64"), dtype="float64"
         )
 
     # def visualize_spectre_support_barplot(
@@ -243,8 +261,6 @@ class BooleanFourierAnalyser:
     def prediction_score(
         self,
         x: npt.NDArray[np.uint64],
-        coeffs: pd.Series,
-        signal_opt: SignalOption = SignalOption(),
         scorer: Union[str, ScorerType] = "overlap",
     ) -> float:
 
@@ -255,8 +271,8 @@ class BooleanFourierAnalyser:
                 f"scorer {scorer} not found. Available scorers: {list(scorers.keys())}"
             )
 
-        signal_df = self.get_signal_df(x, signal_opt)
-        prediction = self.predict(x, coeffs)
-        if signal_opt.kind == "sign":
+        signal_df = self._get_signal_df(x, self.signal_opt)
+        prediction = self.predict(x)
+        if self.signal_opt.kind == "sign":
             prediction = np.sign(prediction)
         return scorer(signal_df, prediction)

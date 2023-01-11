@@ -84,9 +84,7 @@ class SpinSystem:
         for eigenstate in range(k, 20):
             eigenstate_path = self.eigenstate_path(eigenstate)
             if eigenstate_path and eigenstate_path.exists():
-                print(
-                    f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
-                )
+                print(f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}")
                 eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
                 return eigenvalues, eigenstates
 
@@ -112,9 +110,7 @@ class SpinSystem:
         else:
             # Diagonalize the Hamiltonian using ARPACK
             print("Calculating eigenvalues / eigenstates")
-            eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(
-                self.hamiltonian, k=k, which="SA"
-            )
+            eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(self.hamiltonian, k=k, which="SA")
             eigenstates = eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1)
             # make sure that the first element of each eigenvector is positive
             # for reproducibility
@@ -122,9 +118,7 @@ class SpinSystem:
             if self.ground_state_cache_dir is not None:
                 self.ground_state_cache_dir.mkdir(exist_ok=True)
                 if eigenstate_path := self.eigenstate_path(k):
-                    eigenstate_path.write_bytes(
-                        pickle.dumps((eigenvalues, eigenstates))
-                    )
+                    eigenstate_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
 
         print("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
@@ -152,9 +146,7 @@ class SpinSystem:
         if self.eigenstates is None:
             raise ValueError(f"Eigenstate not found; run .get_eigenstates({k}) first")
         elif self.eigenstates.shape[1] <= k:
-            raise ValueError(
-                f"Not enough eigenstates found; run .get_eigenstates({k}) first"
-            )
+            raise ValueError(f"Not enough eigenstates found; run .get_eigenstates({k}) first")
 
         df = pd.DataFrame(
             dict(eigenstate_coeff=self.eigenstates[:, k]),
@@ -167,9 +159,7 @@ class SpinSystem:
         df["amplitude"] = np.abs(df["eigenstate_coeff"])
 
         if unpack_configurations:
-            unpacked_configurations = make_unpacked_configurations(
-                df.index, self.number_spins
-            )
+            unpacked_configurations = make_unpacked_configurations(df.index, self.number_spins)
             if expand_basis_columns:
                 spins_df = pd.DataFrame(
                     unpacked_configurations,
@@ -253,6 +243,7 @@ class HeisenbergJ1J2(SpinSystem):
         J2: float = 1.0,
         use_symmetries=True,
         spin_inversion: Optional[int] = 1,
+        ground_state_cache_dir: Path | None = None,
     ):
         J1 = float(J1)
         J2 = float(J2)
@@ -269,8 +260,7 @@ class HeisenbergJ1J2(SpinSystem):
 
         if use_symmetries:
             symmetries_lst = [
-                ls.Symmetry(automorphism, sector=0)
-                for automorphism in lat.get_automorphisms()
+                ls.Symmetry(automorphism, sector=0) for automorphism in lat.get_automorphisms()
             ]
         else:
             symmetries_lst = []
@@ -301,14 +291,17 @@ class HeisenbergJ1J2(SpinSystem):
         hamiltonian = ls.Operator(basis, expr)
 
         super().__init__(
-            lat=lat, basis=basis, hamiltonian=hamiltonian, symmetries=symmetries
+            lat=lat,
+            basis=basis,
+            hamiltonian=hamiltonian,
+            symmetries=symmetries,
+            ground_state_cache_dir=ground_state_cache_dir,
         )
 
     def eigenstate_path(self, k: int) -> Path | None:
         if self.ground_state_cache_dir is None:
             return None
         return Path(
-            self.ground_state_cache_dir
-            / f"{self.__class__.__name__}-{self.lat.file_stem}-"
+            self.ground_state_cache_dir / f"{self.__class__.__name__}-{self.lat.file_stem}-"
             f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}-{k}.pickle"
         )
