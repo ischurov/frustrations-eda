@@ -6,8 +6,9 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from parity import calculate_fourier_transform_matrix
 from tqdm import tqdm
+
+from parity import calculate_fourier_transform_matrix
 
 
 class BooleanFourierLearner:
@@ -55,9 +56,7 @@ class BooleanFourierLearner:
             )
 
         if y.dtype == "uint8" or y.dtype == "int8":
-            print(
-                "Warning! Possible overfulls due to small dtype of y. Converting to int64"
-            )
+            print("Warning! Possible overfulls due to small dtype of y. Converting to int64")
             y = y.astype("int64")
 
         if pickle_progress_to is not None:
@@ -82,23 +81,18 @@ class BooleanFourierLearner:
                 y_batch = y[i * batch_size : (i + 1) * batch_size]
                 weights_batch = weights[i * batch_size : (i + 1) * batch_size]
             else:
-                indicies = np.random.choice(
-                    np.arange(sample_size), batch_size, replace=False
-                )
+                indicies = np.random.choice(np.arange(sample_size), batch_size, replace=False)
                 x_batch = x[indicies]
                 y_batch = y[indicies]
                 weights_batch = weights[indicies]
 
-            fourier_transform_matrix = calculate_fourier_transform_matrix(
-                x_batch,
-                self.subsets
+            fourier_transform_matrix = np.asanyarray(
+                calculate_fourier_transform_matrix(x_batch, self.subsets).T,
+                order="C")
+
+            sumprod_delta = (fourier_transform_matrix @ (weights_batch * y_batch)).astype(
+                "float64"
             )
-
-            self.fourier_transform_matrix = fourier_transform_matrix
-
-            sumprod_delta = (
-                fourier_transform_matrix.T @ (weights_batch * y_batch)
-            ).astype("float64")
 
             if equal_batches:
                 sumprod += sumprod_delta / batch_size / n_batches
@@ -115,18 +109,18 @@ class BooleanFourierLearner:
         self.x_ = x
         self.y_ = y
 
-    def _assure_fitted(self):
+    def _ensure_fitted(self):
         if not hasattr(self, "coeffs_"):
             raise ValueError("Model is not fitted; please, run .fit(x, y, ...) first")
 
     def get_coeffs_ser(self) -> pd.Series:
-        self._assure_fitted()
+        self._ensure_fitted()
 
         if not hasattr(self, "coeffs_df_"):
             self.coeffs_ser_ = (
                 pd.DataFrame(dict(coeff=self.coeffs_), index=self.subsets)
                 .assign(abs_coeff=lambda x: np.abs(x["coeff"]))
-                .sort_values("abs_coeff", ascending=False)['coeff']
+                .sort_values("abs_coeff", ascending=False)["coeff"]
             )
 
         return self.coeffs_ser_

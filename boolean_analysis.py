@@ -6,19 +6,25 @@ FOURIER_BASIS_DIR.mkdir(exist_ok=True)
 
 from dataclasses import dataclass
 from hashlib import md5
-from typing import Callable, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union
 
 import lattice_symmetries as ls
 import matplotlib.pyplot as plt
 import numpy as np
+import numpy.linalg
 import numpy.typing as npt
 import pandas as pd
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
-from parity import calculate_fourier_transform_matrix
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
+
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix
 
 
 @dataclass(frozen=True)
@@ -48,6 +54,11 @@ def accuracy_scorer(true: pd.DataFrame, predict: npt.NDArray):
     return (true["y"] == np.sign(predict)).mean()
 
 
+@register_as_scorer
+def neg_mse_scorer(true: pd.DataFrame, predict: npt.NDArray) -> float:
+    return -float(np.mean((true["y"] - predict) ** 2))
+
+
 TruncateStrategy = Callable[[pd.Series], pd.Series]
 
 
@@ -63,6 +74,10 @@ def keep_largest_n(n: int) -> TruncateStrategy:
     return truncate
 
 
+def keep_everything(s: pd.Series) -> pd.Series:
+    return s
+
+
 class BooleanFourierAnalyser:
     def __init__(
         self,
@@ -76,7 +91,7 @@ class BooleanFourierAnalyser:
 
         self.system = system
         self.use_subset_symmetries = use_subset_symmetries
-        self.truncate_strategy: TruncateStrategy = lambda s: s
+        self.truncate_strategy: TruncateStrategy = keep_everything
 
         number_spins = self.system.number_spins
 
@@ -93,7 +108,7 @@ class BooleanFourierAnalyser:
                 symmetries=self.system.symmetries,
                 number_spins=number_spins,
                 hamming_weight=None,
-                spin_inversion=1,
+                spin_inversion=None,
             )
         else:
             self.fourier_basis = self.canonical_fourier_basis
@@ -109,9 +124,7 @@ class BooleanFourierAnalyser:
             self.fourier_basis, np.arange(2**self.system.number_spins, dtype="uint64")
         )
 
-    def _get_signal_df(
-        self, states: npt.NDArray[np.uint64], signal_opt: SignalOption = SignalOption()
-    ) -> pd.DataFrame:
+    def _get_signal_df(self, states: npt.NDArray[np.uint64]) -> pd.DataFrame:
         """
         Returns the data frame with the signal values for the given set of states
         and the given signal option.
@@ -121,9 +134,6 @@ class BooleanFourierAnalyser:
         states : npt.NDArray[np.uint64]
 
             Array of states for which the signal values are to be calculated.
-
-        signal_opt : SignalOption
-            Signal option.
 
         Returns
         -------
@@ -139,19 +149,21 @@ class BooleanFourierAnalyser:
         """
 
         signal_df = (
-            self.system.get_df_eigenstate(k=signal_opt.eigenstate, canonical_basis=True)
+            self.system.get_df_eigenstate(k=self.signal_opt.eigenstate, canonical_basis=True)
             .assign(prob=lambda df: df["amplitude"] ** 2)
             .loc[states]
         )
+        # TODO: there is typing issue here
+        # see https://stackoverflow.com/questions/75084155/use-npt-ndarraynp-uint64-to-query-pd-dataframe
 
         y = signal_df["eigenstate_coeff"].values.astype("float64")
 
-        if signal_opt.kind == "sign":
+        if self.signal_opt.kind == "sign":
             y = np.sign(y)
 
         signal_df["y"] = y
 
-        return signal_df
+        return signal_df  # type: ignore # see above
 
     def fit(
         self,
@@ -161,7 +173,7 @@ class BooleanFourierAnalyser:
     ) -> "BooleanFourierAnalyser":
 
         self.signal_opt = signal_opt
-        signal_df = self._get_signal_df(x, signal_opt)
+        signal_df = self._get_signal_df(x)
 
         self.learner = BooleanFourierLearner(self.system.number_spins, self.fourier_basis.states)
 
@@ -209,9 +221,30 @@ class BooleanFourierAnalyser:
         """
         return self.fourier_basis_state_info_df.join(coeffs, on="representative")["coeff"].dropna()
 
+    def get_expanded_coeffs_ser(self) -> pd.Series:
+        """
+        Returns the Fourier coefficients expanded to the full set of subsets.
+
+        Besides the expansion, the coefficients are also normalized in such a way
+        that Plancherel's theorem holds.
+
+        Returns
+        -------
+
+        pd.Series
+            Series with index of the full image of all subsets under the action of
+            the symmetry group, and values of the coefficients.
+
+        """
+        return (
+            self.expand_fourier_coeffs_ser(self.learner.get_coeffs_ser())
+            * self.system.canonical_basis.states.shape[0]
+            / 2**self.system.number_spins
+        )
+
     def predict(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
 
-        coeffs = self.truncate_strategy(self.learner.get_coeffs_ser())
+        coeffs = self.truncate_strategy(self.get_expanded_coeffs_ser())
 
         transform_matrix = calculate_fourier_transform_matrix(
             states=x, subsets=np.array(coeffs.index, dtype="uint64")
