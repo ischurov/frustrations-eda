@@ -78,6 +78,59 @@ def keep_everything(s: pd.Series) -> pd.Series:
     return s
 
 
+def find_character(x: pd.DataFrame, n_spins: int) -> np.ndarray:
+    if (n_spins // 2) % 2 == 0:
+        return np.ones_like(x["representative"])
+    return np.where(
+        x["representative"] != x["representative_x"],
+        -1,
+        np.where(x["representative"] != x["representative_y"], 1, 0),
+    )
+
+
+def make_fourier_basis_state_info_sym(
+    system: SpinSystem,
+) -> tuple[npt.NDArray[np.uint64], pd.DataFrame]:
+    fourier_basis = ls.SpinBasis(
+        symmetries=system.symmetries,
+        number_spins=system.number_spins,
+        hamming_weight=None,
+        spin_inversion=None,
+    )
+    fourier_basis.build()
+
+    all_subsets = np.arange(2**system.number_spins, dtype="uint64")
+    mask = 2**system.number_spins - 1
+
+    fourier_basis_state_info = batched_state_info_df(fourier_basis, all_subsets).drop(
+        "norm", axis=1
+    )
+    sign_flip_basis_correspondence = (
+        batched_state_info_df(fourier_basis, fourier_basis.states ^ mask)
+        .assign(initial_representative=fourier_basis.states)
+        .drop(["character", "norm"], axis=1)
+    )
+    fourier_basis_state_info_df = (
+        fourier_basis_state_info.merge(
+            sign_flip_basis_correspondence,
+            left_on="representative",
+            right_on="initial_representative",
+            how="left",
+        )
+        .assign(representative=lambda x: np.minimum(x["representative_x"], x["representative_y"]))
+        .assign(character=lambda x: find_character(x, system.number_spins))
+        .drop(["representative_x", "representative_y", "initial_representative"], axis=1)
+        .reindex(columns=["representative", "character"])
+    )
+
+    subsets = sign_flip_basis_correspondence[
+        lambda x: x["initial_representative"] <= x["representative"]  # type: ignore
+    ]["initial_representative"].values
+    # see https://github.com/pandas-dev/pandas-stubs/issues/256#issuecomment-1235774506
+
+    return subsets, fourier_basis_state_info_df
+
+
 class BooleanFourierAnalyser:
     def __init__(
         self,
@@ -86,9 +139,6 @@ class BooleanFourierAnalyser:
         eigenstates: int = 1,
         show_progress: bool = False,
     ):
-        if system.number_spins % 2 != 0:
-            raise ValueError("Only even number of spins are supported so far")
-
         self.system = system
         self.use_subset_symmetries = use_subset_symmetries
         self.truncate_strategy: TruncateStrategy = keep_everything
@@ -104,25 +154,22 @@ class BooleanFourierAnalyser:
         self.canonical_fourier_basis.build()
 
         if use_subset_symmetries:
-            self.fourier_basis = ls.SpinBasis(
-                symmetries=self.system.symmetries,
-                number_spins=number_spins,
-                hamming_weight=None,
-                spin_inversion=None,
+            self.subsets, self.fourier_basis_state_info_df = make_fourier_basis_state_info_sym(
+                self.system
             )
-        else:
-            self.fourier_basis = self.canonical_fourier_basis
 
-        self.fourier_basis.build()
+        else:
+            self.fourier_basis_state_info_df = batched_state_info_df(
+                self.canonical_fourier_basis,
+                np.arange(2**self.system.number_spins, dtype="uint64"),
+            ).drop("norm", axis=1)
+
+            self.subsets = self.canonical_fourier_basis.states
 
         print("Finding system ground state")
         self.system.get_eigenstates(eigenstates)
 
         self.show_progress = show_progress
-
-        self.fourier_basis_state_info_df = batched_state_info_df(
-            self.fourier_basis, np.arange(2**self.system.number_spins, dtype="uint64")
-        )
 
     def _get_signal_df(self, states: npt.NDArray[np.uint64]) -> pd.DataFrame:
         """
@@ -151,10 +198,9 @@ class BooleanFourierAnalyser:
         signal_df = (
             self.system.get_df_eigenstate(k=self.signal_opt.eigenstate, canonical_basis=True)
             .assign(prob=lambda df: df["amplitude"] ** 2)
-            .loc[states]
-        )
-        # TODO: there is typing issue here
-        # see https://stackoverflow.com/questions/75084155/use-npt-ndarraynp-uint64-to-query-pd-dataframe
+            .loc[states, :]
+        )  # type: ignore
+        # See https://github.com/pandas-dev/pandas-stubs/issues/508
 
         y = signal_df["eigenstate_coeff"].values.astype("float64")
 
@@ -163,7 +209,7 @@ class BooleanFourierAnalyser:
 
         signal_df["y"] = y
 
-        return signal_df  # type: ignore # see above
+        return signal_df
 
     def fit(
         self,
@@ -175,7 +221,7 @@ class BooleanFourierAnalyser:
         self.signal_opt = signal_opt
         signal_df = self._get_signal_df(x)
 
-        self.learner = BooleanFourierLearner(self.system.number_spins, self.fourier_basis.states)
+        self.learner = BooleanFourierLearner(self.system.number_spins, self.subsets)
 
         if signal_opt.weights == "prob":
             weights = signal_df["prob"].values.astype("float64")
@@ -198,29 +244,6 @@ class BooleanFourierAnalyser:
         self.truncate_strategy = strategy
         return self
 
-    def expand_fourier_coeffs_ser(self, coeffs: pd.Series) -> pd.Series:
-        """
-        Expands the Fourier coefficients to the full set of subsets. Each subset
-        is replaced by all its images under the action of the symmetry group
-        (including the sign symmetry), and the coefficients are duplicated accordingly.
-
-        Parameters
-        ----------
-        coeffs : pd.Series
-            Series with index of the subsets and values of the coefficients.
-            This can be produced by self.learner.get_coeffs_ser() or contain
-            trimmed version (i.e. only the largest coefficients kept, etc.)
-
-        Returns
-        -------
-
-        pd.Series
-            Series with index of the full image of all subsets under the action of
-            the symmetry group, and values of the coefficients.
-
-        """
-        return self.fourier_basis_state_info_df.join(coeffs, on="representative")["coeff"].dropna()
-
     def get_expanded_coeffs_ser(self) -> pd.Series:
         """
         Returns the Fourier coefficients expanded to the full set of subsets.
@@ -236,8 +259,14 @@ class BooleanFourierAnalyser:
             the symmetry group, and values of the coefficients.
 
         """
+
         return (
-            self.expand_fourier_coeffs_ser(self.learner.get_coeffs_ser())
+            self.fourier_basis_state_info_df.join(
+                self.learner.get_coeffs_ser(), on="representative"
+            )
+            .dropna()
+            .assign(coeff_adjusted=lambda x: x["coeff"] * x["character"])["coeff_adjusted"]
+            .rename("coeff")
             * self.system.canonical_basis.states.shape[0]
             / 2**self.system.number_spins
         )
@@ -304,7 +333,7 @@ class BooleanFourierAnalyser:
                 f"scorer {scorer} not found. Available scorers: {list(scorers.keys())}"
             )
 
-        signal_df = self._get_signal_df(x, self.signal_opt)
+        signal_df = self._get_signal_df(x)
         prediction = self.predict(x)
         if self.signal_opt.kind == "sign":
             prediction = np.sign(prediction)

@@ -23,7 +23,6 @@ def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
     else:
         fig = ax.figure
 
-    # Get Unique continents
     color_labels = sorted(data[color].unique())
 
     # List of colors in the color palettes
@@ -88,8 +87,7 @@ class SpinLattice:
         self.width = width
 
         edges = [
-            ((named_sites[start], named_sites[end]), kind)
-            for (start, end), kind in named_edges
+            ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
         ]
 
         sites = []
@@ -134,9 +132,7 @@ class SpinLattice:
             columns=["num", "ix", "iy", "is_canonical"],
         )
 
-        sites_df[["emb_x", "emb_y"]] = (
-            self.lattice_basis @ sites_df[["ix", "iy"]].T.values
-        ).T
+        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
         self.sites_df = sites_df
 
     @property
@@ -172,16 +168,19 @@ class SpinLattice:
 
     def plot(self, spins=None, show_edges=True, ax=None):
         """Plots the lattice and optionally visualizes some spin configuration"""
-        if spins is not None:
-            if isinstance(spins, (int, np.uint64)):
-                spins = make_unpacked_configurations(
-                    np.array(spins, dtype="uint64"), len(self.sites)
-                )[0]
-            spins_df = pd.DataFrame(dict(spin=spins))
-            sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
-        else:
-            sites_df = self.sites_df
+        if spins is None:
+            spins = 0
 
+    
+        if isinstance(spins, (int, np.uint64)): # type: ignore
+            # see https://github.com/numpy/numpy/issues/23007
+            
+            spins = make_unpacked_configurations(
+                np.array(spins, dtype="uint64"), len(self.sites)
+            )[0]
+        spins_df = pd.DataFrame(dict(spin=spins))
+        sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
+    
         if ax is None:
             _, ax = plt.subplots()
 

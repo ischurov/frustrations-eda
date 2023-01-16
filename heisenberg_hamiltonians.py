@@ -9,7 +9,6 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
-
 from spin_lattices import SpinLattice
 from utils import make_unpacked_configurations
 

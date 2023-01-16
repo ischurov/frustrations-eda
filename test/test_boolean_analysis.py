@@ -2,10 +2,10 @@ from unittest import TestCase
 
 import lattice_symmetries as ls
 import numpy as np
+
 from boolean_analysis import BooleanFourierAnalyser, keep_largest_n
 from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import (ChainLattice, KagomeLattice, SpinLattice,
-                           SquareLattice)
+from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice
 from utils import make_unpacked_configurations
 
 
@@ -22,8 +22,10 @@ class TestBooleanFourierAnalyser(TestCase):
             use_subset_symmetries=True,
         )
         analyzer_sym.fit(x=analyzer_sym.system.canonical_basis.states)
+        # first_subset_idx = analyzer_sym.learner.get_coeffs_ser().index[0]
+        # assert isinstance(first_subset_idx, np.uint64)
         first_subset = make_unpacked_configurations(
-            analyzer_sym.learner.get_coeffs_ser().index[0],  # type: ignore # Scalar does not appear to be ArrayLike ?
+            analyzer_sym.learner.get_coeffs_ser().index[0],  # type: ignore
             analyzer_sym.system.number_spins,
         )[0]
 
@@ -57,7 +59,12 @@ class TestBooleanFourierAnalyser(TestCase):
         )
 
     def test_symmetries(self):
-        lattices = [SquareLattice(width=4, height=4), SquareLattice(width=3, height=2)]
+        lattices = [
+            SquareLattice(width=4, height=4),
+            SquareLattice(width=3, height=2),
+            ChainLattice(width=6),
+            ChainLattice(width=8),
+        ]
         J1 = 1
         J2 = 0.5
         for lat in lattices:

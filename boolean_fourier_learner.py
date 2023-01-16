@@ -74,6 +74,7 @@ class BooleanFourierLearner:
         columns = 0
 
         equal_batches = stochastic_iterations or sample_size % batch_size == 0  # type: ignore
+        # we know that batch_size is not None if stochastic_iterations is False
 
         for i in [lambda _: _, tqdm][show_progress](range(n_batches)):
             if not stochastic_iterations:
@@ -87,8 +88,8 @@ class BooleanFourierLearner:
                 weights_batch = weights[indicies]
 
             fourier_transform_matrix = np.asanyarray(
-                calculate_fourier_transform_matrix(x_batch, self.subsets).T,
-                order="C")
+                calculate_fourier_transform_matrix(x_batch, self.subsets).T, order="C"
+            )
 
             sumprod_delta = (fourier_transform_matrix @ (weights_batch * y_batch)).astype(
                 "float64"

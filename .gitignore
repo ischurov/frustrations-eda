@@ -1,8 +1,7 @@
 *.pdf
 groundstates/
 fourier-bases/
-kagome24/
-kagome24-*/
+experiments/
 *.pyc
 .idea/
 .ipynb_checkpoints/
