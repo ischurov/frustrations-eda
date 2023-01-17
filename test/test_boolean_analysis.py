@@ -2,6 +2,8 @@ from unittest import TestCase
 
 import lattice_symmetries as ls
 import numpy as np
+import pandas as pd
+import pandas.testing as pdt
 
 from boolean_analysis import BooleanFourierAnalyser, keep_largest_n
 from heisenberg_hamiltonians import HeisenbergJ1J2
@@ -56,6 +58,27 @@ class TestBooleanFourierAnalyser(TestCase):
                 ),
                 1,
             )
+        )
+
+    def test_marshall_kagome(self):
+        system = HeisenbergJ1J2(
+            KagomeLattice(width=2, height=3),
+            J1=1,
+            J2=0,
+            use_symmetries=True,
+            spin_inversion=1,
+        )
+        analyzer = BooleanFourierAnalyser(
+            system=system,
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(system.basis.states)
+        pdt.assert_series_equal(
+            analyzer.set_truncate_strategy(keep_largest_n(1)).get_expanded_coeffs_ser(),
+            pd.Series(
+                [-0.185471, 0.185471],
+                index=pd.Series(np.array([5285, 256858], dtype="uint64")).rename("state"),
+            ).rename("coeff"),
         )
 
     def test_symmetries(self):

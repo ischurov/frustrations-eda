@@ -117,7 +117,7 @@ class BooleanFourierLearner:
     def get_coeffs_ser(self) -> pd.Series:
         self._ensure_fitted()
 
-        if not hasattr(self, "coeffs_df_"):
+        if not hasattr(self, "coeffs_ser_"):
             self.coeffs_ser_ = (
                 pd.DataFrame(dict(coeff=self.coeffs_), index=self.subsets)
                 .assign(abs_coeff=lambda x: np.abs(x["coeff"]))

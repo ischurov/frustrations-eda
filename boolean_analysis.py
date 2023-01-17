@@ -4,9 +4,10 @@ FOURIER_BASIS_DIR = Path("fourier-bases")
 FOURIER_BASIS_DIR.mkdir(exist_ok=True)
 
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import md5
-from typing import Any, Callable, Literal, Optional, Union
+from typing import Any, Callable, Literal, Optional, Union, overload
 
 import lattice_symmetries as ls
 import matplotlib.pyplot as plt
@@ -14,17 +15,12 @@ import numpy as np
 import numpy.linalg
 import numpy.typing as npt
 import pandas as pd
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from parity import calculate_fourier_transform_matrix
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
-
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
-    SpinSystem,
-    batched_state_info_df,
-    make_unpacked_configurations,
-)
-from parity import calculate_fourier_transform_matrix
 
 
 @dataclass(frozen=True)
@@ -57,6 +53,17 @@ def accuracy_scorer(true: pd.DataFrame, predict: npt.NDArray):
 @register_as_scorer
 def neg_mse_scorer(true: pd.DataFrame, predict: npt.NDArray) -> float:
     return -float(np.mean((true["y"] - predict) ** 2))
+
+
+def get_scorer(scorer: str | ScorerType) -> ScorerType:
+    if isinstance(scorer, str):
+        if scorer in scorers:
+            scorer = scorers[scorer]
+        else:
+            raise ValueError(
+                f"scorer {scorer} not found. Available scorers: {list(scorers.keys())}"
+            )
+    return scorer
 
 
 TruncateStrategy = Callable[[pd.Series], pd.Series]
@@ -111,7 +118,9 @@ def make_fourier_basis_state_info_sym(
         .drop(["character", "norm"], axis=1)
     )
     fourier_basis_state_info_df = (
-        fourier_basis_state_info.merge(
+        fourier_basis_state_info.reset_index()
+        .rename(columns={"index": "state"})
+        .merge(
             sign_flip_basis_correspondence,
             left_on="representative",
             right_on="initial_representative",
@@ -120,6 +129,7 @@ def make_fourier_basis_state_info_sym(
         .assign(representative=lambda x: np.minimum(x["representative_x"], x["representative_y"]))
         .assign(character=lambda x: find_character(x, system.number_spins))
         .drop(["representative_x", "representative_y", "initial_representative"], axis=1)
+        .set_index("state")
         .reindex(columns=["representative", "character"])
     )
 
@@ -154,9 +164,10 @@ class BooleanFourierAnalyser:
         self.canonical_fourier_basis.build()
 
         if use_subset_symmetries:
-            self.subsets, self.fourier_basis_state_info_df = make_fourier_basis_state_info_sym(
-                self.system
-            )
+            (
+                self.subsets,
+                self.fourier_basis_state_info_df,
+            ) = make_fourier_basis_state_info_sym(self.system)
 
         else:
             self.fourier_basis_state_info_df = batched_state_info_df(
@@ -246,10 +257,14 @@ class BooleanFourierAnalyser:
 
     def get_expanded_coeffs_ser(self) -> pd.Series:
         """
-        Returns the Fourier coefficients expanded to the full set of subsets.
+        Returns the Fourier coefficients expanded with the symmetry group.
+        If truncate_strategy is not `keep_everything`, the coefficients are
+        truncated according to the strategy.
+
+        The strategy is applied to the coefficients before the expansion.
 
         Besides the expansion, the coefficients are also normalized in such a way
-        that Plancherel's theorem holds.
+        that Plancherel's theorem holds unless truncation applied.
 
         Returns
         -------
@@ -260,7 +275,7 @@ class BooleanFourierAnalyser:
 
         """
 
-        return (
+        full_coeffs = (
             self.fourier_basis_state_info_df.join(
                 self.learner.get_coeffs_ser(), on="representative"
             )
@@ -271,16 +286,31 @@ class BooleanFourierAnalyser:
             / 2**self.system.number_spins
         )
 
-    def predict(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
+        idxs_after_truncation = (
+            self.fourier_basis_state_info_df.join(
+                self.truncate_strategy(self.learner.get_coeffs_ser()),
+                on="representative",
+            ).dropna()
+        ).index
 
-        coeffs = self.truncate_strategy(self.get_expanded_coeffs_ser())
+        coeffs = (
+            full_coeffs.loc[idxs_after_truncation]
+            .to_frame()
+            .assign(abs_coeff=lambda x: np.abs(x["coeff"]))
+            .sort_values("abs_coeff", ascending=False)["coeff"]
+        )
+        return coeffs
+
+    def predict(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
+        coeffs = self.get_expanded_coeffs_ser()
 
         transform_matrix = calculate_fourier_transform_matrix(
             states=x, subsets=np.array(coeffs.index, dtype="uint64")
         )
 
         return np.asarray(
-            transform_matrix @ np.asarray(coeffs.values, dtype="float64"), dtype="float64"
+            transform_matrix @ np.asarray(coeffs.values, dtype="float64"),
+            dtype="float64",
         )
 
     # def visualize_spectre_support_barplot(
@@ -319,22 +349,28 @@ class BooleanFourierAnalyser:
     # def spectre_entropy(self, signal: SignalOption = SignalOption()):
     #     abs_coeff = self.get_spectre_df(signal)["abs_coeff"]
     #     return entropy(abs_coeff / abs_coeff.sum())
+    @overload
+    def prediction_score(self, x: npt.NDArray[np.uint64], scorer: str | ScorerType) -> float:
+        ...
+
+    @overload
+    def prediction_score(
+        self, x: npt.NDArray[np.uint64], scorer: Iterable[str | ScorerType]
+    ) -> dict[str, float]:
+        ...
 
     def prediction_score(
         self,
         x: npt.NDArray[np.uint64],
-        scorer: Union[str, ScorerType] = "overlap",
-    ) -> float:
-
-        if isinstance(scorer, str) and scorer in scorers:
-            scorer = scorers[scorer]
-        else:
-            raise ValueError(
-                f"scorer {scorer} not found. Available scorers: {list(scorers.keys())}"
-            )
+        scorer: str | ScorerType | Iterable[str | ScorerType] = "overlap",
+    ) -> float | dict[str, float]:
 
         signal_df = self._get_signal_df(x)
         prediction = self.predict(x)
         if self.signal_opt.kind == "sign":
             prediction = np.sign(prediction)
-        return scorer(signal_df, prediction)
+
+        if isinstance(scorer, Iterable) and not isinstance(scorer, str):
+            return {str(s): get_scorer(s)(signal_df, prediction) for s in scorer}
+
+        return get_scorer(scorer)(signal_df, prediction)
