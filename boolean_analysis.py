@@ -15,12 +15,17 @@ import numpy as np
 import numpy.linalg
 import numpy.typing as npt
 import pandas as pd
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
-from parity import calculate_fourier_transform_matrix
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
+
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix
 
 
 @dataclass(frozen=True)
@@ -304,14 +309,28 @@ class BooleanFourierAnalyser:
     def predict(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
         coeffs = self.get_expanded_coeffs_ser()
 
+        if self.use_subset_symmetries:
+            coeffs = coeffs[
+                np.asarray(coeffs.index, dtype="uint64")
+                < np.asarray(coeffs.index, dtype="uint64") ^ (2**self.system.number_spins - 1)
+            ]
+            # whe can use the symmetry of the subsets to halve the number of coefficients
+            # the coefficient of the subset is the same as the coefficient of the complement
+            # modulo the sign, and the value on the complement is the same as the value on the
+            # subset modulo the sign
+
         transform_matrix = calculate_fourier_transform_matrix(
             states=x, subsets=np.array(coeffs.index, dtype="uint64")
         )
 
         return np.asarray(
-            transform_matrix @ np.asarray(coeffs.values, dtype="float64"),
+            (1 + self.use_subset_symmetries)
+            * transform_matrix
+            @ np.asarray(coeffs.values, dtype="float64"),
             dtype="float64",
         )
+        # the factor (1 + self.use_subset_symmetries) is to account for the fact that we
+        # halved the number of coefficients if self.use_subset_symmetries is True
 
     # def visualize_spectre_support_barplot(
     #     self, signal: SignalOption = SignalOption(), abs=False, elements=20, ax=None

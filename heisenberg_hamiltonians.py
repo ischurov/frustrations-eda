@@ -9,6 +9,7 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
+
 from spin_lattices import SpinLattice
 from utils import make_unpacked_configurations
 
@@ -232,6 +233,81 @@ class SpinSystem:
 
     def eigenstate_path(self, k: int) -> Optional[Path]:
         raise NotImplementedError
+
+    def sample_elements(
+        self,
+        representatives: npt.NDArray[np.uint64],
+        n: int,
+        prob: pd.Series | None = None,
+    ) -> npt.NDArray[np.uint64]:
+        """
+        Sample n elements from the union of the orbits of the given representatives.
+        It is guaranteed that each orbit is sampled at most once.
+
+        Parameters
+        ----------
+        basis
+            The basis taking account of the symmetries of the system.
+        canonical_basis
+            The canonical basis of the system.
+        representatives
+            The representatives of the orbits to sample from.
+        n
+            The number of elements to sample.
+        prob
+            The probability of sampling each state. It should be pd.DataFrame
+            with keys being the states and values being the probabilities, like
+            returned by `.get_df_ground_state()`.
+
+            If None, all states are equally likely.
+
+        Returns
+        -------
+        The sampled elements.
+        """
+
+        if n > len(representatives):
+            raise ValueError("n must be smaller than the length of the representatives array")
+
+        if prob is not None and (prob < 0).any():
+            raise ValueError("probabilities must be positive")
+
+        if prob is not None:
+            prob = prob / np.sum(prob)
+
+        state_info_df = batched_state_info_df(self.basis, self.canonical_basis.states).merge(
+            pd.DataFrame(index=representatives),
+            left_on="representative",
+            right_index=True,
+            how="right",
+        )
+        if state_info_df.isna().any().any():
+            raise ValueError("Some representatives are not in the canonical basis")
+
+        if prob is not None:
+            state_info_df = state_info_df.merge(
+                prob.rename("prob"), left_index=True, right_index=True, how="left"
+            )
+        else:
+            state_info_df["prob"] = 1
+        state_info_df["prob"] = state_info_df["prob"] / state_info_df["prob"].sum()
+
+        repr_prob = state_info_df.groupby("representative")["prob"].sum()
+        selected_repr = np.random.choice(repr_prob.index, size=n, replace=False, p=repr_prob)
+
+        return (
+            state_info_df.merge(
+                pd.DataFrame(index=selected_repr),
+                left_on="representative",
+                right_index=True,
+                how="right",
+            )
+            .reset_index()
+            .rename(columns={"index": "state"})
+            .groupby("representative")
+            .agg(lambda x: np.random.choice(x))["state"]
+            .values
+        )  # type: ignore
 
 
 class HeisenbergJ1J2(SpinSystem):

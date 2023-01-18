@@ -25,6 +25,7 @@ ffibuilder.set_source(
     int calculate_fourier_transform_matrix(
         uint64_t const* states, size_t n_states, uint64_t const* masks, size_t n_masks, int8_t* out
     ) {
+        #pragma omp parallel for
         for (size_t i = 0; i < n_states; ++i) {
             for (size_t j = 0; j < n_masks; ++j) {
                 out[i * n_masks + j] = __builtin_parityll(states[i] & masks[j]) * 2 - 1;
@@ -34,6 +35,8 @@ ffibuilder.set_source(
     }
     """,
     libraries=[],
+    extra_compile_args=["-O3", "-march=nehalem", "-fopenmp"],
+    extra_link_args=["-fopenmp"],
 )
 
 ffibuilder.cdef(
