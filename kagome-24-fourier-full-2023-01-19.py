@@ -3,13 +3,14 @@ import pickle
 from itertools import product
 from pathlib import Path
 
-from boolean_analysis import BooleanFourierAnalyser
-from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import KagomeLattice
 from tqdm import tqdm
 
+from boolean_analysis import BooleanFourierAnalyser, SignalOption
+from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_lattices import KagomeLattice
+
 batch_size = 1000
-experiment_dir = Path("experiments/kagome24-2023-01-18")
+experiment_dir = Path("experiments/kagome24-2023-01-19")
 experiment_dir.mkdir(exist_ok=True, parents=True)
 
 for J2 in tqdm([0.5, 0.6, 0.7, 0.8, 0.9, 1, 0.55, 0.65, 0.75, 0.85, 0.95]):
@@ -28,6 +29,6 @@ for J2 in tqdm([0.5, 0.6, 0.7, 0.8, 0.9, 1, 0.55, 0.65, 0.75, 0.85, 0.95]):
         show_progress=True,
     )
     train_set = analyzer.system.canonical_basis.states
-    analyzer.fit(train_set, batch_size=batch_size)
+    analyzer.fit(train_set, signal_opt=SignalOption(weights="prob"), batch_size=batch_size)
     with lzma.open(experiment_dir / pickle_to, "wb") as f:
         pickle.dump(analyzer.learner, f)

@@ -1,9 +1,11 @@
-from pathlib import Path
+from pathlib import Path, PosixPath
 
 FOURIER_BASIS_DIR = Path("fourier-bases")
 FOURIER_BASIS_DIR.mkdir(exist_ok=True)
 
 
+import lzma
+import pickle
 from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import md5
@@ -74,13 +76,13 @@ def get_scorer(scorer: str | ScorerType) -> ScorerType:
 TruncateStrategy = Callable[[pd.Series], pd.Series]
 
 
-def keep_largest_n(n: int) -> TruncateStrategy:
+def keep_largest_n(n: int, offset: int = 0) -> TruncateStrategy:
     def truncate(s: pd.Series) -> pd.Series:
         return (
             s.to_frame()
             .assign(abs_value=lambda x: np.abs(x["coeff"]))
             .sort_values("abs_value", ascending=False)["coeff"]
-            .iloc[:n]
+            .iloc[offset : n + offset]
         )
 
     return truncate
@@ -240,7 +242,7 @@ class BooleanFourierAnalyser:
         self.learner = BooleanFourierLearner(self.system.number_spins, self.subsets)
 
         if signal_opt.weights == "prob":
-            weights = signal_df["prob"].values.astype("float64")
+            weights = signal_df["prob"].values.astype("float64") * signal_df.shape[0]
         elif signal_opt.weights == "invprob":
             weights = 1.0 / signal_df["prob"].values.astype("float64")
         else:
@@ -253,6 +255,21 @@ class BooleanFourierAnalyser:
             batch_size=batch_size,
             show_progress=self.show_progress,
         )
+
+        return self
+
+    def restore_learner_from_pickle(
+        self, path: str | PosixPath, signal_opt: SignalOption = SignalOption()
+    ) -> "BooleanFourierAnalyser":
+        self.signal_opt = signal_opt
+
+        if str(path).endswith(".lz"):
+            _open = lzma.open
+        else:
+            _open = open
+
+        with _open(path, "rb") as f:
+            self.learner = pickle.load(f)
 
         return self
 
