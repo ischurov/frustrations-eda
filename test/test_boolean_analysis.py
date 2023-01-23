@@ -1,3 +1,5 @@
+import tempfile
+from pathlib import Path
 from unittest import TestCase
 
 import lattice_symmetries as ls
@@ -5,15 +7,24 @@ import numpy as np
 import pandas as pd
 import pandas.testing as pdt
 
-from boolean_analysis import BooleanFourierAnalyser, keep_largest_n
+from boolean_analysis import (
+    AmplitudeSignalKind,
+    BooleanFourierAnalyzer,
+    SignalOption,
+    SignSignalKind,
+    ValueSignalKind,
+    keep_everything,
+    keep_largest_n,
+)
 from heisenberg_hamiltonians import HeisenbergJ1J2
+from parity import popcount
 from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice
 from utils import make_unpacked_configurations
 
 
-class TestBooleanFourierAnalyser(TestCase):
+class TestBooleanFourierAnalyzer(TestCase):
     def test_marshall(self):
-        analyzer_sym = BooleanFourierAnalyser(
+        analyzer_sym = BooleanFourierAnalyzer(
             system=HeisenbergJ1J2(
                 SquareLattice(width=4, height=4),
                 J1=1,
@@ -44,7 +55,7 @@ class TestBooleanFourierAnalyser(TestCase):
             np.isclose(
                 analyzer_sym.set_truncate_strategy(keep_largest_n(1)).prediction_score(
                     analyzer_sym.system.canonical_basis.states,
-                    scorer="overlap",
+                    scorer="sign_overlap",
                 ),
                 1,
             )
@@ -68,7 +79,7 @@ class TestBooleanFourierAnalyser(TestCase):
             use_symmetries=True,
             spin_inversion=1,
         )
-        analyzer = BooleanFourierAnalyser(
+        analyzer = BooleanFourierAnalyzer(
             system=system,
             use_subset_symmetries=True,
         )
@@ -91,7 +102,7 @@ class TestBooleanFourierAnalyser(TestCase):
         J1 = 1
         J2 = 0.5
         for lat in lattices:
-            analyzer_sym = BooleanFourierAnalyser(
+            analyzer_sym = BooleanFourierAnalyzer(
                 system=HeisenbergJ1J2(
                     lat,
                     J1=J1,
@@ -103,7 +114,14 @@ class TestBooleanFourierAnalyser(TestCase):
             )
             analyzer_sym.fit(x=analyzer_sym.system.canonical_basis.states)
 
-            analyzer_nosym = BooleanFourierAnalyser(
+            self.assertTrue(
+                (
+                    popcount(np.asarray(analyzer_sym.learner.get_coeffs_ser().index))
+                    <= analyzer_sym.system.number_spins // 2
+                ).all()
+            )
+
+            analyzer_nosym = BooleanFourierAnalyzer(
                 system=HeisenbergJ1J2(
                     lat,
                     J1=J1,
@@ -117,13 +135,17 @@ class TestBooleanFourierAnalyser(TestCase):
 
             self.assertTrue(
                 np.allclose(
-                    analyzer_sym.predict(analyzer_sym.system.canonical_basis.states),
-                    analyzer_nosym.predict(analyzer_sym.system.canonical_basis.states),
+                    analyzer_sym.set_truncate_strategy(keep_everything).predict(
+                        analyzer_sym.system.canonical_basis.states
+                    ),
+                    analyzer_nosym.set_truncate_strategy(keep_everything).predict(
+                        analyzer_sym.system.canonical_basis.states
+                    ),
                 )
             )
 
     def test_normalization(self):
-        analyzer = BooleanFourierAnalyser(
+        analyzer = BooleanFourierAnalyzer(
             system=HeisenbergJ1J2(
                 SquareLattice(width=4, height=2),
                 J1=1,
@@ -135,5 +157,232 @@ class TestBooleanFourierAnalyser(TestCase):
         )
         analyzer.fit(x=analyzer.system.canonical_basis.states)
         self.assertTrue(
-            np.allclose(np.abs(analyzer.predict(analyzer.system.canonical_basis.states)), 1)
+            np.allclose(
+                np.abs(
+                    analyzer.set_truncate_strategy(keep_everything).predict(
+                        analyzer.system.canonical_basis.states
+                    )
+                ),
+                1,
+            )
+        )
+
+    def test_learn_value(self):
+        analyzer = BooleanFourierAnalyzer(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=2),
+                J1=1,
+                J2=0.8,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(
+            analyzer.system.canonical_basis.states, signal_opt=SignalOption(kind=ValueSignalKind())
+        )
+        prediction = analyzer.set_truncate_strategy(keep_everything).predict(
+            analyzer.system.basis.states
+        )
+        true = (
+            analyzer.system.get_df_ground_state(canonical_basis=True)
+            .loc[analyzer.system.basis.states]["eigenstate_coeff"]
+            .values
+        )
+        assert analyzer.system.ground_state is not None
+        self.assertTrue(np.allclose(true, prediction))
+        self.assertTrue(
+            np.isclose(
+                analyzer.set_truncate_strategy(keep_everything).prediction_score(
+                    analyzer.system.basis.states, scorer="neg_mse"
+                ),
+                0,
+            )
+        )
+        self.assertTrue(
+            np.isclose(
+                analyzer.set_truncate_strategy(keep_everything).prediction_score(
+                    analyzer.system.basis.states, scorer="value_overlap"
+                ),
+                1,
+            )
+        )
+
+    def test_learn_amplitude(self):
+        analyzer = BooleanFourierAnalyzer(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=2),
+                J1=1,
+                J2=0.8,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(
+            analyzer.system.canonical_basis.states,
+            signal_opt=SignalOption(kind=AmplitudeSignalKind()),
+        )
+        prediction = analyzer.set_truncate_strategy(keep_everything).predict(
+            analyzer.system.basis.states
+        )
+        true = (
+            analyzer.system.get_df_ground_state(canonical_basis=True)
+            .loc[analyzer.system.basis.states]["amplitude"]
+            .values
+        )
+        assert analyzer.system.ground_state is not None
+        self.assertTrue(np.allclose(true, prediction))
+        self.assertTrue(
+            np.isclose(
+                analyzer.set_truncate_strategy(keep_everything).prediction_score(
+                    analyzer.system.basis.states, scorer="neg_mse"
+                ),
+                0,
+            )
+        )
+        self.assertTrue(
+            np.isclose(
+                analyzer.set_truncate_strategy(keep_everything).prediction_score(
+                    analyzer.system.basis.states, scorer="value_overlap"
+                ),
+                1,
+            )
+        )
+
+    def test_cache(self):
+        with tempfile.TemporaryDirectory() as cache_dir:
+            analyzer = BooleanFourierAnalyzer(
+                system=HeisenbergJ1J2(
+                    KagomeLattice(width=2, height=2),
+                    J1=1,
+                    J2=0.8,
+                    use_symmetries=True,
+                    spin_inversion=1,
+                ),
+                use_subset_symmetries=True,
+                cache_dir=Path(cache_dir),
+            )
+            analyzer.fit(
+                analyzer.system.canonical_basis.states,
+                signal_opt=SignalOption(kind=AmplitudeSignalKind()),
+            )
+            predict1 = analyzer.set_truncate_strategy(keep_everything).predict(
+                analyzer.system.basis.states
+            )
+
+            analyzer = BooleanFourierAnalyzer(
+                system=HeisenbergJ1J2(
+                    KagomeLattice(width=2, height=2),
+                    J1=1,
+                    J2=0.8,
+                    use_symmetries=True,
+                    spin_inversion=1,
+                ),
+                use_subset_symmetries=True,
+                cache_dir=Path(cache_dir),
+            )
+            analyzer.fit(
+                analyzer.system.canonical_basis.states,
+                signal_opt=SignalOption(kind=ValueSignalKind()),
+            )
+            analyzer.fit(
+                analyzer.system.canonical_basis.states,
+                signal_opt=SignalOption(kind=AmplitudeSignalKind()),
+                from_cache_only=True,
+            )
+            predict2 = analyzer.set_truncate_strategy(keep_everything).predict(
+                analyzer.system.basis.states
+            )
+            self.assertTrue(np.allclose(predict1, predict2))
+            with self.assertRaises(ValueError):
+                analyzer.fit(
+                    analyzer.system.canonical_basis.states,
+                    signal_opt=SignalOption(kind=SignSignalKind()),
+                    from_cache_only=True,
+                )
+
+    def test_how_many_terms_to_achieve_score(self):
+        analyzer = BooleanFourierAnalyzer(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=3),
+                J1=1,
+                J2=0.8,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(
+            analyzer.system.canonical_basis.states,
+            signal_opt=SignalOption(kind=SignSignalKind()),
+        )
+
+        terms = analyzer.how_many_terms_to_achieve_score(
+            scorer="sign_overlap", target_score=0.95, min_terms=1, max_terms=101, step=1
+        )
+
+        assert terms is not None
+
+        self.assertTrue(
+            analyzer.set_truncate_strategy(keep_largest_n(terms)).prediction_score(
+                analyzer.system.canonical_basis.states, "sign_overlap"
+            )
+            >= 0.95
+        )
+        self.assertTrue(
+            analyzer.set_truncate_strategy(keep_largest_n(terms - 1)).prediction_score(
+                analyzer.system.canonical_basis.states, "sign_overlap"
+            )
+            < 0.95
+        )
+
+    def test_how_many_terms_to_achieve_score2(self):
+        # Marshall
+
+        analyzer = BooleanFourierAnalyzer(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=3),
+                J1=1,
+                J2=0,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(analyzer.system.canonical_basis.states)
+
+        self.assertEqual(
+            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=0.99), 1
+        )
+        self.assertEqual(
+            analyzer.how_many_terms_to_achieve_score(scorer="sign_overlap", target_score=0.99), 1
+        )
+        self.assertTrue(
+            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=1.01) is None
+        )
+
+        # Frustrated
+
+        analyzer = BooleanFourierAnalyzer(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=3),
+                J1=1,
+                J2=0.8,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(analyzer.system.canonical_basis.states)
+
+        def assert_is_large(terms: int | None):
+            if terms is not None:
+                self.assertTrue(terms > 1)
+
+        assert_is_large(
+            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=0.99)
+        )
+        assert_is_large(
+            analyzer.how_many_terms_to_achieve_score(scorer="sign_overlap", target_score=0.99)
         )

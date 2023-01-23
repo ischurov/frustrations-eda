@@ -6,9 +6,8 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from tqdm import tqdm
-
 from parity import calculate_fourier_transform_matrix
+from tqdm import tqdm
 
 
 class BooleanFourierLearner:
@@ -115,6 +114,15 @@ class BooleanFourierLearner:
             raise ValueError("Model is not fitted; please, run .fit(x, y, ...) first")
 
     def get_coeffs_ser(self) -> pd.Series:
+        """
+        Returns a pandas Series with coefficients of the Fourier expansion.
+        The index is the subset of sites, the value is the coefficient.
+        Sorted by absolute value of the coefficient.
+
+        Returns
+        -------
+        coeffs_ser : pd.Series
+        """
         self._ensure_fitted()
 
         if not hasattr(self, "coeffs_ser_"):
