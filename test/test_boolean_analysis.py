@@ -53,8 +53,7 @@ class TestBooleanFourierAnalyzer(TestCase):
 
         self.assertTrue(
             np.isclose(
-                analyzer_sym.set_truncate_strategy(keep_largest_n(1)).prediction_score(
-                    analyzer_sym.system.canonical_basis.states,
+                analyzer_sym.truncate(keep_largest_n(1)).prediction_score(
                     scorer="sign_overlap",
                 ),
                 1,
@@ -63,8 +62,7 @@ class TestBooleanFourierAnalyzer(TestCase):
 
         self.assertTrue(
             np.isclose(
-                analyzer_sym.set_truncate_strategy(keep_largest_n(1)).prediction_score(
-                    analyzer_sym.system.canonical_basis.states,
+                analyzer_sym.truncate(keep_largest_n(1)).prediction_score(
                     scorer="accuracy",
                 ),
                 1,
@@ -85,7 +83,7 @@ class TestBooleanFourierAnalyzer(TestCase):
         )
         analyzer.fit(system.basis.states)
         pdt.assert_series_equal(
-            analyzer.set_truncate_strategy(keep_largest_n(1)).get_expanded_coeffs_ser(),
+            analyzer.truncate(keep_largest_n(1)).get_expanded_coeffs_ser(),
             pd.Series(
                 [-0.185471, 0.185471],
                 index=pd.Series(np.array([5285, 256858], dtype="uint64")).rename("state"),
@@ -135,10 +133,10 @@ class TestBooleanFourierAnalyzer(TestCase):
 
             self.assertTrue(
                 np.allclose(
-                    analyzer_sym.set_truncate_strategy(keep_everything).predict(
+                    analyzer_sym.truncate(keep_everything).predict(
                         analyzer_sym.system.canonical_basis.states
                     ),
-                    analyzer_nosym.set_truncate_strategy(keep_everything).predict(
+                    analyzer_nosym.truncate(keep_everything).predict(
                         analyzer_sym.system.canonical_basis.states
                     ),
                 )
@@ -159,7 +157,7 @@ class TestBooleanFourierAnalyzer(TestCase):
         self.assertTrue(
             np.allclose(
                 np.abs(
-                    analyzer.set_truncate_strategy(keep_everything).predict(
+                    analyzer.truncate(keep_everything).predict(
                         analyzer.system.canonical_basis.states
                     )
                 ),
@@ -181,9 +179,7 @@ class TestBooleanFourierAnalyzer(TestCase):
         analyzer.fit(
             analyzer.system.canonical_basis.states, signal_opt=SignalOption(kind=ValueSignalKind())
         )
-        prediction = analyzer.set_truncate_strategy(keep_everything).predict(
-            analyzer.system.basis.states
-        )
+        prediction = analyzer.truncate(keep_everything).predict(analyzer.system.basis.states)
         true = (
             analyzer.system.get_df_ground_state(canonical_basis=True)
             .loc[analyzer.system.basis.states]["eigenstate_coeff"]
@@ -193,16 +189,16 @@ class TestBooleanFourierAnalyzer(TestCase):
         self.assertTrue(np.allclose(true, prediction))
         self.assertTrue(
             np.isclose(
-                analyzer.set_truncate_strategy(keep_everything).prediction_score(
-                    analyzer.system.basis.states, scorer="neg_mse"
+                analyzer.truncate(keep_everything).prediction_score(
+                    scorer="neg_mse", x=analyzer.system.basis.states
                 ),
                 0,
             )
         )
         self.assertTrue(
             np.isclose(
-                analyzer.set_truncate_strategy(keep_everything).prediction_score(
-                    analyzer.system.basis.states, scorer="value_overlap"
+                analyzer.truncate(keep_everything).prediction_score(
+                    scorer="value_overlap", x=analyzer.system.basis.states
                 ),
                 1,
             )
@@ -223,9 +219,7 @@ class TestBooleanFourierAnalyzer(TestCase):
             analyzer.system.canonical_basis.states,
             signal_opt=SignalOption(kind=AmplitudeSignalKind()),
         )
-        prediction = analyzer.set_truncate_strategy(keep_everything).predict(
-            analyzer.system.basis.states
-        )
+        prediction = analyzer.truncate(keep_everything).predict(analyzer.system.basis.states)
         true = (
             analyzer.system.get_df_ground_state(canonical_basis=True)
             .loc[analyzer.system.basis.states]["amplitude"]
@@ -235,16 +229,17 @@ class TestBooleanFourierAnalyzer(TestCase):
         self.assertTrue(np.allclose(true, prediction))
         self.assertTrue(
             np.isclose(
-                analyzer.set_truncate_strategy(keep_everything).prediction_score(
-                    analyzer.system.basis.states, scorer="neg_mse"
+                analyzer.truncate(keep_everything).prediction_score(
+                    scorer="neg_mse",
+                    x=analyzer.system.basis.states,
                 ),
                 0,
             )
         )
         self.assertTrue(
             np.isclose(
-                analyzer.set_truncate_strategy(keep_everything).prediction_score(
-                    analyzer.system.basis.states, scorer="value_overlap"
+                analyzer.truncate(keep_everything).prediction_score(
+                    scorer="value_overlap", x=analyzer.system.basis.states
                 ),
                 1,
             )
@@ -267,9 +262,7 @@ class TestBooleanFourierAnalyzer(TestCase):
                 analyzer.system.canonical_basis.states,
                 signal_opt=SignalOption(kind=AmplitudeSignalKind()),
             )
-            predict1 = analyzer.set_truncate_strategy(keep_everything).predict(
-                analyzer.system.basis.states
-            )
+            predict1 = analyzer.truncate(keep_everything).predict(analyzer.system.basis.states)
 
             analyzer = BooleanFourierAnalyzer(
                 system=HeisenbergJ1J2(
@@ -291,9 +284,7 @@ class TestBooleanFourierAnalyzer(TestCase):
                 signal_opt=SignalOption(kind=AmplitudeSignalKind()),
                 from_cache_only=True,
             )
-            predict2 = analyzer.set_truncate_strategy(keep_everything).predict(
-                analyzer.system.basis.states
-            )
+            predict2 = analyzer.truncate(keep_everything).predict(analyzer.system.basis.states)
             self.assertTrue(np.allclose(predict1, predict2))
             with self.assertRaises(ValueError):
                 analyzer.fit(
@@ -325,16 +316,10 @@ class TestBooleanFourierAnalyzer(TestCase):
         assert terms is not None
 
         self.assertTrue(
-            analyzer.set_truncate_strategy(keep_largest_n(terms)).prediction_score(
-                analyzer.system.canonical_basis.states, "sign_overlap"
-            )
-            >= 0.95
+            analyzer.truncate(keep_largest_n(terms)).prediction_score("sign_overlap") >= 0.95
         )
         self.assertTrue(
-            analyzer.set_truncate_strategy(keep_largest_n(terms - 1)).prediction_score(
-                analyzer.system.canonical_basis.states, "sign_overlap"
-            )
-            < 0.95
+            analyzer.truncate(keep_largest_n(terms - 1)).prediction_score("sign_overlap") < 0.95
         )
 
     def test_how_many_terms_to_achieve_score2(self):

@@ -30,56 +30,73 @@ from heisenberg_hamiltonians import (
 from parity import calculate_fourier_transform_matrix, parity, popcount
 
 
+def camel_case_to_snake_case(name: str) -> str:
+    return "".join("_" + c.lower() if c.isupper() else c for c in name).lstrip("_")
+
+
 class SignalKind:
-    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         This function defines how to transform data during the training.
         """
         raise NotImplementedError
 
-    def transform_predict(self, predict: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    @staticmethod
+    def transform_predict(predict: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         This function defines how to transform the output of the model during
         prediction.
         """
         raise NotImplementedError
 
+    @property
+    def name(self) -> str:
+        return camel_case_to_snake_case(self.__class__.__name__.removesuffix("SignalKind"))
 
-class BinarySignalMixin:
-    def transform_predict(self, predict: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+
+class BinarySignalKind(SignalKind):
+    @staticmethod
+    def transform_predict(predict: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.sign(predict)
 
 
-class RealSignalMixin:
-    def transform_predict(self, predict: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+class RealSignalKind(SignalKind):
+    @staticmethod
+    def transform_predict(predict: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return predict
 
 
-class ValueSignalKind(RealSignalMixin, SignalKind):
-    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+class ValueSignalKind(RealSignalKind):
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return eigenstate_coeff
 
 
-class SignSignalKind(BinarySignalMixin, SignalKind):
-    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+class SignSignalKind(BinarySignalKind):
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.sign(eigenstate_coeff)
 
 
-class AmplitudeSignalKind(RealSignalMixin, SignalKind):
-    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+class AmplitudeSignalKind(RealSignalKind):
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.abs(eigenstate_coeff)
 
 
-class ProbSignalKind(RealSignalMixin, SignalKind):
-    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+class ProbSignalKind(RealSignalKind):
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return (np.abs(eigenstate_coeff)) ** 2  # type: ignore
         # see https://github.com/numpy/numpy/issues/20099
 
 
-class AmplitudeMedianBinSignalKind(BinarySignalMixin, SignalKind):
-    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+class AmplitudeMedianBinSignalKind(BinarySignalKind):
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         abs_ = np.abs(eigenstate_coeff)
-        return np.sign(eigenstate_coeff - np.median(abs_))
+        return np.sign(abs_ - np.median(abs_))
 
 
 Weights = Callable[[pd.DataFrame], npt.NDArray[np.float64]]
@@ -308,7 +325,8 @@ class BFATruncation:
             # whe can use the symmetry of the subsets to halve the number of coefficients
             # the coefficient of the subset is the same as the coefficient of the complement
             # modulo the sign, and the value on the complement is the same as the value on the
-            # subset modulo the sign
+            # subset modulo the sign, and the correcting sings are the same, thus
+            # cancelling out
 
         transform_matrix = calculate_fourier_transform_matrix(
             states=x, subsets=np.array(coeffs.index, dtype="uint64")
@@ -329,20 +347,25 @@ class BFATruncation:
         return prediction
 
     @overload
-    def prediction_score(self, x: npt.NDArray[np.uint64], scorer: str | ScorerType) -> float:
+    def prediction_score(
+        self, scorer: str | ScorerType, x: npt.NDArray[np.uint64] | None = None
+    ) -> float:
         ...
 
     @overload
     def prediction_score(
-        self, x: npt.NDArray[np.uint64], scorer: Iterable[str | ScorerType]
+        self, scorer: list[str | ScorerType], x: npt.NDArray[np.uint64] | None = None
     ) -> dict[str, float]:
         ...
 
     def prediction_score(
         self,
-        x: npt.NDArray[np.uint64],
-        scorer: str | ScorerType | Iterable[str | ScorerType],
+        scorer: str | ScorerType | list[str | ScorerType],
+        x: npt.NDArray[np.uint64] | None = None,
     ) -> float | dict[str, float]:
+
+        if x is None:
+            x = self.analyzer.system.canonical_basis.states
 
         signal_df = self.analyzer.get_signal_df(x)
         prediction = self.predict(x)
@@ -392,8 +415,8 @@ class BooleanFourierAnalyzer:
             ).drop("norm", axis=1)
 
             self.subsets = self.canonical_fourier_basis.states
-
-        print("Finding system ground state")
+        if show_progress:
+            print("Finding system ground state")
         self.system.get_eigenstates(eigenstates)
 
         self.show_progress = show_progress
@@ -511,7 +534,7 @@ class BooleanFourierAnalyzer:
 
         return self
 
-    def set_truncate_strategy(self, strategy: TruncateStrategy) -> BFATruncation:
+    def truncate(self, strategy: TruncateStrategy) -> BFATruncation:
         return BFATruncation(analyzer=self, truncate_strategy=strategy)
 
     def how_many_terms_to_achieve_score(
@@ -559,11 +582,9 @@ class BooleanFourierAnalyzer:
 
         for n_terms in range(min_terms, max_terms, step):
             if n_terms == min_terms:
-                predictor = self.set_truncate_strategy(keep_largest_n(n_terms))
+                predictor = self.truncate(keep_largest_n(n_terms))
             else:
-                predictor = self.set_truncate_strategy(
-                    keep_largest_n(step, offset=max(0, n_terms - step))
-                )
+                predictor = self.truncate(keep_largest_n(step, offset=max(0, n_terms - step)))
 
             prediction += predictor.predict(evaluation_set, transform_according_to_signal=False)
 

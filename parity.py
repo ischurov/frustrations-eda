@@ -1,6 +1,5 @@
 import numpy as np
 import numpy.typing as npt
-
 from _parity import ffi, lib
 
 

@@ -9,6 +9,7 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
+
 from spin_lattices import SpinLattice
 from utils import make_unpacked_configurations
 
@@ -48,6 +49,7 @@ class SpinSystem:
         hamiltonian: ls.Operator,
         symmetries: ls.Symmetries,
         ground_state_cache_dir: Path | None = None,
+        show_progress: bool = True,
     ):
         self.lat = lat
         self.basis = basis
@@ -55,6 +57,7 @@ class SpinSystem:
         self.number_spins = len(lat.sites)
         self.symmetries = symmetries
         self.ground_state_cache_dir = ground_state_cache_dir
+        self.show_progress = show_progress
 
         self.canonical_basis = ls.SpinBasis(
             symmetries=ls.Symmetries([]),
@@ -83,7 +86,10 @@ class SpinSystem:
         for eigenstate in range(k, 20):
             eigenstate_path = self.eigenstate_path(eigenstate)
             if eigenstate_path and eigenstate_path.exists():
-                print(f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}")
+                if self.show_progress:
+                    print(
+                        f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
+                    )
                 eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
                 return eigenvalues, eigenstates
 
@@ -108,7 +114,8 @@ class SpinSystem:
             eigenvalues, eigenstates = cached_eigenstate
         else:
             # Diagonalize the Hamiltonian using ARPACK
-            print("Calculating eigenvalues / eigenstates")
+            if self.show_progress:
+                print("Calculating eigenvalues / eigenstates")
             eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(self.hamiltonian, k=k, which="SA")
             eigenstates = eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1)
             # make sure that the first element of each eigenvector is positive
@@ -119,7 +126,8 @@ class SpinSystem:
                 if eigenstate_path := self.eigenstate_path(k):
                     eigenstate_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
 
-        print("Ground state energy is {:.10f}".format(eigenvalues[0]))
+        if self.show_progress:
+            print("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
         self.ground_energy = eigenvalues[0]
         self.ground_state = eigenstates[:, 0]
@@ -321,6 +329,7 @@ class HeisenbergJ1J2(SpinSystem):
         use_symmetries=True,
         spin_inversion: Optional[int] = 1,
         ground_state_cache_dir: Path | None = None,
+        show_progress: bool = True,
     ):
         J1 = float(J1)
         J2 = float(J2)
@@ -328,9 +337,11 @@ class HeisenbergJ1J2(SpinSystem):
         self.J2 = J2
         self.use_symmetries = use_symmetries
         self.spin_inversion = spin_inversion
-        number_spins = len(lat.sites)
+        self.show_progress = show_progress
 
-        print(f"{number_spins=}")
+        number_spins = len(lat.sites)
+        if self.show_progress:
+            print(f"{number_spins=}")
         hamming_weight = number_spins // 2  # Hamming weight (i.e. number of spin ups)
 
         # Constructing symmetries
@@ -344,7 +355,8 @@ class HeisenbergJ1J2(SpinSystem):
 
         # Constructing the group
         symmetries = ls.Symmetries(symmetries_lst)
-        print("Symmetry group contains {} elements".format(len(symmetries)))
+        if show_progress:
+            print("Symmetry group contains {} elements".format(len(symmetries)))
 
         # Constructing the basis
         basis = ls.SpinBasis(
@@ -355,7 +367,8 @@ class HeisenbergJ1J2(SpinSystem):
         )
 
         basis.build()  # Build the list of representatives, we need it since we're doing ED
-        print("Hilbert space dimension is {}".format(basis.number_states))
+        if show_progress:
+            print("Hilbert space dimension is {}".format(basis.number_states))
 
         # Constructing the Hamiltonian
         expr_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
@@ -373,6 +386,7 @@ class HeisenbergJ1J2(SpinSystem):
             hamiltonian=hamiltonian,
             symmetries=symmetries,
             ground_state_cache_dir=ground_state_cache_dir,
+            show_progress=show_progress,
         )
 
     def eigenstate_path(self, k: int) -> Path | None:
