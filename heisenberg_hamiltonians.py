@@ -11,62 +11,30 @@ import scipy
 import scipy.sparse.linalg
 
 from spin_lattices import SpinLattice
-from utils import make_unpacked_configurations
-
-
-def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
-    """
-    Parameters
-    ----------
-    basis : ls.SpinBasis
-        Basis to use for the state info
-    states : npt.NDArray[np.uint64]
-        States to get the info for
-
-    Returns
-    -------
-    pd.DataFrame
-
-    Returns a DataFrame with index states and the following columns:
-
-    - representative: representative of the group trajectory containing the state
-    - character: character of the group element that takes the representative to the state
-    - norm: normalizing coefficient
-    """
-    representative, eigenvalue, norm = basis.state_info(states)
-
-    return pd.DataFrame(
-        dict(representative=representative, character=eigenvalue, norm=norm),
-        index=states,
-    )
+from utils import batched_state_info_df, make_unpacked_configurations
 
 
 class SpinSystem:
     def __init__(
         self,
-        lat: SpinLattice,
+        lattice: SpinLattice,
         basis: ls.SpinBasis,
         hamiltonian: ls.Operator,
         symmetries: ls.Symmetries,
         ground_state_cache_dir: Path | None = None,
         show_progress: bool = True,
     ):
-        self.lat = lat
+        self.lattice = lattice
         self.basis = basis
         self.hamiltonian = hamiltonian
-        self.number_spins = len(lat.sites)
+        self.number_spins = len(lattice.sites)
         self.symmetries = symmetries
         self.ground_state_cache_dir = ground_state_cache_dir
         self.show_progress = show_progress
 
-        self.canonical_basis = ls.SpinBasis(
-            symmetries=ls.Symmetries([]),
-            number_spins=self.number_spins,
-            hamming_weight=self.number_spins // 2,
-            spin_inversion=None,
+        self.canonical_basis = self.lattice.get_basis(
+            use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
         )
-
-        self.canonical_basis.build()
 
         self.eigenstates = None
         self.eigenvalues = None
@@ -232,7 +200,7 @@ class SpinSystem:
         df = self.get_df_ground_state(
             unpack_configurations=True, canonical_basis=canonical_basis
         ).sort_values("amplitude", ascending=False)
-        self.lat.plot(spins=df.iloc[m]["configuration"])
+        self.lattice.plot(spins=df.iloc[m]["configuration"])
         plt.title(
             f"Plotted {m}'s most probable state, wavefunction value "
             f"= {df.iloc[m]['eigenstate_coeff']}"
@@ -323,7 +291,7 @@ class SpinSystem:
 class HeisenbergJ1J2(SpinSystem):
     def __init__(
         self,
-        lat: SpinLattice,
+        lattice: SpinLattice,
         J1: float = 1.0,
         J2: float = 1.0,
         use_symmetries=True,
@@ -339,7 +307,7 @@ class HeisenbergJ1J2(SpinSystem):
         self.spin_inversion = spin_inversion
         self.show_progress = show_progress
 
-        number_spins = len(lat.sites)
+        number_spins = len(lattice.sites)
         if self.show_progress:
             print(f"{number_spins=}")
         hamming_weight = number_spins // 2  # Hamming weight (i.e. number of spin ups)
@@ -347,26 +315,20 @@ class HeisenbergJ1J2(SpinSystem):
         # Constructing symmetries
 
         if use_symmetries:
-            symmetries_lst = [
-                ls.Symmetry(automorphism, sector=0) for automorphism in lat.get_automorphisms()
-            ]
+            symmetries = lattice.get_heisenberg_symmetries()
         else:
-            symmetries_lst = []
+            symmetries = ls.Symmetries([])
 
-        # Constructing the group
-        symmetries = ls.Symmetries(symmetries_lst)
         if show_progress:
             print("Symmetry group contains {} elements".format(len(symmetries)))
 
         # Constructing the basis
-        basis = ls.SpinBasis(
-            symmetries=symmetries,
-            number_spins=number_spins,
+        basis = lattice.get_basis(
+            use_symmetries=use_symmetries,
             spin_inversion=spin_inversion,
             hamming_weight=hamming_weight,
         )
 
-        basis.build()  # Build the list of representatives, we need it since we're doing ED
         if show_progress:
             print("Hilbert space dimension is {}".format(basis.number_states))
 
@@ -374,14 +336,14 @@ class HeisenbergJ1J2(SpinSystem):
         expr_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
 
         # fmt: off
-        expr = (J1 * ls.Expr(expr_str, sites=lat.kind_to_edges[1]) + 
-                J2 * ls.Expr(expr_str, sites=lat.kind_to_edges[2]))
+        expr = (J1 * ls.Expr(expr_str, sites=lattice.kind_to_edges[1]) + 
+                J2 * ls.Expr(expr_str, sites=lattice.kind_to_edges[2]))
         # fmt: on
 
         hamiltonian = ls.Operator(basis, expr)
 
         super().__init__(
-            lat=lat,
+            lattice=lattice,
             basis=basis,
             hamiltonian=hamiltonian,
             symmetries=symmetries,
@@ -396,6 +358,6 @@ class HeisenbergJ1J2(SpinSystem):
 
     def system_id(self) -> str:
         return (
-            f"{self.__class__.__name__}-{self.lat.file_stem}-"
+            f"{self.__class__.__name__}-{self.lattice.file_stem}-"
             f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}"
         )

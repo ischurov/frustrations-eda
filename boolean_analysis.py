@@ -186,76 +186,6 @@ def keep_everything(s: pd.Series) -> pd.Series:
     return s
 
 
-def find_character(x: pd.DataFrame, n_spins: int) -> np.ndarray:
-    if (n_spins // 2) % 2 == 0:
-        return np.ones_like(x["representative"])
-    return np.where(
-        x["representative"] != x["representative_x"],
-        -1,
-        np.where(x["representative"] != x["representative_y"], 1, 0),
-    )
-
-
-def make_fourier_basis_state_info_sym(
-    system: SpinSystem,
-) -> tuple[npt.NDArray[np.uint64], pd.DataFrame]:
-    fourier_basis = ls.SpinBasis(
-        symmetries=system.symmetries,
-        number_spins=system.number_spins,
-        hamming_weight=None,
-        spin_inversion=None,
-    )
-    fourier_basis.build()
-
-    all_subsets = np.arange(2**system.number_spins, dtype="uint64")
-    mask = 2**system.number_spins - 1
-
-    fourier_basis_state_info = batched_state_info_df(fourier_basis, all_subsets).drop(
-        "norm", axis=1
-    )
-    sign_flip_basis_correspondence = (
-        batched_state_info_df(fourier_basis, fourier_basis.states ^ mask)
-        .assign(initial_representative=fourier_basis.states)
-        .drop(["character", "norm"], axis=1)
-    )
-    fourier_basis_state_info_df = (
-        fourier_basis_state_info.reset_index()
-        .rename(columns={"index": "state"})
-        .merge(
-            sign_flip_basis_correspondence,
-            left_on="representative",
-            right_on="initial_representative",
-            how="left",
-        )
-        .assign(
-            hamming_weight_x=lambda x: popcount(x["representative_x"]),
-            hamming_weight_y=lambda x: popcount(x["representative_y"]),
-        )
-        .assign(
-            representative=lambda x: np.where(  # if
-                x["hamming_weight_x"] < x["hamming_weight_y"],  # then
-                x["representative_x"],  # else
-                np.where(  # if
-                    x["hamming_weight_x"] > x["hamming_weight_y"],  # then
-                    x["representative_y"],  # else
-                    np.minimum(x["representative_x"], x["representative_y"]),
-                ),
-            )
-        )
-        .assign(character=lambda x: find_character(x, system.number_spins))
-        .loc[:, ["state", "representative", "character"]]
-        .set_index("state")
-        .reindex(columns=["representative", "character"])
-    )
-
-    subsets = fourier_basis_state_info_df["representative"].unique()
-    subsets = subsets[parity(subsets) == 0]
-    # for any system invariant under spin inversion, all subsets with odd parity
-    # have coefficient 0, so we can ignore them
-
-    return subsets, fourier_basis_state_info_df
-
-
 class BFATruncation:
     def __init__(self, analyzer: "BooleanFourierAnalyzer", truncate_strategy: TruncateStrategy):
         self.truncate_strategy = truncate_strategy
@@ -308,7 +238,10 @@ class BFATruncation:
         return coeffs
 
     def predict(
-        self, x: npt.NDArray[np.uint64], transform_according_to_signal=True
+        self,
+        x: npt.NDArray[np.uint64],
+        transform_according_to_signal=True,
+        max_batch_size: int | None = None,
     ) -> npt.NDArray[np.float64]:
         coeffs = self.get_expanded_coeffs_ser()
 
@@ -328,18 +261,26 @@ class BFATruncation:
             # subset modulo the sign, and the correcting sings are the same, thus
             # cancelling out
 
-        transform_matrix = calculate_fourier_transform_matrix(
-            states=x, subsets=np.array(coeffs.index, dtype="uint64")
-        )
+        predictions = []
+        if max_batch_size is None or max_batch_size > len(x):
+            max_batch_size = len(x)
+        for x_batch in np.array_split(x, len(x) // max_batch_size):
+            transform_matrix = calculate_fourier_transform_matrix(
+                states=x_batch, subsets=np.array(coeffs.index, dtype="uint64")
+            )
 
-        prediction = np.asarray(
-            (1 + self.analyzer.use_subset_symmetries)
-            * transform_matrix
-            @ np.asarray(coeffs.values, dtype="float64"),
-            dtype="float64",
-        )
-        # the factor (1 + self.use_subset_symmetries) is to account for the fact that we
-        # halved the number of coefficients if self.use_subset_symmetries is True
+            prediction = np.asarray(
+                (1 + self.analyzer.use_subset_symmetries)
+                * transform_matrix
+                @ np.asarray(coeffs.values, dtype="float64"),
+                dtype="float64",
+            )
+            # the factor (1 + self.use_subset_symmetries) is to account for the fact that we
+            # halved the number of coefficients if self.use_subset_symmetries is True
+
+            predictions.append(prediction)
+
+        prediction = np.concatenate(predictions)
 
         if transform_according_to_signal:
             prediction = self.analyzer.signal_opt.kind.transform_predict(prediction)
@@ -348,13 +289,19 @@ class BFATruncation:
 
     @overload
     def prediction_score(
-        self, scorer: str | ScorerType, x: npt.NDArray[np.uint64] | None = None
+        self,
+        scorer: str | ScorerType,
+        x: npt.NDArray[np.uint64] | None = None,
+        max_batch_size: int | None = None,
     ) -> float:
         ...
 
     @overload
     def prediction_score(
-        self, scorer: list[str | ScorerType], x: npt.NDArray[np.uint64] | None = None
+        self,
+        scorer: list[str | ScorerType],
+        x: npt.NDArray[np.uint64] | None = None,
+        max_batch_size: int | None = None,
     ) -> dict[str, float]:
         ...
 
@@ -362,13 +309,14 @@ class BFATruncation:
         self,
         scorer: str | ScorerType | list[str | ScorerType],
         x: npt.NDArray[np.uint64] | None = None,
+        max_batch_size: int | None = None,
     ) -> float | dict[str, float]:
 
         if x is None:
             x = self.analyzer.system.canonical_basis.states
 
         signal_df = self.analyzer.get_signal_df(x)
-        prediction = self.predict(x)
+        prediction = self.predict(x, max_batch_size=max_batch_size)
 
         if isinstance(scorer, Iterable) and not isinstance(scorer, str):
             return {str(s): get_scorer(s)(signal_df, prediction) for s in scorer}
@@ -394,27 +342,32 @@ class BooleanFourierAnalyzer:
 
         number_spins = self.system.number_spins
 
-        self.canonical_fourier_basis = ls.SpinBasis(
-            symmetries=ls.Symmetries([]),
-            number_spins=number_spins,
-            hamming_weight=None,
-            spin_inversion=None,
-        )
-        self.canonical_fourier_basis.build()
-
         if use_subset_symmetries:
+            if show_progress:
+                print("Making Fourier basis state info with symmetries...")
             (
                 self.subsets,
                 self.fourier_basis_state_info_df,
-            ) = make_fourier_basis_state_info_sym(self.system)
+            ) = self.system.lattice.make_fourier_basis_state_info_sym(show_progress=show_progress)
 
         else:
+            if show_progress:
+                print("Making Fourier basis state info without symmetries...")
+
+            canonical_fourier_basis = ls.SpinBasis(
+                symmetries=ls.Symmetries([]),
+                number_spins=number_spins,
+                hamming_weight=None,
+                spin_inversion=None,
+            )
+            canonical_fourier_basis.build()
+
             self.fourier_basis_state_info_df = batched_state_info_df(
-                self.canonical_fourier_basis,
+                canonical_fourier_basis,
                 np.arange(2**self.system.number_spins, dtype="uint64"),
             ).drop("norm", axis=1)
 
-            self.subsets = self.canonical_fourier_basis.states
+            self.subsets = canonical_fourier_basis.states
         if show_progress:
             print("Finding system ground state")
         self.system.get_eigenstates(eigenstates)
@@ -545,7 +498,8 @@ class BooleanFourierAnalyzer:
         max_terms: int = 101,
         step: int = 1,
         show_progress: bool = True,
-    ) -> int | None:
+        additional_scorers: list[str | ScorerType] | None = None,
+    ) -> tuple[int | None, dict[str | ScorerType, float]]:
         """
         How many terms are needed to reconstruct the sign structure of the ground state
         with the given score?
@@ -567,11 +521,20 @@ class BooleanFourierAnalyzer:
         step : int, optional
             The step size, by default 10
 
+        show_progress : bool, optional
+            Show progress messages, by default True
+
+        additional_scorers : list[str|ScorerType], optional
+            Additional scorers to calculate, by default None
+
         Returns
         -------
         int | None
             The number of terms needed to achieve the target score, or None if the target
             score could not be achieved.
+
+        dict[str|ScorerType, float]
+            The scores achieved
         """
 
         evaluation_set = self.system.basis.states
@@ -579,6 +542,11 @@ class BooleanFourierAnalyzer:
         state_info_df = batched_state_info_df(
             self.system.basis, self.system.canonical_basis.states
         )
+
+        if additional_scorers is None:
+            additional_scorers = []
+
+        scores: dict[str | ScorerType, float] = {}
 
         for n_terms in range(min_terms, max_terms, step):
             if n_terms == min_terms:
@@ -601,8 +569,14 @@ class BooleanFourierAnalyzer:
             )
 
             score = get_scorer(scorer)(true, prediction_expanded)
+            scores[scorer] = score
+            for additional_scorer in additional_scorers:
+                scores[additional_scorer] = get_scorer(additional_scorer)(
+                    true, prediction_expanded
+                )
+
             if show_progress:
                 print(f"{n_terms} terms: {score:.3f}")
             if score >= target_score:
-                return n_terms
-        return None
+                return n_terms, scores
+        return None, scores

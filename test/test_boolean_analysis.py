@@ -46,7 +46,7 @@ class TestBooleanFourierAnalyzer(TestCase):
             all(
                 [
                     first_subset[i] != first_subset[j]
-                    for i, j in analyzer_sym.system.lat.kind_to_edges[1]
+                    for i, j in analyzer_sym.system.lattice.kind_to_edges[1]
                 ]
             )
         )  # bipartite sublattices
@@ -311,7 +311,7 @@ class TestBooleanFourierAnalyzer(TestCase):
 
         terms = analyzer.how_many_terms_to_achieve_score(
             scorer="sign_overlap", target_score=0.95, min_terms=1, max_terms=101, step=1
-        )
+        )[0]
 
         assert terms is not None
 
@@ -338,13 +338,15 @@ class TestBooleanFourierAnalyzer(TestCase):
         analyzer.fit(analyzer.system.canonical_basis.states)
 
         self.assertEqual(
-            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=0.99), 1
+            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=0.99)[0], 1
         )
         self.assertEqual(
-            analyzer.how_many_terms_to_achieve_score(scorer="sign_overlap", target_score=0.99), 1
+            analyzer.how_many_terms_to_achieve_score(scorer="sign_overlap", target_score=0.99)[0],
+            1,
         )
         self.assertTrue(
-            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=1.01) is None
+            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=1.01)[0]
+            is None
         )
 
         # Frustrated
@@ -366,8 +368,30 @@ class TestBooleanFourierAnalyzer(TestCase):
                 self.assertTrue(terms > 1)
 
         assert_is_large(
-            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=0.99)
+            analyzer.how_many_terms_to_achieve_score(scorer="accuracy", target_score=0.99)[0]
         )
         assert_is_large(
-            analyzer.how_many_terms_to_achieve_score(scorer="sign_overlap", target_score=0.99)
+            analyzer.how_many_terms_to_achieve_score(scorer="sign_overlap", target_score=0.99)[0]
+        )
+
+    def test_predict_max_batch_size(self):
+        analyzer = BooleanFourierAnalyzer(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=2),
+                J1=1,
+                J2=0.8,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            use_subset_symmetries=True,
+        )
+        analyzer.fit(analyzer.system.canonical_basis.states)
+
+        self.assertTrue(
+            np.allclose(
+                analyzer.truncate(keep_everything).predict(analyzer.system.basis.states),
+                analyzer.truncate(keep_everything).predict(
+                    analyzer.system.basis.states, max_batch_size=17
+                ),
+            )
         )

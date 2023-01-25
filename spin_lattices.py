@@ -3,13 +3,15 @@ from itertools import product
 from typing import Union
 
 import igraph as ig
+import lattice_symmetries as ls
 import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 
-from utils import make_unpacked_configurations
+from parity import parity, popcount
+from utils import batched_state_info_df, make_unpacked_configurations
 
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
@@ -85,6 +87,7 @@ class SpinLattice:
         self.lattice_basis = np.c_[u, v]
         self.height = height
         self.width = width
+        self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
 
         edges = [
             ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
@@ -135,6 +138,8 @@ class SpinLattice:
         sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
         self.sites_df = sites_df
 
+        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
+
     @property
     def sites(self) -> list[int]:
         """
@@ -166,21 +171,209 @@ class SpinLattice:
         g = self.as_igraph()
         return g.get_automorphisms_vf2(edge_color=g.es["kind"])
 
+    def make_fourier_basis_state_info_sym(
+        self, show_progress: bool = False
+    ) -> tuple[npt.NDArray[np.uint64], pd.DataFrame]:
+        """
+        This function returns a tuple (subsets, df) where subsets is a list of subsets of sites
+        and df is a dataframe similar to what is returned by `batched_state_info_df` function.
+
+        Is used by boolean fourier analysis.
+        """
+
+        def find_fourier_character(x: pd.DataFrame, n_spins: int) -> np.ndarray:
+            if (n_spins // 2) % 2 == 0:
+                return np.ones_like(x["representative"])
+            return np.where(
+                x["representative"] != x["representative_x"],
+                -1,
+                np.where(x["representative"] != x["representative_y"], 1, 0),
+            )
+
+        if hasattr(self, "fourier_basis_state_info"):
+            return self.fourier_basis_state_info
+
+        symmetries = ls.Symmetries(
+            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+        )
+        number_spins = len(self.sites)
+
+        fourier_basis = ls.SpinBasis(
+            symmetries=symmetries,
+            number_spins=number_spins,
+            hamming_weight=None,
+            spin_inversion=None,
+        )
+        if show_progress:
+            print("MFBSIS: Building Fourier basis...")
+        fourier_basis.build()
+
+        all_subsets = np.arange(2**number_spins, dtype="uint64")
+        mask = 2**number_spins - 1
+
+        if show_progress:
+            print("MFBSIS: Computing state info...")
+
+        fourier_basis_state_info = batched_state_info_df(fourier_basis, all_subsets).drop(
+            "norm", axis=1
+        )
+
+        if show_progress:
+            print("MFBSIS: Computing sign flip basis correspondence...")
+
+        sign_flip_basis_correspondence = (
+            batched_state_info_df(fourier_basis, fourier_basis.states ^ mask)
+            .assign(initial_representative=fourier_basis.states)
+            .drop(["character", "norm"], axis=1)
+        )
+
+        if show_progress:
+            print("MFBSIS: Computing fourier_basis_state_info_df...")
+        fourier_basis_state_info_df = (
+            fourier_basis_state_info.reset_index()
+            .rename(columns={"index": "state"})
+            .merge(
+                sign_flip_basis_correspondence,
+                left_on="representative",
+                right_on="initial_representative",
+                how="left",
+            )
+            .assign(
+                hamming_weight_x=lambda x: popcount(x["representative_x"]),
+                hamming_weight_y=lambda x: popcount(x["representative_y"]),
+            )
+            .assign(
+                representative=lambda x: np.where(  # if
+                    x["hamming_weight_x"] < x["hamming_weight_y"],  # then
+                    x["representative_x"],  # else
+                    np.where(  # if
+                        x["hamming_weight_x"] > x["hamming_weight_y"],  # then
+                        x["representative_y"],  # else
+                        np.minimum(x["representative_x"], x["representative_y"]),
+                    ),
+                )
+            )
+            .assign(character=lambda x: find_fourier_character(x, number_spins))
+            .loc[:, ["state", "representative", "character"]]
+            .set_index("state")
+            .reindex(columns=["representative", "character"])
+        )
+
+        subsets = fourier_basis_state_info_df["representative"].unique()
+        subsets = subsets[parity(subsets) == 0]
+        # for any system invariant under spin inversion, all subsets with odd parity
+        # have coefficient 0, so we can ignore them
+
+        self.fourier_basis_state_info = (subsets, fourier_basis_state_info_df)
+
+        return subsets, fourier_basis_state_info_df
+
+    def get_heisenberg_symmetries(self) -> ls.Symmetries:
+        return ls.Symmetries(
+            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+        )
+
+    def get_basis(
+        self,
+        use_symmetries: bool = True,
+        hamming_weight: int | None = None,
+        spin_inversion: int | None = None,
+    ) -> ls.SpinBasis:
+        """
+        Returns a spin basis for the lattice.
+        If use_symmetries is True, the basis will contain only the representatives of the
+        symmetry-equivalent states.
+
+        It currently supports only sector=0 symmetries (i.e. suitable for Heisenberg hamiltonians)
+
+        If hamming_weight is not None, the basis will contain only states with the given
+        hamming weight.
+
+        If spin_inversion is not None, the spin inversion symmetry will be used to reduce the
+        number of states in the basis. In this case, spin_inversion is a character of the
+        spin inversion representation. I.e. spin_inversion=1 means that the ground state
+        is invariant under the spin inversion.
+
+        For Heisenberg models, it is usually hamming_weight=number_spins // 2 and
+        spin_inversion=1.
+        """
+
+        basis = self.bases.get((use_symmetries, hamming_weight, spin_inversion))
+        if basis is not None:
+            return basis
+        number_spins = len(self.sites)
+        if use_symmetries:
+            symmetries = self.get_heisenberg_symmetries()
+        else:
+            symmetries = ls.Symmetries([])
+
+        basis = ls.SpinBasis(
+            symmetries=symmetries,
+            number_spins=number_spins,
+            hamming_weight=hamming_weight,
+            spin_inversion=spin_inversion,
+        )
+        basis.build()
+        self.bases[(use_symmetries, hamming_weight, spin_inversion)] = basis
+        return basis
+
+    # def get_canonical_heisenberg_basis(self):
+    #     """
+    #     This function builds a canonical basis for the Heisenberg model on the lattice.
+    #     No symmetries, hamming_weight = number_spins // 2, spin_inversion = None.
+    #     """
+
+    #     if hasattr(self, "canonical_heisenberg_basis"):
+    #         return self.canonical_heisenberg_basis
+    #     number_spins = len(self.sites)
+    #     self.canonical_heisenberg_basis = ls.SpinBasis(
+    #         symmetries=ls.Symmetries([]),
+    #         number_spins=number_spins,
+    #         hamming_weight=number_spins // 2,
+    #         spin_inversion=None,
+    #     )
+    #     self.canonical_heisenberg_basis.build()
+    #     return self.canonical_heisenberg_basis
+
+    # def get_heisenberg_basis_sym(self):
+    #     """
+    #     This function builds a basis with symmetries for the Heisenberg model
+    #     on the lattice.
+
+    #     The symmetries are the automorphisms of the lattice.
+    #     hamming_weight = number_spins // 2, spin_inversion = 1.
+    #     """
+    #     if hasattr(self, "heisenberg_basis"):
+    #         return self.heisenberg_basis
+
+    #     number_spins = len(self.sites)
+    #     symmetries_lst = [
+    #         ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()
+    #     ]
+    #     symmetries = ls.Symmetries(symmetries_lst)
+    #     self.heisenberg_basis = ls.SpinBasis(
+    #         symmetries=symmetries,
+    #         number_spins=number_spins,
+    #         hamming_weight=number_spins // 2,
+    #         spin_inversion=1,
+    #     )
+    #     self.heisenberg_basis.build()
+    #     return self.heisenberg_basis
+
     def plot(self, spins=None, show_edges=True, ax=None):
         """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is None:
             spins = 0
 
-    
-        if isinstance(spins, (int, np.uint64)): # type: ignore
+        if isinstance(spins, (int, np.uint64)):  # type: ignore
             # see https://github.com/numpy/numpy/issues/23007
-            
-            spins = make_unpacked_configurations(
-                np.array(spins, dtype="uint64"), len(self.sites)
-            )[0]
+
+            spins = make_unpacked_configurations(np.array(spins, dtype="uint64"), len(self.sites))[
+                0
+            ]
         spins_df = pd.DataFrame(dict(spin=spins))
         sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
-    
+
         if ax is None:
             _, ax = plt.subplots()
 

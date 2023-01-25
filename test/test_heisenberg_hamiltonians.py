@@ -97,7 +97,7 @@ class TestDiagonalization(TestCase):
                 all(
                     [
                         most_probable_config[i] != most_probable_config[j]
-                        for i, j in system.lat.kind_to_edges[1]
+                        for i, j in system.lattice.kind_to_edges[1]
                     ]
                 )
             )
@@ -135,8 +135,8 @@ class TestHamiltonianProperties(TestCase):
 
         expr_str = "σˣ₀ σˣ₁ + σʸ₀ σʸ₁ + σᶻ₀ σᶻ₁"
         # fmt: off
-        expr = (J1 * ls.Expr(expr_str, sites=system.lat.kind_to_edges[1]) + 
-                J2 * ls.Expr(expr_str, sites=system.lat.kind_to_edges[2]))
+        expr = (J1 * ls.Expr(expr_str, sites=system.lattice.kind_to_edges[1]) + 
+                J2 * ls.Expr(expr_str, sites=system.lattice.kind_to_edges[2]))
         # fmt: on
 
         self.assertTrue(system.hamiltonian.expression == expr)
