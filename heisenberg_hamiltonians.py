@@ -122,6 +122,10 @@ class SpinSystem:
             raise ValueError(f"Eigenstate not found; run .get_eigenstates({k}) first")
         elif self.eigenstates.shape[1] <= k:
             raise ValueError(f"Not enough eigenstates found; run .get_eigenstates({k}) first")
+        if expand_basis_columns and not unpack_configurations:
+            raise ValueError(
+                "expand_basis_columns=True requires unpack_configurations=True"
+            )
 
         df = pd.DataFrame(
             dict(eigenstate_coeff=self.eigenstates[:, k]),
