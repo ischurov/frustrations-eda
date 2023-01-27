@@ -5,10 +5,14 @@ import pandas as pd
 
 
 def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
+    initial_shape = np.shape(states)
     return (
-        np.asarray(states, dtype="uint64").reshape(-1, 1)
-        >> np.arange(number_spins, dtype="uint64")
-    ) & 1
+        (
+            np.asarray(states, dtype="uint64").reshape(-1, 1)
+            >> np.arange(number_spins, dtype="uint64")
+        )
+        & 1
+    ).reshape(initial_shape + (number_spins,))
 
 
 def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):

@@ -139,6 +139,7 @@ class SpinLattice:
         self.sites_df = sites_df
 
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
+        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
 
     @property
     def sites(self) -> list[int]:
@@ -196,7 +197,7 @@ class SpinLattice:
         symmetries = ls.Symmetries(
             [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
         )
-        number_spins = len(self.sites)
+        number_spins = self.number_spins
 
         fourier_basis = ls.SpinBasis(
             symmetries=symmetries,
@@ -273,6 +274,10 @@ class SpinLattice:
             [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
         )
 
+    @property
+    def number_spins(self) -> int:
+        return len(self.sites)
+
     def get_basis(
         self,
         use_symmetries: bool = True,
@@ -301,7 +306,7 @@ class SpinLattice:
         basis = self.bases.get((use_symmetries, hamming_weight, spin_inversion))
         if basis is not None:
             return basis
-        number_spins = len(self.sites)
+        number_spins = self.number_spins
         if use_symmetries:
             symmetries = self.get_heisenberg_symmetries()
         else:
@@ -316,6 +321,29 @@ class SpinLattice:
         basis.build()
         self.bases[(use_symmetries, hamming_weight, spin_inversion)] = basis
         return basis
+
+    def get_state_info_df(
+        self,
+        use_symmetries: bool = True,
+        hamming_weight: int | None = None,
+        spin_inversion: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Returns state_info_df for the given basis with respect to canonical basis
+        with the following parameters:
+        use_symmetries=False, hamming_weight=number_spins // 2, spin_inversion=None.
+        """
+        state_info_df = self.state_info_dfs.get((use_symmetries, hamming_weight, spin_inversion))
+        if state_info_df is not None:
+            return state_info_df
+
+        basis = self.get_basis(use_symmetries, hamming_weight, spin_inversion)
+        canonical_basis = self.get_basis(
+            use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
+        )
+        state_info_df = batched_state_info_df(basis, canonical_basis.states)
+        self.state_info_dfs[(use_symmetries, hamming_weight, spin_inversion)] = state_info_df
+        return state_info_df
 
     # def get_canonical_heisenberg_basis(self):
     #     """
@@ -368,7 +396,7 @@ class SpinLattice:
         if isinstance(spins, (int, np.uint64)):  # type: ignore
             # see https://github.com/numpy/numpy/issues/23007
 
-            spins = make_unpacked_configurations(np.array(spins, dtype="uint64"), len(self.sites))[
+            spins = make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)[
                 0
             ]
         spins_df = pd.DataFrame(dict(spin=spins))
