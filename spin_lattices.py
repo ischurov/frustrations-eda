@@ -329,8 +329,8 @@ class SpinLattice:
         spin_inversion: int | None = None,
     ) -> pd.DataFrame:
         """
-        Returns state_info_df for the given basis with respect to canonical basis
-        with the following parameters:
+        Returns state_info_df for the given basis with respect to the canonical basis.
+        The canonical basis is the basis with the following parameters:
         use_symmetries=False, hamming_weight=number_spins // 2, spin_inversion=None.
         """
         state_info_df = self.state_info_dfs.get((use_symmetries, hamming_weight, spin_inversion))
@@ -396,9 +396,9 @@ class SpinLattice:
         if isinstance(spins, (int, np.uint64)):  # type: ignore
             # see https://github.com/numpy/numpy/issues/23007
 
-            spins = make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)[
-                0
-            ]
+            spins = np.array(
+                make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)
+            )
         spins_df = pd.DataFrame(dict(spin=spins))
         sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
 

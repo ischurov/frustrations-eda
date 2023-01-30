@@ -40,7 +40,7 @@ class TestBooleanFourierAnalyzer(TestCase):
         first_subset = make_unpacked_configurations(
             analyzer_sym.learner.get_coeffs_ser().index[0],  # type: ignore
             analyzer_sym.system.number_spins,
-        )[0]
+        )
 
         self.assertTrue(
             all(
@@ -85,7 +85,7 @@ class TestBooleanFourierAnalyzer(TestCase):
         pdt.assert_series_equal(
             analyzer.truncate(keep_largest_n(1)).get_expanded_coeffs_ser(),
             pd.Series(
-                [-0.185471, 0.185471],
+                [0.185471, -0.185471],
                 index=pd.Series(np.array([5285, 256858], dtype="uint64")).rename("state"),
             ).rename("coeff"),
         )

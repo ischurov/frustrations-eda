@@ -1,14 +1,9 @@
-from pathlib import Path
-
-FOURIER_BASIS_DIR = Path("fourier-bases")
-FOURIER_BASIS_DIR.mkdir(exist_ok=True)
-
-
 import lzma
 import pickle
 from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import md5
+from pathlib import Path
 from typing import Any, Callable, Literal, Optional, Union, overload
 
 import lattice_symmetries as ls
@@ -17,17 +12,12 @@ import numpy as np
 import numpy.linalg
 import numpy.typing as npt
 import pandas as pd
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
-
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
-    SpinSystem,
-    batched_state_info_df,
-    make_unpacked_configurations,
-)
-from parity import calculate_fourier_transform_matrix, parity, popcount
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -335,7 +325,6 @@ class BooleanFourierAnalyzer:
     ):
         self.system = system
         self.use_subset_symmetries = use_subset_symmetries
-        self.truncate_strategy: TruncateStrategy = keep_everything
         self.cache_dir = cache_dir
         if self.cache_dir is not None:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -360,6 +349,7 @@ class BooleanFourierAnalyzer:
                 hamming_weight=None,
                 spin_inversion=None,
             )
+
             canonical_fourier_basis.build()
 
             self.fourier_basis_state_info_df = batched_state_info_df(

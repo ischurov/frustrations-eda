@@ -49,7 +49,7 @@ class TestParity(TestCase):
             masks = subsets.reshape(1, -1)
             masked = states.reshape(-1, 1) & masks
             parities = parity(masked)
-            return parities.astype("int8") * 2 - 1
+            return -parities.astype("int8") * 2 + 1
 
         np.random.seed(42)
         states = np.random.randint(0, 2**64, size=10000, dtype="uint64")

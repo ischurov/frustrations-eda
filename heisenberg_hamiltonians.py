@@ -9,7 +9,6 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
-
 from spin_lattices import SpinLattice
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -116,6 +115,17 @@ class SpinSystem:
         Returns the dataframe with the k'th eigenstate indexed by basis states
         Optionally, basis configurations can be unpacked
         If expand_basis_columns, they will be unpacked as separate columns
+
+        Columns:
+        - eigenstate_coeff: the k'th eigenvector
+        - amplitude: the absolute value of the k'th eigenvector
+
+        If unpack_configurations:
+        - configurations: the unpacked basis configurations
+
+        If expand_basis_columns:
+        - s0, s1, s2, ...: spin values
+
         """
 
         if self.eigenstates is None:
@@ -123,9 +133,7 @@ class SpinSystem:
         elif self.eigenstates.shape[1] <= k:
             raise ValueError(f"Not enough eigenstates found; run .get_eigenstates({k}) first")
         if expand_basis_columns and not unpack_configurations:
-            raise ValueError(
-                "expand_basis_columns=True requires unpack_configurations=True"
-            )
+            raise ValueError("expand_basis_columns=True requires unpack_configurations=True")
 
         df = pd.DataFrame(
             dict(eigenstate_coeff=self.eigenstates[:, k]),
