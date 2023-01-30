@@ -12,8 +12,11 @@ import numpy as np
 import numpy.linalg
 import numpy.typing as npt
 import pandas as pd
+import torch
+import torch.nn as nn
 from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from heisenberg_hamiltonians import (SpinSystem, batched_state_info_df,
+                                     make_unpacked_configurations)
 from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
@@ -113,6 +116,30 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
 
     def get_cache_id(self) -> str:
         return f"{self.system.system_id()}-{self.eigenstate}-{self.kind.name}"
+
+
+class LBFFromNN(LatticeBooleanFunction):
+    def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series, network_id: str):
+        super().__init__(lattice)
+        self.nn = nn
+        self._probs = probs
+        self.network_id = network_id
+
+    def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
+        net_output = self.nn(
+            torch.tensor(
+                make_unpacked_configurations(x, self.lattice.number_spins).astype("float32"),
+                dtype=torch.float32,
+            )
+        )
+
+        return 1 - torch.max(net_output, 1)[1].detach().numpy() * 2
+
+    def get_probs(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
+        return self._probs.loc[x].values
+
+    def get_cache_id(self) -> str:
+        return f"{self.network_id}-{self.lattice.file_stem}"
 
 
 TruncateStrategy = Callable[[pd.Series], pd.Series]

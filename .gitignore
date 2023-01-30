@@ -19,3 +19,4 @@ untitled.txt
 .nfs*
 fourier_learners_cache/
 checkpoint.pt
+fourier_learners_cache_wrongsign/*

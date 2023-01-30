@@ -30,7 +30,7 @@ ffibuilder.set_source(
         #pragma omp parallel for
         for (size_t i = 0; i < n_states; ++i) {
             for (size_t j = 0; j < n_masks; ++j) {
-                out[i * n_masks + j] = 1 - __builtin_parityll(states[i] & masks[j]) * 2;
+                out[i * n_masks + j] = (1 - __builtin_parityll(states[i] & masks[j]) * 2);
             }
         }
         return 0;

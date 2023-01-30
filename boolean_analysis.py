@@ -1,5 +1,6 @@
 import lzma
 import pickle
+import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from hashlib import md5
@@ -12,12 +13,20 @@ import numpy as np
 import numpy.linalg
 import numpy.typing as npt
 import pandas as pd
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
-from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score
 from tqdm import tqdm
+
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix, parity, popcount
+
+warnings.warn("This module is deprecated and will be removed in the future.")
+warnings.warn("Use lattice_boolean_analysis.py instead.")
 
 
 def camel_case_to_snake_case(name: str) -> str:
