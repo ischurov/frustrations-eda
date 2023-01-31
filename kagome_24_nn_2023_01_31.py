@@ -4,6 +4,7 @@ import pickle
 from itertools import product
 from pathlib import Path
 
+import jsonlines
 import numpy as np
 import pandas as pd
 import torch
@@ -42,25 +43,22 @@ nn_checkpoints_dir = experiment_dir / "nn_checkpoints"
 nn_checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
 
-nn_accuracy_file = experiment_dir / f"nn_acc-0.7-terms.csv"
-nn_overlap_file = experiment_dir / f"nn_overlap-0.95-terms.csv"
+nn_accuracy_file = experiment_dir / f"nn_acc-0.7-terms.jsonl"
 
-system_accuracy_file = experiment_dir / f"system_acc-0.7-terms.csv"
-system_overlap_file = experiment_dir / f"system_overlap-0.95-terms.csv"
+system_accuracy_file = experiment_dir / f"system_acc-0.7-terms.jsonl"
 
-model_evaluation_file = experiment_dir / f"model_evaluation.csv"
+model_evaluation_file = experiment_dir / f"model_evaluation.jsonl"
 
-J2s = [0.0, 0.4, 0.6, 0.8, 1.0]
+J2s = [0.0, 0.6, 0.8, 1.0]
 lattice = KagomeLattice(width=2, height=4)
 signal_kind = SignSignalKind()
 
-eps_trains = [1e-3, 1e-2]
+eps_trains = [5e-4, 1e-3, 5e-2, 1e-2]
 val_eps = 5e-2
 test_eps = 5e-2
 epochs = 20000
 patience = 1000
 delta = 0.01
-
 
 
 def get_inputs_and_labels(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -75,6 +73,7 @@ def get_inputs_and_labels(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor,
 
 
 def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
+    epoch = 0
     for epoch in range(epochs):  # loop over the dataset multiple times
 
         i = None
@@ -114,7 +113,7 @@ def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
             break
 
     net.load_state_dict(torch.load(early_stopping.path))
-    return net
+    return net, epoch
 
 
 def evaluate(net, inputs, labels, probs):
@@ -130,29 +129,19 @@ def evaluate(net, inputs, labels, probs):
         return accuracy, sign_overlap
 
 
-def write_terms_to_file(file, analyzer, J2, scorer, additional_scorers, target_score):
+def write_terms_to_file(file, analyzer, scorer, additional_scorers, target_score, params):
     terms, scores = analyzer.how_many_terms_to_achieve_score(
         scorer=scorer,
         target_score=target_score,
-        max_terms=10002,
+        max_terms=1002,
         step=10,
         additional_scorers=additional_scorers,
     )
-    with open(file, "a") as f:
-        print(
-            f"{J2!r},{terms},{scores['accuracy']}," f"{scores['sign_overlap']}",
-            file=f,
-        )
+    with jsonlines.open(file, "a") as f:
+        f.write({"lattice": lattice.file_stem, "terms": terms} | scores | params)
 
 
 if __name__ == "__main__":
-
-    system_accuracy_file.write_text("J2,terms,accuracy,sign_overlap\n")
-    system_overlap_file.write_text("J2,terms,accuracy,sign_overlap\n")
-    nn_accuracy_file.write_text("J2,terms,accuracy,sign_overlap\n")
-    nn_overlap_file.write_text("J2,terms,accuracy,sign_overlap\n")
-
-    model_evaluation_file.write_text("J2,eps_train,test_accuracy,test_sign_overlap\n")
 
     for J2 in J2s:
 
@@ -210,7 +199,7 @@ if __name__ == "__main__":
             early_stopping = EarlyStopping(
                 patience=patience, delta=delta, verbose=False, path=str(model_path)
             )
-            net = train_net(net, epochs, early_stopping)
+            net, epoch = train_net(net, epochs, early_stopping)
 
             inputs_test, labels_test, probs_test = get_inputs_and_labels(df_test)
             accuracy_test, sign_overlap_test = evaluate(net, inputs_test, labels_test, probs_test)
@@ -218,10 +207,17 @@ if __name__ == "__main__":
             print(
                 f"Test set: accuracy: {100 * accuracy_test} %, sign overlap: {sign_overlap_test}"
             )
-            with open(model_evaluation_file, "a") as f:
-                print(
-                    f"{J2!r},{eps_train},{accuracy_test},{sign_overlap_test}",
-                    file=f,
+            with jsonlines.open(model_evaluation_file, "a") as f:
+                f.write(
+                    {
+                        "J2": J2,
+                        "eps_train": eps_train,
+                        "accuracy_test": accuracy_test,
+                        "sign_overlap_test": sign_overlap_test,
+                        "epoch": epoch,
+                        "lattice": lattice.file_stem,
+                        "train_size": len(df_train),
+                    }
                 )
 
             nn_signal = LBFFromNN(
@@ -241,18 +237,10 @@ if __name__ == "__main__":
             write_terms_to_file(
                 file=nn_accuracy_file,
                 analyzer=nn_analyzer,
-                J2=J2,
                 scorer="accuracy",
                 additional_scorers=["sign_overlap"],
                 target_score=0.7,
-            )
-            write_terms_to_file(
-                file=nn_overlap_file,
-                analyzer=nn_analyzer,
-                J2=J2,
-                scorer="sign_overlap",
-                additional_scorers=["accuracy"],
-                target_score=0.95,
+                params={"J2": J2, "eps_train": eps_train},
             )
 
         system_signal = LBFFromSpinSystem(system=system, eigenstate=0, kind=signal_kind)
@@ -261,21 +249,11 @@ if __name__ == "__main__":
         )
 
         system_analyzer.fit()
-
         write_terms_to_file(
             file=system_accuracy_file,
             analyzer=system_analyzer,
-            J2=J2,
             scorer="accuracy",
             additional_scorers=["sign_overlap"],
             target_score=0.7,
-        )
-
-        write_terms_to_file(
-            file=system_overlap_file,
-            analyzer=system_analyzer,
-            J2=J2,
-            scorer="sign_overlap",
-            additional_scorers=["accuracy"],
-            target_score=0.95,
+            params={"J2": J2},
         )

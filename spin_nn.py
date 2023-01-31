@@ -24,3 +24,17 @@ class SpinNN(nn.Module):
 
     def postprocess(self, x: torch.Tensor) -> torch.Tensor:
         return x.mean(dim=0)
+
+
+class FC1SpinNN(SpinNN):
+    def __init__(self, lattice: SpinLattice, hidden_size: int):
+        super().__init__(lattice)
+        input_size = lattice.number_spins
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size, 2)
+
+    def forward(self, inp: torch.Tensor) -> torch.Tensor:
+        x = self.preprocess(inp)
+        x = torch.relu(self.fc1(x))
+        x = self.fc2(x)
+        return self.postprocess(x)
