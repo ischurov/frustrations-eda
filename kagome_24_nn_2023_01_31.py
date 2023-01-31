@@ -32,7 +32,7 @@ from utils import make_unpacked_configurations
 
 self_name = os.path.basename(__file__)
 
-batch_size = 1000
+fourier_batch_size = 1000
 
 fourier_learners_cache_dir = Path("fourier_learners_cache")
 ground_state_cache_dir = Path("groundstates")
@@ -49,11 +49,11 @@ system_accuracy_file = experiment_dir / f"system_acc-0.7-terms.jsonl"
 
 model_evaluation_file = experiment_dir / f"model_evaluation.jsonl"
 
-J2s = [0.0, 0.6, 0.8, 1.0]
+J2s = [0.0, 0.5, 0.6, 0.8, 1.0]
 lattice = KagomeLattice(width=2, height=4)
 signal_kind = SignSignalKind()
 
-eps_trains = [5e-4, 1e-3, 5e-2, 1e-2]
+eps_trains = [1e-4, 1e-3, 5e-2, 1e-2]
 val_eps = 5e-2
 test_eps = 5e-2
 epochs = 20000
@@ -72,7 +72,18 @@ def get_inputs_and_labels(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor,
     return X, y, probs
 
 
-def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
+def train_net(
+    net: nn.Module,
+    batch_size: int,
+    epochs: int,
+    df_train: pd.DataFrame,
+    inputs_val,
+    labels_val,
+    probs_val,
+    early_stopping: EarlyStopping,
+    criterion,
+    optimizer,
+):
     epoch = 0
     for epoch in range(epochs):  # loop over the dataset multiple times
 
@@ -129,7 +140,9 @@ def evaluate(net, inputs, labels, probs):
         return accuracy, sign_overlap
 
 
-def write_terms_to_file(file, analyzer, scorer, additional_scorers, target_score, params):
+def write_terms_to_file(
+    file, analyzer: LatticeBooleanAnalyzer, scorer, additional_scorers, target_score, params
+):
     terms, scores = analyzer.how_many_terms_to_achieve_score(
         scorer=scorer,
         target_score=target_score,
@@ -137,7 +150,7 @@ def write_terms_to_file(file, analyzer, scorer, additional_scorers, target_score
         step=10,
         additional_scorers=additional_scorers,
     )
-    with jsonlines.open(file, "a") as f:
+    with jsonlines.open(file, mode="a") as f:
         f.write({"lattice": lattice.file_stem, "terms": terms} | scores | params)
 
 
@@ -199,7 +212,18 @@ if __name__ == "__main__":
             early_stopping = EarlyStopping(
                 patience=patience, delta=delta, verbose=False, path=str(model_path)
             )
-            net, epoch = train_net(net, epochs, early_stopping)
+            net, epoch = train_net(
+                net=net,
+                epochs=epochs,
+                early_stopping=early_stopping,
+                df_train=df_train,
+                inputs_val=inputs_val,
+                labels_val=labels_val,
+                probs_val=probs_val,
+                batch_size=batch_size,
+                criterion=criterion,
+                optimizer=optimizer,
+            )
 
             inputs_test, labels_test, probs_test = get_inputs_and_labels(df_test)
             accuracy_test, sign_overlap_test = evaluate(net, inputs_test, labels_test, probs_test)
@@ -232,7 +256,7 @@ if __name__ == "__main__":
             nn_analyzer = LatticeBooleanAnalyzer(
                 signal=nn_signal, show_progress=True, cache_dir=fourier_learners_cache_dir
             )
-            nn_analyzer.fit()
+            nn_analyzer.fit(batch_size=fourier_batch_size)
 
             write_terms_to_file(
                 file=nn_accuracy_file,
@@ -248,7 +272,7 @@ if __name__ == "__main__":
             signal=system_signal, show_progress=True, cache_dir=fourier_learners_cache_dir
         )
 
-        system_analyzer.fit()
+        system_analyzer.fit(batch_size=fourier_batch_size)
         write_terms_to_file(
             file=system_accuracy_file,
             analyzer=system_analyzer,
