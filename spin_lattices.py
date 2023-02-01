@@ -160,8 +160,7 @@ class SpinLattice:
             k_to_e[kind].append(edge)
         return k_to_e
 
-    @property
-    def file_stem(self):
+    def get_cache_id(self):
         return f"{self.__class__.__name__}{self.width}x{self.height}"
 
     def as_igraph(self) -> ig.Graph:

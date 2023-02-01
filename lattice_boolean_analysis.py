@@ -1,3 +1,6 @@
+import hashlib
+import io
+import json
 import lzma
 import pickle
 from collections.abc import Iterable
@@ -14,14 +17,18 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (SpinSystem, batched_state_info_df,
-                                     make_unpacked_configurations)
-from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
-from sklearn.metrics import accuracy_score
-from spin_lattices import SpinLattice
+from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
+
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix, parity, popcount
+from spin_lattices import SpinLattice
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -115,15 +122,14 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
         return np.abs(signal_df["eigenstate_coeff"].values) ** 2
 
     def get_cache_id(self) -> str:
-        return f"{self.system.system_id()}-{self.eigenstate}-{self.kind.name}"
+        return f"{self.system.get_cache_id()}-{self.eigenstate}-{self.kind.name}"
 
 
 class LBFFromNN(LatticeBooleanFunction):
-    def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series, network_id: str):
+    def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series):
         super().__init__(lattice)
         self.nn = nn
         self._probs = probs
-        self.network_id = network_id
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
         net_output = self.nn(
@@ -139,7 +145,13 @@ class LBFFromNN(LatticeBooleanFunction):
         return self._probs.loc[x].values
 
     def get_cache_id(self) -> str:
-        return f"{self.network_id}-{self.lattice.file_stem}"
+        buffer = io.BytesIO()
+        torch.save(self.nn.state_dict(), buffer)
+        id_ = hashlib.md5(
+            buffer.getvalue() + json.dumps(self._probs.to_dict()).encode("utf-8"),
+            usedforsecurity=False,
+        ).hexdigest()
+        return f"{self.nn.__class__.__name__}-{id_}"
 
 
 TruncateStrategy = Callable[[pd.Series], pd.Series]
@@ -148,31 +160,38 @@ ScorerType = Callable[[npt.NDArray, npt.NDArray, npt.NDArray], float]
 scorers: dict[str, ScorerType] = {}
 
 
-def register_as_scorer(f: ScorerType):
+def scorer(f: ScorerType):
     scorers[f.__name__.removesuffix("_scorer")] = f
     return f
 
 
-@register_as_scorer
+@scorer
 def sign_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
     return (true * np.sign(predict) * prob).sum() / prob.sum()
 
 
-@register_as_scorer
+@scorer
 def value_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
     return (true * predict).sum() / prob.sum()
 
 
-@register_as_scorer
+@scorer
 def accuracy_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
     """Ignores prob"""
     return (true == np.sign(predict)).mean()
 
 
-@register_as_scorer
+@scorer
 def neg_mse_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
     """Ignores prob"""
     return -float(np.mean((true - predict) ** 2))
+
+
+@scorer
+def f1_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
+    """Ignores prob"""
+    skip = (true == 0) | (predict == 0)
+    return float(f1_score(true[~skip], np.sign(predict[~skip])))
 
 
 def get_scorer(scorer: str | ScorerType) -> ScorerType:

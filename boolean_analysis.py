@@ -417,7 +417,7 @@ class BooleanFourierAnalyzer:
         return md5(
             (
                 (
-                    self.system.system_id()
+                    self.system.get_cache_id()
                     + ", ".join(map(str, x))
                     + ", ".join(map(str, self.subsets))
                     + str(signal_opt)
@@ -437,7 +437,7 @@ class BooleanFourierAnalyzer:
         if self.cache_dir is not None:
             cache_id = self.fit_cache_id(x, signal_opt)
             cache_path = (
-                self.cache_dir / f"{cache_id}-{self.system.system_id()}-{str(signal_opt)}.lz"
+                self.cache_dir / f"{cache_id}-{self.system.get_cache_id()}-{str(signal_opt)}.lz"
             )
 
             if cache_path.exists():

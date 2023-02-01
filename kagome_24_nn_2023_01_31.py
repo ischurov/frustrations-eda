@@ -150,8 +150,8 @@ def write_terms_to_file(
         step=10,
         additional_scorers=additional_scorers,
     )
-    with jsonlines.open(file, mode="a") as f:
-        f.write({"lattice": lattice.file_stem, "terms": terms} | scores | params)
+    with jsonlines.open(file, "a") as f:
+        f.write({"lattice": lattice.get_cache_id(), "terms": terms} | scores | params)
 
 
 if __name__ == "__main__":
@@ -207,7 +207,7 @@ if __name__ == "__main__":
 
             model_path = (
                 nn_checkpoints_dir
-                / f"FC1SpinNN-1hidden-64-sign-{system.system_id()}_eps_train={eps_train}.pt"
+                / f"FC1SpinNN-1hidden-64-sign-{system.get_cache_id()}_eps_train={eps_train}.pt"
             )
             early_stopping = EarlyStopping(
                 patience=patience, delta=delta, verbose=False, path=str(model_path)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
                         "accuracy_test": accuracy_test,
                         "sign_overlap_test": sign_overlap_test,
                         "epoch": epoch,
-                        "lattice": lattice.file_stem,
+                        "lattice": lattice.get_cache_id(),
                         "train_size": len(df_train),
                     }
                 )

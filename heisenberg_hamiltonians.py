@@ -9,6 +9,7 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
+
 from spin_lattices import SpinLattice
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -221,7 +222,7 @@ class SpinSystem:
     def eigenstate_path(self, k: int) -> Optional[Path]:
         raise NotImplementedError
 
-    def system_id(self) -> str:
+    def get_cache_id(self) -> str:
         raise NotImplementedError
 
     def sample_elements(
@@ -366,10 +367,10 @@ class HeisenbergJ1J2(SpinSystem):
     def eigenstate_path(self, k: int) -> Path | None:
         if self.ground_state_cache_dir is None:
             return None
-        return Path(self.ground_state_cache_dir / f"{self.system_id()}-{k}.pickle")
+        return Path(self.ground_state_cache_dir / f"{self.get_cache_id()}-{k}.pickle")
 
-    def system_id(self) -> str:
+    def get_cache_id(self) -> str:
         return (
-            f"{self.__class__.__name__}-{self.lattice.file_stem}-"
+            f"{self.__class__.__name__}-{self.lattice.get_cache_id()}-"
             f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}"
         )

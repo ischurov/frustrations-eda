@@ -4,6 +4,8 @@ import pickle
 from itertools import product
 from pathlib import Path
 
+import fire
+import jsonlines
 import numpy as np
 import pandas as pd
 import torch
@@ -25,13 +27,13 @@ from lattice_boolean_analysis import (
     ValueSignalKind,
 )
 from pytorchtools import EarlyStopping
-from spin_lattices import KagomeLattice, SpinLattice
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice
 from spin_nn import FC1SpinNN, SpinNN
 from utils import make_unpacked_configurations
 
 self_name = os.path.basename(__file__)
 
-batch_size = 1000
+fourier_batch_size = 1000
 
 fourier_learners_cache_dir = Path("fourier_learners_cache")
 ground_state_cache_dir = Path("groundstates")
@@ -42,19 +44,17 @@ nn_checkpoints_dir = experiment_dir / "nn_checkpoints"
 nn_checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
 
-nn_accuracy_file = experiment_dir / f"nn_acc-0.7-terms.csv"
-nn_overlap_file = experiment_dir / f"nn_overlap-0.95-terms.csv"
+nn_f1_file = experiment_dir / f"nn_f1-0.75-terms.jsonl"
 
-system_accuracy_file = experiment_dir / f"system_acc-0.7-terms.csv"
-system_overlap_file = experiment_dir / f"system_overlap-0.95-terms.csv"
+system_f1_file = experiment_dir / f"system_f1-0.75-terms.jsonl"
 
-model_evaluation_file = experiment_dir / f"model_evaluation.csv"
+model_evaluation_file = experiment_dir / f"model_evaluation.jsonl"
 
-J2s = [0.0, 0.4, 0.6, 0.8, 1.0]
-lattice = KagomeLattice(width=2, height=4)
+
+lattices = [KagomeLattice(width=2, height=4), SquareLattice(width=6, height=5)]
 signal_kind = SignSignalKind()
 
-eps_trains = [1e-3, 1e-2]
+eps_trains = [1e-3, 5e-2, 1e-2]
 val_eps = 5e-2
 test_eps = 5e-2
 epochs = 20000
@@ -62,10 +62,12 @@ patience = 1000
 delta = 0.01
 
 
-def get_inputs_and_labels(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def get_inputs_and_labels(
+    df: pd.DataFrame, number_spins: int
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     X = torch.tensor(
         make_unpacked_configurations(
-            np.asarray(df.index, dtype="uint64"), number_spins=system.lattice.number_spins
+            np.asarray(df.index, dtype="uint64"), number_spins=number_spins
         ).astype("float32")
     )
     y = torch.tensor(df["y"].values.astype("int8"), dtype=torch.long)
@@ -73,7 +75,22 @@ def get_inputs_and_labels(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor,
     return X, y, probs
 
 
-def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
+def train_net(
+    net: nn.Module,
+    batch_size: int,
+    epochs: int,
+    df_train: pd.DataFrame,
+    inputs_val,
+    labels_val,
+    probs_val,
+    early_stopping: EarlyStopping,
+    criterion,
+    optimizer,
+    n_batches: int,
+    number_spins: int,
+):
+    epoch = 0
+    print(f"{n_batches=}")
     for epoch in range(epochs):  # loop over the dataset multiple times
 
         i = None
@@ -82,7 +99,7 @@ def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
         net.train()
         for i in range(n_batches):
             data = df_train.iloc[i * batch_size : (i + 1) * batch_size]
-            inputs, labels, probs = get_inputs_and_labels(data)
+            inputs, labels, probs = get_inputs_and_labels(data, number_spins=number_spins)
 
             # zero the parameter gradients
             optimizer.zero_grad()
@@ -113,7 +130,7 @@ def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
             break
 
     net.load_state_dict(torch.load(early_stopping.path))
-    return net
+    return net, epoch
 
 
 def evaluate(net, inputs, labels, probs):
@@ -129,32 +146,27 @@ def evaluate(net, inputs, labels, probs):
         return accuracy, sign_overlap
 
 
-def write_terms_to_file(file, analyzer, J2, scorer, additional_scorers, target_score):
+def write_terms_to_file(
+    file: str | Path,
+    analyzer: LatticeBooleanAnalyzer,
+    scorer,
+    additional_scorers,
+    target_score,
+    params,
+):
     terms, scores = analyzer.how_many_terms_to_achieve_score(
         scorer=scorer,
         target_score=target_score,
-        max_terms=10002,
+        max_terms=152,
         step=10,
         additional_scorers=additional_scorers,
     )
-    with open(file, "a") as f:
-        print(
-            f"{J2!r},{terms},{scores['accuracy']}," f"{scores['sign_overlap']}",
-            file=f,
-        )
+    with jsonlines.open(file, "a") as f:
+        f.write({"lattice": analyzer.lattice.get_cache_id(), "terms": terms} | scores | params)
 
 
-if __name__ == "__main__":
-
-    system_accuracy_file.write_text("J2,terms,accuracy,sign_overlap\n")
-    system_overlap_file.write_text("J2,terms,accuracy,sign_overlap\n")
-    nn_accuracy_file.write_text("J2,terms,accuracy,sign_overlap\n")
-    nn_overlap_file.write_text("J2,terms,accuracy,sign_overlap\n")
-
-    model_evaluation_file.write_text("J2,eps_train,test_accuracy,test_sign_overlap\n")
-
-    for J2 in J2s:
-
+def main(J2s: list[float]):
+    for J2, lattice in product(J2s, lattices):
         system = HeisenbergJ1J2(
             lattice=lattice,
             J1=1,
@@ -164,6 +176,7 @@ if __name__ == "__main__":
             ground_state_cache_dir=ground_state_cache_dir,
             show_progress=True,
         )
+
         system.get_eigenstates(1)
 
         df = (
@@ -193,14 +206,16 @@ if __name__ == "__main__":
             df_val = df_rep_for_val.sample(frac=val_eps, weights="prob")
             df_rep_for_test = df_rep_for_val.drop(df_val.index)
             df_test = df_rep_for_test.sample(frac=test_eps, weights="prob")
-
+            print(f"{eps_train=}, {len(df_rep)=}, {len(df_val)=}, {len(df_test)=}")
             n_batches = int(np.ceil(len(df_train) / batch_size))
 
             net = FC1SpinNN(lattice=system.lattice, hidden_size=64)
             criterion = nn.CrossEntropyLoss()
             optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
 
-            inputs_val, labels_val, probs_val = get_inputs_and_labels(df_val)
+            inputs_val, labels_val, probs_val = get_inputs_and_labels(
+                df_val, number_spins=system.number_spins
+            )
 
             model_path = (
                 nn_checkpoints_dir
@@ -209,18 +224,40 @@ if __name__ == "__main__":
             early_stopping = EarlyStopping(
                 patience=patience, delta=delta, verbose=False, path=str(model_path)
             )
-            net = train_net(net, epochs, early_stopping)
+            net, epoch = train_net(
+                net=net,
+                epochs=epochs,
+                early_stopping=early_stopping,
+                df_train=df_train,
+                inputs_val=inputs_val,
+                labels_val=labels_val,
+                probs_val=probs_val,
+                batch_size=batch_size,
+                criterion=criterion,
+                optimizer=optimizer,
+                n_batches=n_batches,
+                number_spins=system.number_spins,
+            )
 
-            inputs_test, labels_test, probs_test = get_inputs_and_labels(df_test)
+            inputs_test, labels_test, probs_test = get_inputs_and_labels(
+                df_test, number_spins=system.number_spins
+            )
             accuracy_test, sign_overlap_test = evaluate(net, inputs_test, labels_test, probs_test)
 
             print(
                 f"Test set: accuracy: {100 * accuracy_test} %, sign overlap: {sign_overlap_test}"
             )
-            with open(model_evaluation_file, "a") as f:
-                print(
-                    f"{J2!r},{eps_train},{accuracy_test},{sign_overlap_test}",
-                    file=f,
+            with jsonlines.open(model_evaluation_file, "a") as f:
+                f.write(
+                    {
+                        "J2": J2,
+                        "eps_train": eps_train,
+                        "accuracy_test": accuracy_test,
+                        "sign_overlap_test": sign_overlap_test,
+                        "epoch": epoch,
+                        "lattice": lattice.get_cache_id(),
+                        "train_size": len(df_train),
+                    }
                 )
 
             nn_signal = LBFFromNN(
@@ -229,29 +266,20 @@ if __name__ == "__main__":
                 probs=system.get_df_ground_state(canonical_basis=True).assign(
                     prob=lambda df: np.abs(df["eigenstate_coeff"]) ** 2
                 )["prob"],
-                network_id=str(model_path).replace("/", "_"),
             )
 
             nn_analyzer = LatticeBooleanAnalyzer(
                 signal=nn_signal, show_progress=True, cache_dir=fourier_learners_cache_dir
             )
-            nn_analyzer.fit()
+            nn_analyzer.fit(batch_size=fourier_batch_size)
 
             write_terms_to_file(
-                file=nn_accuracy_file,
+                file=nn_f1_file,
                 analyzer=nn_analyzer,
-                J2=J2,
-                scorer="accuracy",
-                additional_scorers=["sign_overlap"],
+                scorer="f1",
+                additional_scorers=["sign_overlap", "accuracy"],
                 target_score=0.7,
-            )
-            write_terms_to_file(
-                file=nn_overlap_file,
-                analyzer=nn_analyzer,
-                J2=J2,
-                scorer="sign_overlap",
-                additional_scorers=["accuracy"],
-                target_score=0.95,
+                params={"J2": J2, "eps_train": eps_train},
             )
 
         system_signal = LBFFromSpinSystem(system=system, eigenstate=0, kind=signal_kind)
@@ -259,22 +287,16 @@ if __name__ == "__main__":
             signal=system_signal, show_progress=True, cache_dir=fourier_learners_cache_dir
         )
 
-        system_analyzer.fit()
-
+        system_analyzer.fit(batch_size=fourier_batch_size)
         write_terms_to_file(
-            file=system_accuracy_file,
+            file=system_f1_file,
             analyzer=system_analyzer,
-            J2=J2,
-            scorer="accuracy",
-            additional_scorers=["sign_overlap"],
+            scorer="f1",
+            additional_scorers=["sign_overlap", "accuracy"],
             target_score=0.7,
+            params={"J2": J2},
         )
 
-        write_terms_to_file(
-            file=system_overlap_file,
-            analyzer=system_analyzer,
-            J2=J2,
-            scorer="sign_overlap",
-            additional_scorers=["accuracy"],
-            target_score=0.95,
-        )
+
+if __name__ == "__main__":
+    fire.Fire(main)
