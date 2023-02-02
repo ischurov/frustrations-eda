@@ -124,46 +124,86 @@ class TestLatticeBooleanAnalysis(TestCase):
                 analyzer4.fit(from_cache_only=True)
 
     def test_marshall(self):
-        analyzer = LatticeBooleanAnalyzer(
-            signal=LBFFromSpinSystem(
-                system=HeisenbergJ1J2(
-                    lattice=SquareLattice(width=4, height=4),
-                    J1=1,
-                    J2=0,
-                    use_symmetries=True,
-                    spin_inversion=1,
+        for hadamard in [True, False]:
+            analyzer = LatticeBooleanAnalyzer(
+                signal=LBFFromSpinSystem(
+                    system=HeisenbergJ1J2(
+                        lattice=SquareLattice(width=4, height=4),
+                        J1=1,
+                        J2=0,
+                        use_symmetries=True,
+                        spin_inversion=1,
+                    )
+                ),
+                hadamard=hadamard,
+            )
+            analyzer.fit()
+            # first_subset_idx = analyzer_sym.learner.get_coeffs_ser().index[0]
+            # assert isinstance(first_subset_idx, np.uint64)
+            first_subset = make_unpacked_configurations(
+                analyzer.learner.get_coeffs_ser().index[0],  # type: ignore
+                analyzer.number_spins,
+            )
+
+            self.assertTrue(
+                all(
+                    [
+                        first_subset[i] != first_subset[j]
+                        for i, j in analyzer.lattice.kind_to_edges[1]
+                    ]
                 )
-            ),
+            )  # bipartite sublattices
+
+            self.assertTrue(
+                np.isclose(
+                    analyzer.truncate(keep_largest_n(1)).prediction_score(
+                        scorer="sign_overlap",
+                    ),
+                    1,
+                )
+            )  # first term is enough to reconstruct the sign structure
+
+            self.assertTrue(
+                np.isclose(
+                    analyzer.truncate(keep_largest_n(1)).prediction_score(
+                        scorer="accuracy",
+                    ),
+                    1,
+                )
+            )
+
+    def test_hadamard(self):
+        signal = LBFFromSpinSystem(
+            system=HeisenbergJ1J2(
+                lattice=SquareLattice(width=4, height=4),
+                J1=1,
+                J2=0,
+                use_symmetries=True,
+                spin_inversion=1,
+            )
+        )
+        analyzer = LatticeBooleanAnalyzer(
+            signal=signal,
+            hadamard=True,
         )
         analyzer.fit()
-        # first_subset_idx = analyzer_sym.learner.get_coeffs_ser().index[0]
-        # assert isinstance(first_subset_idx, np.uint64)
-        first_subset = make_unpacked_configurations(
-            analyzer.learner.get_coeffs_ser().index[0],  # type: ignore
-            analyzer.number_spins,
+
+        reference_analyzer = LatticeBooleanAnalyzer(
+            signal=signal,
         )
 
-        self.assertTrue(
-            all([first_subset[i] != first_subset[j] for i, j in analyzer.lattice.kind_to_edges[1]])
-        )  # bipartite sublattices
+        reference_analyzer.fit()
 
-        self.assertTrue(
-            np.isclose(
-                analyzer.truncate(keep_largest_n(1)).prediction_score(
-                    scorer="sign_overlap",
-                ),
-                1,
-            )
-        )  # first term is enough to reconstruct the sign structure
+        np.random.seed(123)
 
-        self.assertTrue(
-            np.isclose(
-                analyzer.truncate(keep_largest_n(1)).prediction_score(
-                    scorer="accuracy",
-                ),
-                1,
-            )
-        )
+        x = np.random.choice(reference_analyzer.basis.states, 10)
+        # x = np.arange(2**reference_analyzer.number_spins, dtype=np.uint64)
+        obtained = analyzer.truncate(keep_largest_n(10)).predict(x)
+        expected = reference_analyzer.truncate(keep_largest_n(10)).predict(x)
+        print(f"{obtained=}")
+        print(f"{expected=}")
+
+        self.assertTrue(np.isclose(obtained, expected).all())
 
     def test_how_many_terms_to_achieve_score(self):
         analyzer = LatticeBooleanAnalyzer(

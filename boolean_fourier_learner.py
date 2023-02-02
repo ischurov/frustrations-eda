@@ -6,12 +6,16 @@ from typing import Optional
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
-from parity import calculate_fourier_transform_matrix
+import torch
+from hadamard_transform import hadamard_transform
 from tqdm import tqdm
+
+from parity import calculate_fourier_transform_matrix
 
 
 class BooleanFourierLearner:
-    def __init__(self, number_spins: int, subsets: Optional[np.ndarray] = None):
+    def __init__(self, number_spins: int, subsets: Optional[np.ndarray] = None, hadamard=False):
+        self.hadamard = hadamard
         self.number_spins = number_spins
         if subsets is not None:
             self.subsets = subsets
@@ -32,6 +36,14 @@ class BooleanFourierLearner:
         pickle_each=1,
         show_progress=False,
     ):
+        if self.hadamard:
+            if (
+                batch_size is not None
+                or stochastic_iterations is not None
+                or pickle_progress_to is not None
+            ):
+                raise NotImplementedError("Hadamar not implemented for batched learning")
+
         if len(x) != len(y):
             raise ValueError("Lengths of x and y should coincide")
 
@@ -40,6 +52,16 @@ class BooleanFourierLearner:
 
         if len(x) != len(weights):
             raise ValueError("Lengths of x and weights should coincide")
+
+        if self.hadamard:
+            signal = np.zeros(2**self.number_spins, dtype="float64")
+            signal[x] = y * weights
+            self.coeffs_ = hadamard_transform(torch.tensor(signal)).detach().numpy()[
+                self.subsets
+            ] / 2 ** (self.number_spins / 2)
+            self.x_ = x
+            self.y_ = y
+            return
 
         sample_size = len(x)
 
@@ -99,7 +121,7 @@ class BooleanFourierLearner:
                 self.coeffs_ = sumprod
                 if pickle_progress_to and (i % pickle_each) == (pickle_each - 1):
                     with lzma.open(pickle_progress_to.format(i=i + 1), "wb") as f:
-                        pickle.dump(self, f)
+                        pickle.dump(self, f)  # type: ignore
             else:
                 sumprod += sumprod_delta
                 columns += len(x_batch)

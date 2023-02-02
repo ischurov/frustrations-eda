@@ -17,6 +17,7 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
+from hadamard_transform import hadamard_transform
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
@@ -272,15 +273,30 @@ class LBATruncation:
         )
         return coeffs
 
+    def _predict_hadamard(
+        self, x: npt.NDArray[np.uint64], coeffs: pd.Series
+    ) -> npt.NDArray[np.float64]:
+        return hadamard_transform(
+            torch.tensor(
+                coeffs.reindex(np.arange(2**self.analyzer.number_spins, dtype="uint64"))
+                .fillna(0)
+                .values
+            )
+        ).numpy()[x] * 2 ** (self.analyzer.number_spins / 2)
+
     def predict(
         self,
         x: npt.NDArray[np.uint64] | None = None,
         max_batch_size: int | None = None,
     ) -> npt.NDArray[np.float64]:
+
         if x is None:
             x = self.analyzer.canonical_basis.states
 
         coeffs = self.get_expanded_coeffs_ser()
+
+        if self.analyzer.hadamard:
+            return self._predict_hadamard(x, coeffs)
 
         subsets = np.array(coeffs.index, dtype="uint64")
         hamming_weights = popcount(subsets)
@@ -364,11 +380,13 @@ class LatticeBooleanAnalyzer:
         hamming_weight: int | Literal["half"] = "half",
         show_progress=False,
         cache_dir: Path | None = None,
+        hadamard: bool = False,
     ):
         self.signal = signal
         self.lattice = self.signal.lattice
         self.number_spins = self.lattice.number_spins
         self.show_progress = show_progress
+        self.hadamard = hadamard
         if hamming_weight == "half":
             hamming_weight = self.number_spins // 2
         self.basis = self.lattice.get_basis(
@@ -426,11 +444,18 @@ class LatticeBooleanAnalyzer:
         if from_cache_only:
             raise ValueError(f"Cache not found: {cache_path}")
 
-        self.learner = BooleanFourierLearner(self.number_spins, self.subsets)
+        self.learner = BooleanFourierLearner(
+            self.number_spins, self.subsets, hadamard=self.hadamard
+        )
 
         signal_values = self.signal(x)
 
-        self.learner.fit(x, signal_values, batch_size=batch_size, show_progress=self.show_progress)
+        self.learner.fit(
+            x,
+            signal_values,
+            batch_size=batch_size if not self.hadamard else None,
+            show_progress=self.show_progress,
+        )
 
         if cache_path is not None:
             if self.show_progress:
