@@ -54,11 +54,15 @@ class BooleanFourierLearner:
             raise ValueError("Lengths of x and weights should coincide")
 
         if self.hadamard:
+            print("Using Hadamard transform")
             signal = np.zeros(2**self.number_spins, dtype="float64")
             signal[x] = y * weights
-            self.coeffs_ = hadamard_transform(torch.tensor(signal)).detach().numpy()[
-                self.subsets
-            ] / 2 ** (self.number_spins / 2)
+            self.full_coeffs_ = (
+                hadamard_transform(torch.tensor(signal)).detach().numpy()
+                * 2 ** (self.number_spins / 2)
+                / len(x)
+            )
+            self.coeffs_ = self.full_coeffs_[self.subsets]
             self.x_ = x
             self.y_ = y
             return
@@ -155,3 +159,33 @@ class BooleanFourierLearner:
             )
 
         return self.coeffs_ser_
+
+    def get_full_coeffs_ser(self) -> pd.Series:
+        """
+        Returns a pandas Series with coefficients of the Fourier expansion.
+        All subsets are included (so, self.subsets is ignored).
+
+        The index is the subset of sites, the value is the coefficient.
+        Sorted by absolute value of the coefficient.
+
+        Works only if Hadamard transform is used.
+
+        Returns
+        -------
+        coeffs_ser : pd.Series
+        """
+        self._ensure_fitted()
+        if not self.hadamard:
+            raise ValueError("get_full_coeffs_ser works if Hadamard transform is used")
+        print("Finding full_coeffs_ser_")
+        if not hasattr(self, "full_coeffs_ser_"):
+            self.full_coeffs_ser_ = (
+                pd.DataFrame(
+                    dict(coeff=self.full_coeffs_),
+                    index=np.arange(2**self.number_spins, dtype="uint64"),
+                )
+                .assign(abs_coeff=lambda x: np.abs(x["coeff"]))
+                .sort_values("abs_coeff", ascending=False)["coeff"]
+            )
+        print("Found")
+        return self.full_coeffs_ser_

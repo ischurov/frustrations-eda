@@ -23,7 +23,7 @@ class TestBooleanFourierLearner(TestCase):
         np.random.seed(123)
         number_spins = 8
 
-        x = np.random.choice(np.arange(2**number_spins, dtype="uint64"), 100)
+        x = np.random.choice(np.arange(2**number_spins, dtype="uint64"), 100, replace=False)
         # x = np.arange(2**number_spins, dtype="uint64")
         y = np.random.uniform(size=x.shape[0])
 

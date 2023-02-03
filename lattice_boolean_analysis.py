@@ -246,25 +246,27 @@ class LBATruncation:
             the symmetry group, and values of the coefficients.
 
         """
-
-        full_coeffs = (
-            self.analyzer.fourier_basis_state_info_df.join(
-                self.analyzer.learner.get_coeffs_ser(), on="representative"
+        if self.analyzer.hadamard:
+            full_coeffs = self.analyzer.learner.get_full_coeffs_ser()
+        else:
+            full_coeffs = (
+                self.analyzer.fourier_basis_state_info_df.join(
+                    self.analyzer.learner.get_coeffs_ser(), on="representative"
+                )
+                .dropna()
+                .assign(coeff_adjusted=lambda x: x["coeff"] * x["character"])["coeff_adjusted"]
+                .rename("coeff")
+                * self.analyzer.canonical_basis.states.shape[0]
+                / 2**self.analyzer.number_spins
             )
-            .dropna()
-            .assign(coeff_adjusted=lambda x: x["coeff"] * x["character"])["coeff_adjusted"]
-            .rename("coeff")
-            * self.analyzer.canonical_basis.states.shape[0]
-            / 2**self.analyzer.number_spins
-        )
-
+        print("Finding indexes to keep")
         idxs_after_truncation = (
             self.analyzer.fourier_basis_state_info_df.join(
                 self.truncate_strategy(self.analyzer.learner.get_coeffs_ser()),
                 on="representative",
             ).dropna()
         ).index
-
+        print("Truncating")
         coeffs = (
             full_coeffs.loc[idxs_after_truncation]
             .to_frame()
@@ -295,8 +297,11 @@ class LBATruncation:
 
         coeffs = self.get_expanded_coeffs_ser()
 
-        if self.analyzer.hadamard:
-            return self._predict_hadamard(x, coeffs)
+        if self.analyzer.predict_hadamard:
+            print("Using hadamard transform")
+            prediction = self._predict_hadamard(x, coeffs)
+            print("Done")
+            return prediction
 
         subsets = np.array(coeffs.index, dtype="uint64")
         hamming_weights = popcount(subsets)
@@ -381,12 +386,17 @@ class LatticeBooleanAnalyzer:
         show_progress=False,
         cache_dir: Path | None = None,
         hadamard: bool = False,
+        predict_hadamard: bool | None = None,
     ):
         self.signal = signal
         self.lattice = self.signal.lattice
         self.number_spins = self.lattice.number_spins
         self.show_progress = show_progress
         self.hadamard = hadamard
+        if hadamard and cache_dir is not None:
+            raise ValueError("Cannot use caching with hadamard transform")
+
+        self.predict_hadamard = predict_hadamard if predict_hadamard is not None else hadamard
         if hamming_weight == "half":
             hamming_weight = self.number_spins // 2
         self.basis = self.lattice.get_basis(
