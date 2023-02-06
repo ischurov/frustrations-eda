@@ -346,7 +346,9 @@ class BooleanFourierAnalyzer:
             (
                 self.subsets,
                 self.fourier_basis_state_info_df,
-            ) = self.system.lattice.make_fourier_basis_state_info_sym(show_progress=show_progress)
+            ) = self.system.lattice.make_fourier_basis_state_info_sym_df(
+                show_progress=show_progress
+            )
 
         else:
             if show_progress:

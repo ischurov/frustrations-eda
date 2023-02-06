@@ -17,19 +17,14 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
+from boolean_fourier_learner import BooleanFourierLearner
 from hadamard_transform import hadamard_transform
+from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
-from tqdm import tqdm
-
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
-    SpinSystem,
-    batched_state_info_df,
-    make_unpacked_configurations,
-)
-from parity import calculate_fourier_transform_matrix, parity, popcount
 from spin_lattices import SpinLattice
+from tqdm import tqdm
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -81,10 +76,29 @@ class AmplitudeMedianBinSignalKind(SignalKind):
         return np.sign(abs_ - np.median(abs_))
 
 
+def place_values_into_array(
+    x: npt.NDArray[np.uint64], y: npt.NDArray[np.float64], number_spins: int
+) -> npt.NDArray[np.float64]:
+    """Place values into an array of zeros.
+
+    Args:
+        x: Indices of the array to place the values into.
+        y: Values to place into the array.
+        number_spins: The number of spins in the system.
+
+    Returns:
+        An array of zeros with the given values placed into it.
+    """
+    result = np.zeros(2**number_spins, dtype=np.float64)
+    result[x] = y
+    return result
+
+
 class LatticeBooleanFunction:
-    def __init__(self, lattice: SpinLattice):
+    def __init__(self, lattice: SpinLattice, canonical_basis: ls.SpinBasis):
         self.lattice = lattice
         self.number_spins = lattice.number_spins
+        self.canonical_basis = canonical_basis
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
         raise NotImplementedError
@@ -95,16 +109,21 @@ class LatticeBooleanFunction:
     def get_cache_id(self) -> str:
         raise NotImplementedError
 
+    def long_array(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
+        return place_values_into_array(x, self(x), self.number_spins)
+
 
 class LBFFromSpinSystem(LatticeBooleanFunction):
     def __init__(
         self, system: SpinSystem, eigenstate: int = 0, kind: SignalKind = SignSignalKind()
     ):
-        super().__init__(system.lattice)
+        system.get_eigenstates(eigenstate + 1)
+        super().__init__(system.lattice, canonical_basis=system.canonical_basis)
         self.system = system
         self.system.get_eigenstates(eigenstate + 1)
         self.eigenstate = eigenstate
         self.kind = kind
+        self.canonical_basis = system.canonical_basis
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
         signal_df = self.system.get_df_eigenstate(k=self.eigenstate, canonical_basis=True).loc[
@@ -291,6 +310,10 @@ class LBATruncation:
         x: npt.NDArray[np.uint64] | None = None,
         max_batch_size: int | None = None,
     ) -> npt.NDArray[np.float64]:
+        """
+        FIXME: there is a bug in predict when hadamard is True. Normalization
+        is incorrect.
+        """
 
         if x is None:
             x = self.analyzer.canonical_basis.states
@@ -412,7 +435,7 @@ class LatticeBooleanAnalyzer:
         (
             self.subsets,
             self.fourier_basis_state_info_df,
-        ) = self.lattice.make_fourier_basis_state_info_sym(show_progress=show_progress)
+        ) = self.lattice.make_fourier_basis_state_info_sym_df(show_progress=show_progress)
 
         self.cache_dir = cache_dir
         if self.cache_dir is not None:

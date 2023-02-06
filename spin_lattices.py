@@ -9,7 +9,6 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
-
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -140,6 +139,8 @@ class SpinLattice:
 
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
         self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
+        self.fourier_repr: dict[str, npt.NDArray[np.uint64]]
+        self.fourier_basis: ls.SpinBasis
 
     @property
     def sites(self) -> list[int]:
@@ -171,7 +172,45 @@ class SpinLattice:
         g = self.as_igraph()
         return g.get_automorphisms_vf2(edge_color=g.es["kind"])
 
-    def make_fourier_basis_state_info_sym(
+    def make_fourier_basis(self):
+        if hasattr(self, "fourier_basis"):
+            return self.fourier_basis
+
+        symmetries = ls.Symmetries(
+            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+        )
+
+        number_spins = self.number_spins
+
+        self.fourier_basis = ls.SpinBasis(
+            symmetries=symmetries,
+            number_spins=number_spins,
+            hamming_weight=None,
+            spin_inversion=None,
+        )
+        self.fourier_basis.build()
+
+        return self.fourier_basis
+
+    def make_fourier_repr(self):
+        """
+        TODO: add spin inversion
+        """
+        if hasattr(self, "fourier_repr"):
+            return self.fourier_repr
+
+        basis = self.make_fourier_basis()
+        all_subsets = np.arange(2**self.number_spins, dtype=np.uint64)
+        reprs, _, _ = basis.state_info(all_subsets)
+        assert isinstance(reprs, np.ndarray)
+
+        indices = np.asarray(np.searchsorted(basis.states, reprs), dtype=np.uint64)
+        # TODO: replace with basis.index
+
+        self.fourier_repr = {"reprs": reprs, "indices": indices}
+        return self.fourier_repr
+
+    def make_fourier_basis_state_info_sym_df(
         self, show_progress: bool = False
     ) -> tuple[npt.NDArray[np.uint64], pd.DataFrame]:
         """
@@ -229,6 +268,7 @@ class SpinLattice:
 
         if show_progress:
             print("MFBSIS: Computing fourier_basis_state_info_df...")
+
         fourier_basis_state_info_df = (
             fourier_basis_state_info.reset_index()
             .rename(columns={"index": "state"})

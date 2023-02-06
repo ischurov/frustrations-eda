@@ -40,3 +40,43 @@ def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
         dict(representative=representative, character=eigenvalue, norm=norm),
         index=states,
     )
+
+
+### BASED ON: https://github.com/amitport/hadamard-transform
+### MIT LICENSE
+def hadamard_transform(x: npt.NDArray[np.float64]):
+
+    """Fast Walsh–Hadamard transform
+
+    The hadamard transform is not numerically stable by nature (lots of subtractions),
+    it is recommended to use with float64 when possible
+
+    :param x: Either a vector or a batch of vectors where the first dimension is the batch dimension.
+              Each vector's length is expected to be a power of 2! (or each row if it is batched)
+    :return: The normalized Hadamard transform of each vector in x
+    """
+    original_shape = x.shape
+    assert 1 <= len(original_shape) <= 2, "input's dimension must be either 1 or 2"
+    if len(original_shape) is 1:
+        # add fake 1 batch dimension
+        # for making the code a follow a single (batched) path
+        x = x[None, :]
+    batch_dim, d = x.shape
+
+    h = 2
+    while h <= d:
+        hf = h // 2
+
+        x = x.view()
+        x.shape = (batch_dim, d // h, h)
+
+        half_1, half_2 = x[:, :, :hf], x[:, :, hf:]
+
+        x = np.concatenate((half_1 + half_2, half_1 - half_2), axis=-1)
+
+        h *= 2
+
+    return (x / np.sqrt(d)).reshape(*original_shape)
+
+
+### END BASED
