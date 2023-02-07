@@ -17,14 +17,19 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
-from boolean_fourier_learner import BooleanFourierLearner
 from hadamard_transform import hadamard_transform
-from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
-from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
-from spin_lattices import SpinLattice
 from tqdm import tqdm
+
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix, parity, popcount
+from spin_lattices import SpinLattice
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -109,7 +114,7 @@ class LatticeBooleanFunction:
     def get_cache_id(self) -> str:
         raise NotImplementedError
 
-    def long_array(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
+    def as_long_array(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
         return place_values_into_array(x, self(x), self.number_spins)
 
 
@@ -147,7 +152,12 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
 
 class LBFFromNN(LatticeBooleanFunction):
     def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series):
-        super().__init__(lattice)
+        super().__init__(
+            lattice,
+            canonical_basis=lattice.get_basis(
+                use_symmetries=False, hamming_weight=lattice.number_spins // 2, spin_inversion=None
+            ),
+        )
         self.nn = nn
         self._probs = probs
 

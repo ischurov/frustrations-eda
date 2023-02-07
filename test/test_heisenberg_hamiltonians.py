@@ -38,7 +38,7 @@ class TestDiagonalization(TestCase):
             use_symmetries=True,
             spin_inversion=1,
         )
-        system.get_eigenstates()
+        system.get_eigenstates(2)
 
         system_nosym = HeisenbergJ1J2(
             SquareLattice(width=4, height=4),
@@ -47,12 +47,13 @@ class TestDiagonalization(TestCase):
             use_symmetries=False,
             spin_inversion=None,
         )
-        system_nosym.get_eigenstates()
+        system_nosym.get_eigenstates(2)
+        k = 0
 
         self.assertTrue(
-            system_nosym.get_df_ground_state()
+            system_nosym.get_df_eigenstate(k)
             .join(
-                system.get_df_ground_state(canonical_basis=True),
+                system.get_df_eigenstate(k, canonical_basis=True),
                 how="outer",
                 lsuffix="_x",
                 rsuffix="_y",
@@ -66,12 +67,12 @@ class TestDiagonalization(TestCase):
         # Order of elements in the dataframe correponds to order of elements in basis.states
         self.assertTrue(
             (
-                system.get_df_ground_state(canonical_basis=True).index
+                system.get_df_eigenstate(k, canonical_basis=True).index
                 == system.canonical_basis.states
             ).all()
         )
         self.assertTrue(
-            (system.get_df_ground_state(canonical_basis=False).index == system.basis.states).all()
+            (system.get_df_eigenstate(k, canonical_basis=False).index == system.basis.states).all()
         )
 
     def test_neel(self):
@@ -101,6 +102,35 @@ class TestDiagonalization(TestCase):
                     ]
                 )
             )
+
+    def test_get_eigenstate_in_full_basis(self):
+        for lattice in [ChainLattice(8), SquareLattice(4, 4), KagomeLattice(2, 3)]:
+            system_nosym = HeisenbergJ1J2(
+                lattice,
+                J1=1,
+                J2=0,
+                use_symmetries=False,
+                spin_inversion=None,
+            )
+            system_nosym.get_eigenstates(1)
+
+            system_sym = HeisenbergJ1J2(
+                lattice,
+                J1=1,
+                J2=0,
+                use_symmetries=True,
+                spin_inversion=None,
+            )
+            system_sym.get_eigenstates(1)
+
+            eigenstate_in_full_basis = system_sym.get_eigenstate_in_full_basis(0)
+            np.testing.assert_allclose(
+                eigenstate_in_full_basis[system_sym.canonical_basis.states],
+                system_nosym.get_eigenstates(2)[1][:, 0],
+            )
+
+            eigenstate_in_full_basis[system_sym.canonical_basis.states] = 0
+            self.assertTrue(np.isclose(eigenstate_in_full_basis, 0).all())
 
 
 class TestHamiltonianProperties(TestCase):

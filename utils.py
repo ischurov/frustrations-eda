@@ -44,7 +44,7 @@ def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
 
 ### BASED ON: https://github.com/amitport/hadamard-transform
 ### MIT LICENSE
-def hadamard_transform(x: npt.NDArray[np.float64]):
+def hadamard_transform(x: npt.NDArray[np.float64], verbose: bool = False):
 
     """Fast Walsh–Hadamard transform
 
@@ -57,7 +57,7 @@ def hadamard_transform(x: npt.NDArray[np.float64]):
     """
     original_shape = x.shape
     assert 1 <= len(original_shape) <= 2, "input's dimension must be either 1 or 2"
-    if len(original_shape) is 1:
+    if len(original_shape) == 1:
         # add fake 1 batch dimension
         # for making the code a follow a single (batched) path
         x = x[None, :]
@@ -65,6 +65,9 @@ def hadamard_transform(x: npt.NDArray[np.float64]):
 
     h = 2
     while h <= d:
+        if verbose:
+            print(f"iteration {np.log2(h)} of {np.log2(d)}")
+
         hf = h // 2
 
         x = x.view()

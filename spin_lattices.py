@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from itertools import product
 from typing import Union
 
@@ -9,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
+
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -48,6 +50,13 @@ def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
 
 
 # END BASED
+
+
+@dataclass
+class BasisData:
+    reprs: npt.NDArray[np.uint64]
+    bits_to_repr: npt.NDArray[np.uint64]
+    bits_to_repr_index: npt.NDArray[np.uint64]
 
 
 class SpinLattice:
@@ -139,7 +148,7 @@ class SpinLattice:
 
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
         self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
-        self.fourier_repr: dict[str, npt.NDArray[np.uint64]]
+        self.fourier_repr: BasisData
         self.fourier_basis: ls.SpinBasis
 
     @property
@@ -192,22 +201,59 @@ class SpinLattice:
 
         return self.fourier_basis
 
-    def make_fourier_repr(self):
+    def get_fourier_repr(self) -> BasisData:
         """
-        TODO: add spin inversion
+        Fourier basis consists of subsets factored by symmetries and spin inversion.
+        Subsets are encoded as unsigned integers (uint64).
+
+        If the orbit consists of subsets of different hamming weights,
+        the representative is chosen to be the one with the smallest hamming weight, and
+        the of the smallest value among those with the smallest hamming weight.
+
+        Here we compute a dictionary with the following keys:
+        - "reprs": all unique representatives of the subsets.
+        - "subset_to_repr": an array whose i-th element is the representative
+            of the i-th subset.
+        - "repr_to_subsets": an array whose i-th element is the index of the i-th representative
+            in the array of all representatives.
+
         """
         if hasattr(self, "fourier_repr"):
             return self.fourier_repr
 
         basis = self.make_fourier_basis()
         all_subsets = np.arange(2**self.number_spins, dtype=np.uint64)
-        reprs, _, _ = basis.state_info(all_subsets)
-        assert isinstance(reprs, np.ndarray)
+        subset_to_repr, _, _ = basis.state_info(all_subsets)
+        assert isinstance(subset_to_repr, np.ndarray)
 
-        indices = np.asarray(np.searchsorted(basis.states, reprs), dtype=np.uint64)
-        # TODO: replace with basis.index
+        hamming_weights = popcount(subset_to_repr)
 
-        self.fourier_repr = {"reprs": reprs, "indices": indices}
+        inverted = np.bitwise_xor(all_subsets, 2**self.number_spins - 1)
+        subset_to_repr_inverted, _, _ = basis.state_info(inverted)
+
+        subset_to_repr = np.where(
+            hamming_weights < self.number_spins / 2,
+            subset_to_repr,
+            np.where(
+                hamming_weights > self.number_spins / 2,
+                subset_to_repr_inverted,
+                np.where(
+                    subset_to_repr < subset_to_repr_inverted,
+                    subset_to_repr,
+                    subset_to_repr_inverted,
+                ),
+            ),
+        )
+
+        reprs = np.sort(np.unique(subset_to_repr))
+
+        subset_to_repr_index = np.asarray(np.searchsorted(reprs, subset_to_repr), dtype=np.uint64)
+        # TODO: replace with basis.index (?)
+
+        self.fourier_repr = BasisData(
+            reprs=reprs, bits_to_repr=subset_to_repr, bits_to_repr_index=subset_to_repr_index
+        )
+
         return self.fourier_repr
 
     def make_fourier_basis_state_info_sym_df(

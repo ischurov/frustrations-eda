@@ -162,6 +162,28 @@ class SpinSystem:
 
         return df
 
+    def get_eigenstate_in_full_basis(self, k: int) -> npt.NDArray[np.float64]:
+        """
+        Returns the k'th eigenstate in the full basis (of size 2**number_spins)
+        """
+        if self.eigenstates is None:
+            raise ValueError(f"Eigenstate not found; run .get_eigenstates({k + 1}) first")
+        elif self.eigenstates.shape[1] <= k:
+            raise ValueError(f"Not enough eigenstates found; run .get_eigenstates({k + 1}) first")
+
+        reprs = self.basis.states
+
+        corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
+
+        corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
+        # TODO: replace with self.basis.index
+
+        coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
+        coeffs[self.canonical_basis.states] = (
+            self.eigenstates[corresp_repr_indices, k] * characters * norms
+        )
+        return coeffs
+
     def get_df_ground_state(
         self,
         unpack_configurations=False,
