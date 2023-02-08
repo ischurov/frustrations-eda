@@ -20,3 +20,4 @@ untitled.txt
 fourier_learners_cache/
 checkpoint.pt
 fourier_learners_cache_wrongsign/*
+boolean-analysis-complexity.log

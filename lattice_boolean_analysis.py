@@ -18,7 +18,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from heisenberg_hamiltonians import (SpinSystem, batched_state_info_df,
+                                     make_unpacked_configurations)
 from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
@@ -113,12 +114,15 @@ class LatticeBooleanFunction:
         return place_values_into_array(x, self(x), self.number_spins)
 
 
-class LBFFromSpinSystemGS(LatticeBooleanFunction):
-    def __init__(self, system: SpinSystem, kind: SignalKind = SignSignalKind()):
-        system.get_eigenstates(1)
+class LBFFromSpinSystem(LatticeBooleanFunction):
+    def __init__(
+        self, system: SpinSystem, eigenstate: int = 0, kind: SignalKind = SignSignalKind()
+    ):
+        system.get_eigenstates(eigenstate + 1)
         super().__init__(system.lattice, canonical_basis=system.canonical_basis)
         self.system = system
-        self.system.get_eigenstates(1)
+        self.system.get_eigenstates(eigenstate + 1)
+        self.eigenstate = eigenstate
         self.kind = kind
         self.canonical_basis = system.canonical_basis
 
@@ -129,7 +133,7 @@ class LBFFromSpinSystemGS(LatticeBooleanFunction):
         return np.abs(self.system.get_ground_state_in_full_basis()[x]) ** 2  # type: ignore
 
     def get_cache_id(self) -> str:
-        return f"{self.system.get_cache_id()}-{0}-{self.kind.name}"
+        return f"{self.system.get_cache_id()}-{self.eigenstate}-{self.kind.name}"
 
 
 class LBFFromNN(LatticeBooleanFunction):

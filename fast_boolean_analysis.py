@@ -3,7 +3,14 @@ from typing import Literal, overload
 
 import numpy as np
 import numpy.typing as npt
-from lattice_boolean_analysis import LatticeBooleanFunction, ScorerType, SignalKind, get_scorer
+from loguru import logger
+
+from lattice_boolean_analysis import (
+    LatticeBooleanFunction,
+    ScorerType,
+    SignalKind,
+    get_scorer,
+)
 from utils import hadamard_transform
 
 TruncateStrategy = Callable[[npt.NDArray[np.float64]], npt.NDArray[np.bool_]]
@@ -56,7 +63,10 @@ class FourierSeries:
         return FourierSeries(signal=self.signal, coeffs=truncated_coeffs)
 
     def prediction_score(
-        self, scorer: str | ScorerType, x: npt.NDArray[np.uint64] | None = None
+        self,
+        scorer: str | ScorerType,
+        x: npt.NDArray[np.uint64] | None = None,
+        prediction: npt.NDArray[np.float64] | None = None,
     ) -> tuple[float, npt.NDArray[np.float64]]:
 
         if x is None:
@@ -68,8 +78,8 @@ class FourierSeries:
 
         signal = self.signal(x)
         prob = self.signal.get_probs(x)
-
-        prediction = self.predict()  # FIXME: should take only part that corresponds to x
+        if prediction is None:
+            prediction = self.predict()  # FIXME: should take only part that corresponds to x
         score = get_scorer(scorer)(signal, prediction, prob)
 
         return score, prediction
@@ -81,7 +91,33 @@ class FourierSeries:
         min_terms: int = 1,
         max_terms: int | None = None,
         orbitwise: bool = True,
-    ) -> tuple[int | None, npt.NDArray[np.float64]]:
+    ) -> tuple[bool, int, npt.NDArray[np.float64]]:
+        """
+        Find the number of terms needed to achieve a target score.
+
+        Parameters:
+        -----------
+        target_score: float
+            The target score to achieve
+        scorer: str or ScorerType
+            The scorer to use
+        min_terms: int
+            The minimum number of terms to consider
+        max_terms: int or None
+            The maximum number of terms to consider. If None, use the number of terms
+            in the signal
+        orbitwise: bool
+            Whether to truncate orbitwise or not
+
+        Returns:
+        --------
+        bool: True if the target score was achieved, False otherwise
+        int: the number of terms needed to achieve the target score
+        np.ndarray: the prediction corresponding to the number of terms
+        needed to achieve the target score
+
+        """
+
         def truncate(max_terms):
             if orbitwise:
                 return self.truncate_orbitwise(keep_largest_n(max_terms))
@@ -96,21 +132,27 @@ class FourierSeries:
 
         score, prediction = truncate(max_terms).prediction_score(scorer)
         if score < target_score:
-            return None, prediction
+            logger.debug(f"score={score} < target_score={target_score}")
+            return False, max_terms, prediction
 
         score, prediction = truncate(min_terms).prediction_score(scorer)
         if score >= target_score:
-            return min_terms, prediction
+            logger.debug(f"score={score} >= target_score={target_score}")
+            return True, min_terms, prediction
 
         while max_terms - min_terms > 1:
+            logger.debug(f"min_terms={min_terms}, max_terms={max_terms}")
             mid = (max_terms + min_terms) // 2
             score, prediction = truncate(mid).prediction_score(scorer)
+            logger.debug(f"{mid=}, score={score}")
+
             if score >= target_score:
                 max_terms = mid
+                # this is biased towards the lower end, but that's fine
             else:
                 min_terms = mid
 
-        return max_terms, prediction
+        return True, max_terms, prediction
 
 
 def fourier_expand(signal: LatticeBooleanFunction, verbose: bool = False) -> FourierSeries:

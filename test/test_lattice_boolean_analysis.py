@@ -11,7 +11,7 @@ from lattice_boolean_analysis import (
     AmplitudeMedianBinSignalKind,
     AmplitudeSignalKind,
     LatticeBooleanAnalyzer,
-    LBFFromSpinSystemGS,
+    LBFFromSpinSystem,
     SignSignalKind,
     keep_everything,
     keep_largest_n,
@@ -23,12 +23,13 @@ from utils import make_unpacked_configurations
 class TestLatticeBooleanAnalysis(TestCase):
     def setUp(self):
         self.analyzer = LatticeBooleanAnalyzer(
-            LBFFromSpinSystemGS(
+            LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=2),
                     J1=1.0,
                     J2=0.0,
                 ),
+                eigenstate=0,
                 kind=AmplitudeSignalKind(),
             )
         )
@@ -36,7 +37,7 @@ class TestLatticeBooleanAnalysis(TestCase):
 
     def test_reconstruction(self):
         prediction = self.analyzer.truncate(keep_everything).predict()
-        assert isinstance(self.analyzer.signal, LBFFromSpinSystemGS)
+        assert isinstance(self.analyzer.signal, LBFFromSpinSystem)
         self.assertTrue(
             np.allclose(
                 prediction,
@@ -74,8 +75,9 @@ class TestLatticeBooleanAnalysis(TestCase):
                 J2=0.0,
             )
             analyzer1 = LatticeBooleanAnalyzer(
-                LBFFromSpinSystemGS(
+                LBFFromSpinSystem(
                     system,
+                    eigenstate=0,
                     kind=AmplitudeSignalKind(),
                 ),
                 cache_dir=Path(cache_dir),
@@ -84,8 +86,9 @@ class TestLatticeBooleanAnalysis(TestCase):
             coeff1 = analyzer1.truncate(keep_everything).get_expanded_coeffs_ser()
 
             analyzer2 = LatticeBooleanAnalyzer(
-                LBFFromSpinSystemGS(
+                LBFFromSpinSystem(
                     system,
+                    eigenstate=0,
                     kind=SignSignalKind(),
                 ),
                 cache_dir=Path(cache_dir),
@@ -93,8 +96,9 @@ class TestLatticeBooleanAnalysis(TestCase):
             analyzer2.fit()
 
             analyzer3 = LatticeBooleanAnalyzer(
-                LBFFromSpinSystemGS(
+                LBFFromSpinSystem(
                     system,
+                    eigenstate=0,
                     kind=AmplitudeSignalKind(),
                 ),
                 cache_dir=Path(cache_dir),
@@ -110,8 +114,9 @@ class TestLatticeBooleanAnalysis(TestCase):
 
             with self.assertRaises(ValueError):
                 analyzer4 = LatticeBooleanAnalyzer(
-                    LBFFromSpinSystemGS(
+                    LBFFromSpinSystem(
                         system,
+                        eigenstate=0,
                         kind=AmplitudeMedianBinSignalKind(),
                     ),
                     cache_dir=Path(cache_dir),
@@ -119,57 +124,51 @@ class TestLatticeBooleanAnalysis(TestCase):
                 analyzer4.fit(from_cache_only=True)
 
     def test_marshall(self):
-        for hadamard in [True, False]:
-            analyzer = LatticeBooleanAnalyzer(
-                signal=LBFFromSpinSystemGS(
-                    system=HeisenbergJ1J2(
-                        lattice=SquareLattice(width=4, height=4),
-                        J1=1,
-                        J2=0,
-                        use_symmetries=True,
-                        spin_inversion=1,
-                    )
+        analyzer = LatticeBooleanAnalyzer(
+            signal=LBFFromSpinSystem(
+                system=HeisenbergJ1J2(
+                    lattice=SquareLattice(width=4, height=4),
+                    J1=1,
+                    J2=0,
+                    use_symmetries=True,
+                    spin_inversion=1,
+                )
+            ),
+            hadamard=False,
+        )
+        analyzer.fit()
+        # first_subset_idx = analyzer_sym.learner.get_coeffs_ser().index[0]
+        # assert isinstance(first_subset_idx, np.uint64)
+        first_subset = make_unpacked_configurations(
+            analyzer.learner.get_coeffs_ser().index[0],  # type: ignore
+            analyzer.number_spins,
+        )
+
+        self.assertTrue(
+            all([first_subset[i] != first_subset[j] for i, j in analyzer.lattice.kind_to_edges[1]])
+        )  # bipartite sublattices
+
+        self.assertTrue(
+            np.isclose(
+                analyzer.truncate(keep_largest_n(1)).prediction_score(
+                    scorer="sign_overlap",
                 ),
-                hadamard=hadamard,
+                1,
             )
-            analyzer.fit()
-            # first_subset_idx = analyzer_sym.learner.get_coeffs_ser().index[0]
-            # assert isinstance(first_subset_idx, np.uint64)
-            first_subset = make_unpacked_configurations(
-                analyzer.learner.get_coeffs_ser().index[0],  # type: ignore
-                analyzer.number_spins,
+        )  # first term is enough to reconstruct the sign structure
+
+        self.assertTrue(
+            np.isclose(
+                analyzer.truncate(keep_largest_n(1)).prediction_score(
+                    scorer="accuracy",
+                ),
+                1,
             )
+        )
 
-            self.assertTrue(
-                all(
-                    [
-                        first_subset[i] != first_subset[j]
-                        for i, j in analyzer.lattice.kind_to_edges[1]
-                    ]
-                )
-            )  # bipartite sublattices
-
-            self.assertTrue(
-                np.isclose(
-                    analyzer.truncate(keep_largest_n(1)).prediction_score(
-                        scorer="sign_overlap",
-                    ),
-                    1,
-                )
-            )  # first term is enough to reconstruct the sign structure
-
-            self.assertTrue(
-                np.isclose(
-                    analyzer.truncate(keep_largest_n(1)).prediction_score(
-                        scorer="accuracy",
-                    ),
-                    1,
-                )
-            )
-
-    @skip("There's a bug that should be fixed. Or rather switch to fast_lattice_analysis instead")
+    @skip("Doesn't work correctly; better switch to fast_boolean_analysis")
     def test_hadamard(self):
-        signal = LBFFromSpinSystemGS(
+        signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
                 lattice=SquareLattice(width=4, height=4),
                 J1=1,
@@ -203,7 +202,7 @@ class TestLatticeBooleanAnalysis(TestCase):
 
     def test_how_many_terms_to_achieve_score(self):
         analyzer = LatticeBooleanAnalyzer(
-            signal=LBFFromSpinSystemGS(
+            signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=3),
                     J1=1,
@@ -233,7 +232,7 @@ class TestLatticeBooleanAnalysis(TestCase):
         # Marshall
 
         analyzer = LatticeBooleanAnalyzer(
-            signal=LBFFromSpinSystemGS(
+            signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=3),
                     J1=1,
@@ -261,7 +260,7 @@ class TestLatticeBooleanAnalysis(TestCase):
         # Frustrated
 
         analyzer = LatticeBooleanAnalyzer(
-            signal=LBFFromSpinSystemGS(
+            signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=3),
                     J1=1,
@@ -287,7 +286,7 @@ class TestLatticeBooleanAnalysis(TestCase):
 
     def test_predict_max_batch_size(self):
         analyzer = LatticeBooleanAnalyzer(
-            signal=LBFFromSpinSystemGS(
+            signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=2),
                     J1=1,

@@ -2,6 +2,7 @@ import lattice_symmetries as ls
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from loguru import logger
 
 
 def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
@@ -65,6 +66,7 @@ def hadamard_transform(x: npt.NDArray[np.float64], verbose: bool = False):
 
     h = 2
     while h <= d:
+        logger.debug(f"iteration {np.log2(h)} of {np.log2(d)}")
         if verbose:
             print(f"iteration {np.log2(h)} of {np.log2(d)}")
 

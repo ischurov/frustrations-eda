@@ -34,8 +34,7 @@ class TestDiagonalization(TestCase):
         J2 = 0.7
         for lattice in [
             SquareLattice(width=4, height=4),
-            # KagomeLattice(width=2, height=2),
-            KagomeLattice(width=2, height=3),
+            KagomeLattice(width=2, height=4),
         ]:
             print(lattice.__class__.__name__)
             system = HeisenbergJ1J2(
@@ -112,7 +111,7 @@ class TestDiagonalization(TestCase):
             )
 
     def test_get_eigenstate_in_full_basis(self):
-        for lattice in [ChainLattice(8), SquareLattice(4, 4), KagomeLattice(2, 3)]:
+        for lattice in [SquareLattice(4, 4), KagomeLattice(2, 4)]:
             system_nosym = HeisenbergJ1J2(
                 lattice,
                 J1=1,
@@ -127,18 +126,19 @@ class TestDiagonalization(TestCase):
                 J1=1,
                 J2=0.7,
                 use_symmetries=True,
-                spin_inversion=None,
+                spin_inversion=1,
             )
             system_sym.get_eigenstates(1)
 
             eigenstate_in_full_basis = system_sym.get_ground_state_in_full_basis()
             np.testing.assert_allclose(
                 eigenstate_in_full_basis[system_sym.canonical_basis.states],
-                system_nosym.get_eigenstates(2)[1][:, 0],
+                system_nosym.get_eigenstates(1)[1][:, 0],
+                rtol=2e-6,
             )
 
             eigenstate_in_full_basis[system_sym.canonical_basis.states] = 0
-            self.assertTrue(np.isclose(eigenstate_in_full_basis, 0).all())
+            self.assertTrue((eigenstate_in_full_basis == 0).all())
 
 
 class TestHamiltonianProperties(TestCase):

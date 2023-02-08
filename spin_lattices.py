@@ -10,7 +10,6 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
-
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -95,7 +94,10 @@ class SpinLattice:
         self.lattice_basis = np.c_[u, v]
         self.height = height
         self.width = width
+        self.fundamental_domain_size = fundamental_domain_size
         self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
+        frame = fundamental_domain_size * np.array([width, height])
+        self.frame = frame
 
         edges = [
             ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
@@ -119,7 +121,6 @@ class SpinLattice:
         self.site_to_num = {}
         new_num = 0
 
-        frame = fundamental_domain_size * np.array([width, height])
         for site in sites:
             canonical_coords = tuple(site % frame)
             if canonical_coords in self.site_to_num:
@@ -129,27 +130,30 @@ class SpinLattice:
                 self.site_to_num[tuple(site)] = new_num
                 new_num += 1
 
-        self.edges_to_kind = {}
-        for (start, end), kind in self.edges:
-            self.edges_to_kind[
-                (self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])
-            ] = kind
+        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
+        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
+        self.fourier_repr: BasisData
+        self.fourier_basis: ls.SpinBasis
 
+    @property
+    def sites_df(self):
         sites_df = pd.DataFrame(
             [
-                [num, *coords, (np.array(coords) == np.array(coords) % frame).all()]
+                [num, *coords, (np.array(coords) == np.array(coords) % self.frame).all()]
                 for coords, num in self.site_to_num.items()
             ],
             columns=["num", "ix", "iy", "is_canonical"],
         )
 
         sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
-        self.sites_df = sites_df
+        return sites_df
 
-        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
-        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
-        self.fourier_repr: BasisData
-        self.fourier_basis: ls.SpinBasis
+    @property
+    def edges_to_kind(self):
+        edges_to_kind = {}
+        for (start, end), kind in self.edges:
+            edges_to_kind[(self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])] = kind
+        return edges_to_kind
 
     @property
     def sites(self) -> list[int]:

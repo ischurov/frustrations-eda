@@ -9,7 +9,6 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
-
 from spin_lattices import SpinLattice
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -23,6 +22,7 @@ class SpinSystem:
         symmetries: ls.Symmetries,
         ground_state_cache_dir: Path | None = None,
         show_progress: bool = True,
+        use_symmetries: bool = True,
     ):
         self.lattice = lattice
         self.basis = basis
@@ -31,6 +31,9 @@ class SpinSystem:
         self.symmetries = symmetries
         self.ground_state_cache_dir = ground_state_cache_dir
         self.show_progress = show_progress
+        self.use_symmetries = use_symmetries
+        if use_symmetries and (len(symmetries) == 0):
+            raise ValueError("symmetries must be provided if use_symmetries is True")
 
         self.canonical_basis = self.lattice.get_basis(
             use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
@@ -78,6 +81,12 @@ class SpinSystem:
             eigenvalues
 
         """
+        if (
+            self.eigenstates is not None
+            and self.eigenvalues is not None
+            and self.eigenstates.shape[1] >= k
+        ):
+            return self.eigenvalues, self.eigenstates
         if (cached_eigenstate := self._find_cached_eigenstate(k)) is not None:
             eigenvalues, eigenstates = cached_eigenstate
         else:
@@ -170,6 +179,12 @@ class SpinSystem:
             raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
 
         if hasattr(self, "ground_state_in_full_basis"):
+            return self.ground_state_in_full_basis
+
+        if not self.use_symmetries:
+            coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
+            coeffs[self.canonical_basis.states] = self.ground_state
+            self.ground_state_in_full_basis = coeffs
             return self.ground_state_in_full_basis
 
         reprs = self.basis.states
@@ -333,6 +348,8 @@ class SpinSystem:
 
 
 class HeisenbergJ1J2(SpinSystem):
+    symmetries_whitelist = {"KagomeLattice2x4", "SquareLattice4x4"}
+
     def __init__(
         self,
         lattice: SpinLattice,
@@ -343,6 +360,14 @@ class HeisenbergJ1J2(SpinSystem):
         ground_state_cache_dir: Path | None = None,
         show_progress: bool = True,
     ):
+        if (
+            use_symmetries or spin_inversion is not None
+        ) and lattice.get_cache_id() not in self.symmetries_whitelist:
+            raise ValueError(
+                f"Symmetries are not implemented for {lattice.get_cache_id()}, "
+                f"set use_symmetries=False instead"
+            )
+
         J1 = float(J1)
         J2 = float(J2)
         self.J1 = J1
@@ -393,6 +418,7 @@ class HeisenbergJ1J2(SpinSystem):
             symmetries=symmetries,
             ground_state_cache_dir=ground_state_cache_dir,
             show_progress=show_progress,
+            use_symmetries=use_symmetries,
         )
 
     def eigenstate_path(self, k: int) -> Path | None:

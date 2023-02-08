@@ -11,7 +11,7 @@ from fast_boolean_analysis import (
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from lattice_boolean_analysis import (
     AmplitudeSignalKind,
-    LBFFromSpinSystemGS,
+    LBFFromSpinSystem,
     SignSignalKind,
 )
 from spin_lattices import KagomeLattice, SquareLattice
@@ -38,7 +38,7 @@ class TestTruncateStrategies(TestCase):
 class TestFourierSeries(TestCase):
     def test_reconstruction(self):
         signals = [
-            LBFFromSpinSystemGS(
+            LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=2),
                     J1=1.0,
@@ -60,7 +60,7 @@ class TestFourierSeries(TestCase):
             )
 
     def test_marshall(self):
-        signal = LBFFromSpinSystemGS(
+        signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
                 lattice=SquareLattice(width=4, height=4),
                 J1=1,
@@ -98,7 +98,7 @@ class TestFourierSeries(TestCase):
         )
 
     def test_how_many_terms_to_achieve_score(self):
-        signal = LBFFromSpinSystemGS(
+        signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
                 KagomeLattice(width=2, height=3),
                 J1=1,
@@ -131,7 +131,7 @@ class TestFourierSeries(TestCase):
     def test_how_many_terms_to_achieve_score2(self):
         # Marshall
 
-        signal = LBFFromSpinSystemGS(
+        signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
                 KagomeLattice(width=2, height=3),
                 J1=1,
@@ -158,7 +158,7 @@ class TestFourierSeries(TestCase):
 
         # Frustrated
 
-        signal = LBFFromSpinSystemGS(
+        signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
                 KagomeLattice(width=2, height=3),
                 J1=1,
