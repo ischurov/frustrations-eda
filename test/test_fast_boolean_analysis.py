@@ -11,7 +11,7 @@ from fast_boolean_analysis import (
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from lattice_boolean_analysis import (
     AmplitudeSignalKind,
-    LBFFromSpinSystem,
+    LBFFromSpinSystemGS,
     SignSignalKind,
 )
 from spin_lattices import KagomeLattice, SquareLattice
@@ -38,13 +38,12 @@ class TestTruncateStrategies(TestCase):
 class TestFourierSeries(TestCase):
     def test_reconstruction(self):
         signals = [
-            LBFFromSpinSystem(
+            LBFFromSpinSystemGS(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=2),
                     J1=1.0,
                     J2=0.0,
                 ),
-                eigenstate=0,
                 kind=kind,
             )
             for kind in [AmplitudeSignalKind(), SignSignalKind()]
@@ -56,12 +55,12 @@ class TestFourierSeries(TestCase):
             np.testing.assert_almost_equal(
                 fourier.prediction_score(
                     scorer={"amplitude": "value_overlap", "sign": "sign_overlap"}[signal.kind.name]
-                ),
+                )[0],
                 1.0,
             )
 
     def test_marshall(self):
-        signal = LBFFromSpinSystem(
+        signal = LBFFromSpinSystemGS(
             system=HeisenbergJ1J2(
                 lattice=SquareLattice(width=4, height=4),
                 J1=1,
@@ -84,7 +83,7 @@ class TestFourierSeries(TestCase):
             np.isclose(
                 fourier.truncate(keep_largest_n(1)).prediction_score(
                     scorer="sign_overlap",
-                ),
+                )[0],
                 1,
             )
         )  # first term is enough to reconstruct the sign structure
@@ -93,13 +92,13 @@ class TestFourierSeries(TestCase):
             np.isclose(
                 fourier.truncate(keep_largest_n(1)).prediction_score(
                     scorer="accuracy",
-                ),
+                )[0],
                 1,
             )
         )
 
     def test_how_many_terms_to_achieve_score(self):
-        signal = LBFFromSpinSystem(
+        signal = LBFFromSpinSystemGS(
             system=HeisenbergJ1J2(
                 KagomeLattice(width=2, height=3),
                 J1=1,
@@ -114,21 +113,25 @@ class TestFourierSeries(TestCase):
 
         terms = fourier.how_many_terms_to_achieve_score(
             target_score=0.95, scorer="sign_overlap", min_terms=1, max_terms=101
-        )
+        )[0]
 
         assert terms is not None
 
         self.assertTrue(
-            fourier.truncate(keep_largest_n(terms)).prediction_score("sign_overlap") >= 0.95
+            fourier.truncate_orbitwise(keep_largest_n(terms)).prediction_score("sign_overlap")[0]
+            >= 0.95
         )
         self.assertTrue(
-            fourier.truncate(keep_largest_n(terms - 1)).prediction_score("sign_overlap") < 0.95
+            fourier.truncate_orbitwise(keep_largest_n(terms - 1)).prediction_score("sign_overlap")[
+                0
+            ]
+            < 0.95
         )
 
     def test_how_many_terms_to_achieve_score2(self):
         # Marshall
 
-        signal = LBFFromSpinSystem(
+        signal = LBFFromSpinSystemGS(
             system=HeisenbergJ1J2(
                 KagomeLattice(width=2, height=3),
                 J1=1,
@@ -142,19 +145,20 @@ class TestFourierSeries(TestCase):
         fourier = fourier_expand(signal)
 
         self.assertEqual(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="accuracy"), 1
+            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="accuracy")[0], 1
         )
         self.assertEqual(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="sign_overlap"),
+            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="sign_overlap")[0],
             1,
         )
         self.assertTrue(
-            fourier.how_many_terms_to_achieve_score(target_score=1.01, scorer="accuracy") is None
+            fourier.how_many_terms_to_achieve_score(target_score=1.01, scorer="accuracy")[0]
+            is None
         )
 
         # Frustrated
 
-        signal = LBFFromSpinSystem(
+        signal = LBFFromSpinSystemGS(
             system=HeisenbergJ1J2(
                 KagomeLattice(width=2, height=3),
                 J1=1,
@@ -172,9 +176,9 @@ class TestFourierSeries(TestCase):
                 self.assertTrue(terms > 1)
 
         assert_is_large(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="accuracy")
+            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="accuracy")[0]
         )
 
         assert_is_large(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="sign_overlap")
+            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="sign_overlap")[0]
         )

@@ -590,13 +590,13 @@ class KagomeLattice(SpinLattice):
         Generates Kagome lattice.
 
         The fundamental domain:
-
+        ```
              F -- G -- H
             /      \\ /
            D         E
          /  \\      /
         A -- B -- C
-
+        ```
         Size of the fundamental domain is 2×2
         """
         theta = np.pi / 3

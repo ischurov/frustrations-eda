@@ -162,26 +162,35 @@ class SpinSystem:
 
         return df
 
-    def get_eigenstate_in_full_basis(self, k: int) -> npt.NDArray[np.float64]:
+    def get_ground_state_in_full_basis(self) -> npt.NDArray[np.float64]:
         """
-        Returns the k'th eigenstate in the full basis (of size 2**number_spins)
+        Returns the ground state in the full basis (of size 2**number_spins)
         """
-        if self.eigenstates is None:
-            raise ValueError(f"Eigenstate not found; run .get_eigenstates({k + 1}) first")
-        elif self.eigenstates.shape[1] <= k:
-            raise ValueError(f"Not enough eigenstates found; run .get_eigenstates({k + 1}) first")
+        if self.ground_state is None:
+            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
+
+        if hasattr(self, "ground_state_in_full_basis"):
+            return self.ground_state_in_full_basis
 
         reprs = self.basis.states
-
+        if self.show_progress:
+            print("Finding basis_state_info")
         corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
 
+        if self.show_progress:
+            print("Finding corresp_repr_indices")
         corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
         # TODO: replace with self.basis.index
 
+        if self.show_progress:
+            print("Finding coeffs")
+
         coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
         coeffs[self.canonical_basis.states] = (
-            self.eigenstates[corresp_repr_indices, k] * characters * norms
+            self.ground_state[corresp_repr_indices] * characters * norms
         )
+
+        self.ground_state_in_full_basis = coeffs
         return coeffs
 
     def get_df_ground_state(

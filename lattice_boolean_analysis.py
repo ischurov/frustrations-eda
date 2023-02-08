@@ -17,19 +17,14 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
-from hadamard_transform import hadamard_transform
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import SpinSystem, batched_state_info_df, make_unpacked_configurations
+from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
-from tqdm import tqdm
-
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
-    SpinSystem,
-    batched_state_info_df,
-    make_unpacked_configurations,
-)
-from parity import calculate_fourier_transform_matrix, parity, popcount
 from spin_lattices import SpinLattice
+from tqdm import tqdm
+from utils import hadamard_transform
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -118,36 +113,23 @@ class LatticeBooleanFunction:
         return place_values_into_array(x, self(x), self.number_spins)
 
 
-class LBFFromSpinSystem(LatticeBooleanFunction):
-    def __init__(
-        self, system: SpinSystem, eigenstate: int = 0, kind: SignalKind = SignSignalKind()
-    ):
-        system.get_eigenstates(eigenstate + 1)
+class LBFFromSpinSystemGS(LatticeBooleanFunction):
+    def __init__(self, system: SpinSystem, kind: SignalKind = SignSignalKind()):
+        system.get_eigenstates(1)
         super().__init__(system.lattice, canonical_basis=system.canonical_basis)
         self.system = system
-        self.system.get_eigenstates(eigenstate + 1)
-        self.eigenstate = eigenstate
+        self.system.get_eigenstates(1)
         self.kind = kind
         self.canonical_basis = system.canonical_basis
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
-        signal_df = self.system.get_df_eigenstate(k=self.eigenstate, canonical_basis=True).loc[
-            x, :
-        ]  # type: ignore
-        # See https://github.com/pandas-dev/pandas-stubs/issues/508
-
-        return self.kind.transform_data(signal_df["eigenstate_coeff"].values)
+        return self.kind.transform_data(self.system.get_ground_state_in_full_basis()[x])
 
     def get_probs(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
-        signal_df = self.system.get_df_eigenstate(k=self.eigenstate, canonical_basis=True).loc[
-            x, :
-        ]  # type: ignore
-        # See https://github.com/pandas-dev/pandas-stubs/issues/508
-
-        return np.abs(signal_df["eigenstate_coeff"].values) ** 2
+        return np.abs(self.system.get_ground_state_in_full_basis()[x]) ** 2  # type: ignore
 
     def get_cache_id(self) -> str:
-        return f"{self.system.get_cache_id()}-{self.eigenstate}-{self.kind.name}"
+        return f"{self.system.get_cache_id()}-{0}-{self.kind.name}"
 
 
 class LBFFromNN(LatticeBooleanFunction):
@@ -307,13 +289,17 @@ class LBATruncation:
     def _predict_hadamard(
         self, x: npt.NDArray[np.uint64], coeffs: pd.Series
     ) -> npt.NDArray[np.float64]:
-        return hadamard_transform(
-            torch.tensor(
-                coeffs.reindex(np.arange(2**self.analyzer.number_spins, dtype="uint64"))
-                .fillna(0)
-                .values
-            )
-        ).numpy()[x] * 2 ** (self.analyzer.number_spins / 2)
+        raise NotImplementedError(
+            "Prediction with Hadamard transform has a bug that should be fixed. Or rather switch to fast_boolean_analysis instead."
+        )
+        # return hadamard_transform(
+        #     np.asarray(
+        #         coeffs.reindex(np.arange(2**self.analyzer.number_spins, dtype="uint64"))
+        #         .fillna(0)
+        #         .values,
+        #         dtype="uint64",
+        #     )
+        # )[x] * 2 ** (self.analyzer.number_spins / 2)
 
     def predict(
         self,

@@ -1,5 +1,5 @@
 from collections.abc import Callable, Iterable
-from typing import overload
+from typing import Literal, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -28,18 +28,19 @@ class FourierSeries:
         self,
         signal: LatticeBooleanFunction,
         coeffs: npt.NDArray[np.float64],
-        verbose: bool = False,
     ):
         self.signal = signal
         self.coeffs = coeffs
-        self.verbose = verbose
 
     def predict(self) -> npt.NDArray:
-        return hadamard_transform(self.coeffs, verbose=self.verbose)[
-            self.signal.canonical_basis.states
-        ]
+        return hadamard_transform(self.coeffs)[self.signal.canonical_basis.states]
 
     def truncate(self, strategy: TruncateStrategy) -> "FourierSeries":
+        keep_mask = strategy(self.coeffs)
+        truncated_coeffs = np.where(keep_mask, self.coeffs, 0)
+        return FourierSeries(signal=self.signal, coeffs=truncated_coeffs)
+
+    def truncate_orbitwise(self, strategy: TruncateStrategy) -> "FourierSeries":
         fourier_basis_data = self.signal.lattice.get_fourier_repr()
         repr_coeffs = self.coeffs[fourier_basis_data.reprs]
 
@@ -54,25 +55,9 @@ class FourierSeries:
 
         return FourierSeries(signal=self.signal, coeffs=truncated_coeffs)
 
-    @overload
     def prediction_score(
         self, scorer: str | ScorerType, x: npt.NDArray[np.uint64] | None = None
-    ) -> float:
-        ...
-
-    @overload
-    def prediction_score(
-        self,
-        scorer: list[str | ScorerType] | tuple[str | ScorerType],
-        x: npt.NDArray[np.uint64] | None = None,
-    ) -> dict[str, float]:
-        ...
-
-    def prediction_score(
-        self,
-        scorer: str | ScorerType | list[str | ScorerType] | tuple[str | ScorerType],
-        x: npt.NDArray[np.uint64] | None = None,
-    ) -> float | dict[str, float]:
+    ) -> tuple[float, npt.NDArray[np.float64]]:
 
         if x is None:
             x = self.signal.canonical_basis.states
@@ -85,11 +70,9 @@ class FourierSeries:
         prob = self.signal.get_probs(x)
 
         prediction = self.predict()  # FIXME: should take only part that corresponds to x
+        score = get_scorer(scorer)(signal, prediction, prob)
 
-        if isinstance(scorer, Iterable) and not isinstance(scorer, str):
-            return {str(s): get_scorer(s)(signal, prediction, prob) for s in scorer}
-
-        return get_scorer(scorer)(signal, prediction, prob)
+        return score, prediction
 
     def how_many_terms_to_achieve_score(
         self,
@@ -97,25 +80,37 @@ class FourierSeries:
         scorer: str | ScorerType,
         min_terms: int = 1,
         max_terms: int | None = None,
-    ) -> int | None:
+        orbitwise: bool = True,
+    ) -> tuple[int | None, npt.NDArray[np.float64]]:
+        def truncate(max_terms):
+            if orbitwise:
+                return self.truncate_orbitwise(keep_largest_n(max_terms))
+            else:
+                return self.truncate(keep_largest_n(max_terms))
 
         if max_terms is None:
-            max_terms = len(self.signal.lattice.get_fourier_repr().reprs)
+            if orbitwise:
+                max_terms = len(self.signal.lattice.get_fourier_repr().reprs)
+            else:
+                max_terms = len(self.coeffs)
 
-        if self.truncate(keep_largest_n(max_terms)).prediction_score(scorer) < target_score:
-            return None
+        score, prediction = truncate(max_terms).prediction_score(scorer)
+        if score < target_score:
+            return None, prediction
 
-        if self.truncate(keep_largest_n(min_terms)).prediction_score(scorer) >= target_score:
-            return min_terms
+        score, prediction = truncate(min_terms).prediction_score(scorer)
+        if score >= target_score:
+            return min_terms, prediction
 
         while max_terms - min_terms > 1:
             mid = (max_terms + min_terms) // 2
-            if self.truncate(keep_largest_n(mid)).prediction_score(scorer) >= target_score:
+            score, prediction = truncate(mid).prediction_score(scorer)
+            if score >= target_score:
                 max_terms = mid
             else:
                 min_terms = mid
 
-        return max_terms
+        return max_terms, prediction
 
 
 def fourier_expand(signal: LatticeBooleanFunction, verbose: bool = False) -> FourierSeries:
