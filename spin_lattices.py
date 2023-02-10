@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
+
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -521,9 +522,11 @@ class SpinLattice:
 class ChainLattice(SpinLattice):
     def __init__(self, width=1, height=1):
         """
+        Generates chain lattice.
 
+        ```
         A ----- B
-
+        ```
         Size of the fundamentail domain is 1×0
         """
         u = np.array([1, 0])
@@ -556,12 +559,14 @@ class SquareLattice(SpinLattice):
 
         The fundamental domain:
 
+        ```
         C ----- D
         | \\ // |
         |  \V/  |
         |  /Ʌ\  |
         | // \\ |
         A ----- B
+        ```
 
         Size of the fundamentail domain is 1×1
         """

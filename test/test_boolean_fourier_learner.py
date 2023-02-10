@@ -1,3 +1,11 @@
+import sys
+
+from loguru import logger
+
+logger.remove()
+logger.add(sys.stderr, level="DEBUG", colorize=False)
+
+
 from unittest import TestCase
 
 import numpy as np

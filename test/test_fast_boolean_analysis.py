@@ -1,3 +1,10 @@
+import sys
+
+from loguru import logger
+
+logger.remove()
+logger.add(sys.stderr, level="DEBUG", colorize=False)
+
 from unittest import TestCase
 
 import numpy as np
@@ -40,9 +47,9 @@ class TestFourierSeries(TestCase):
         signals = [
             LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
-                    KagomeLattice(width=2, height=2),
+                    SquareLattice(width=4, height=4),
                     J1=1.0,
-                    J2=0.0,
+                    J2=0.5,
                 ),
                 kind=kind,
             )
@@ -100,7 +107,7 @@ class TestFourierSeries(TestCase):
     def test_how_many_terms_to_achieve_score(self):
         signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
-                KagomeLattice(width=2, height=3),
+                KagomeLattice(width=2, height=4),
                 J1=1,
                 J2=0.8,
                 use_symmetries=True,
@@ -111,11 +118,11 @@ class TestFourierSeries(TestCase):
 
         fourier = fourier_expand(signal)
 
-        terms = fourier.how_many_terms_to_achieve_score(
-            target_score=0.95, scorer="sign_overlap", min_terms=1, max_terms=101
-        )[0]
+        success, terms, _ = fourier.how_many_terms_to_achieve_score(
+            target_score=0.95, scorer="sign_overlap", min_terms=1, max_terms=1001, orbitwise=True
+        )
 
-        assert terms is not None
+        assert success
 
         self.assertTrue(
             fourier.truncate_orbitwise(keep_largest_n(terms)).prediction_score("sign_overlap")[0]
@@ -128,12 +135,39 @@ class TestFourierSeries(TestCase):
             < 0.95
         )
 
+    def test_how_many_terms_to_achieve_score_not_orbitwise(self):
+        signal = LBFFromSpinSystem(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=3),
+                J1=1,
+                J2=0.8,
+                use_symmetries=False,
+                spin_inversion=None,
+            ),
+            kind=SignSignalKind(),
+        )
+
+        fourier = fourier_expand(signal)
+
+        success, terms, _ = fourier.how_many_terms_to_achieve_score(
+            target_score=0.95, scorer="sign_overlap", min_terms=1, max_terms=1001
+        )
+
+        assert success
+
+        self.assertTrue(
+            fourier.truncate(keep_largest_n(terms)).prediction_score("sign_overlap")[0] >= 0.95
+        )
+        self.assertTrue(
+            fourier.truncate(keep_largest_n(terms - 1)).prediction_score("sign_overlap")[0] < 0.95
+        )
+
     def test_how_many_terms_to_achieve_score2(self):
         # Marshall
 
         signal = LBFFromSpinSystem(
             system=HeisenbergJ1J2(
-                KagomeLattice(width=2, height=3),
+                SquareLattice(width=4, height=4),
                 J1=1,
                 J2=0,
                 use_symmetries=True,
@@ -145,15 +179,21 @@ class TestFourierSeries(TestCase):
         fourier = fourier_expand(signal)
 
         self.assertEqual(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="accuracy")[0], 1
-        )
-        self.assertEqual(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="sign_overlap")[0],
+            fourier.how_many_terms_to_achieve_score(
+                target_score=0.99, scorer="accuracy", orbitwise=True
+            )[1],
             1,
         )
-        self.assertTrue(
-            fourier.how_many_terms_to_achieve_score(target_score=1.01, scorer="accuracy")[0]
-            is None
+        self.assertEqual(
+            fourier.how_many_terms_to_achieve_score(
+                target_score=0.99, scorer="sign_overlap", orbitwise=True
+            )[1],
+            1,
+        )
+        self.assertFalse(
+            fourier.how_many_terms_to_achieve_score(
+                target_score=1.01, scorer="accuracy", orbitwise=True
+            )[0]
         )
 
         # Frustrated
@@ -163,22 +203,22 @@ class TestFourierSeries(TestCase):
                 KagomeLattice(width=2, height=3),
                 J1=1,
                 J2=0.8,
-                use_symmetries=True,
-                spin_inversion=1,
+                use_symmetries=False,
+                spin_inversion=None,
             ),
             kind=SignSignalKind(),
         )
 
         fourier = fourier_expand(signal)
 
-        def assert_is_large(terms: int | None):
-            if terms is not None:
-                self.assertTrue(terms > 1)
-
-        assert_is_large(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="accuracy")[0]
+        success, terms, _ = fourier.how_many_terms_to_achieve_score(
+            target_score=0.99, scorer="accuracy", orbitwise=True
         )
 
-        assert_is_large(
-            fourier.how_many_terms_to_achieve_score(target_score=0.99, scorer="sign_overlap")[0]
+        self.assertTrue(not success or terms > 1)
+
+        success, terms, _ = fourier.how_many_terms_to_achieve_score(
+            target_score=0.99, scorer="sign_overlap", orbitwise=True
         )
+
+        self.assertTrue(not success or terms > 1)

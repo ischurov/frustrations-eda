@@ -21,37 +21,34 @@ from utils import make_unpacked_configurations
 
 
 class TestLatticeBooleanAnalysis(TestCase):
-    def setUp(self):
-        self.analyzer = LatticeBooleanAnalyzer(
+    def test_reconstruction(self):
+        analyzer = LatticeBooleanAnalyzer(
             LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
-                    KagomeLattice(width=2, height=2),
+                    SquareLattice(width=4, height=4),
                     J1=1.0,
-                    J2=0.0,
+                    J2=0.5,
                 ),
                 eigenstate=0,
                 kind=AmplitudeSignalKind(),
             )
         )
-        self.analyzer.fit()
+        analyzer.fit()
 
-    def test_reconstruction(self):
-        prediction = self.analyzer.truncate(keep_everything).predict()
-        assert isinstance(self.analyzer.signal, LBFFromSpinSystem)
-        self.assertTrue(
-            np.allclose(
-                prediction,
-                np.abs(
-                    self.analyzer.signal.system.get_df_eigenstate(k=0, canonical_basis=True)
-                    .loc[self.analyzer.canonical_basis.states, "eigenstate_coeff"]  # type: ignore
-                    .values
-                ),
-            )
+        prediction = analyzer.truncate(keep_everything).predict()
+        assert isinstance(analyzer.signal, LBFFromSpinSystem)
+        np.testing.assert_allclose(
+            prediction,
+            np.abs(
+                analyzer.signal.system.get_df_eigenstate(k=0, canonical_basis=True)
+                .loc[analyzer.canonical_basis.states, "eigenstate_coeff"]  # type: ignore
+                .values
+            ),
         )
 
         self.assertTrue(
             np.isclose(
-                self.analyzer.truncate(keep_everything).prediction_score(
+                analyzer.truncate(keep_everything).prediction_score(
                     scorer="value_overlap",
                 ),
                 1,
@@ -60,7 +57,7 @@ class TestLatticeBooleanAnalysis(TestCase):
 
         self.assertTrue(
             np.isclose(
-                self.analyzer.truncate(keep_everything).prediction_score(
+                analyzer.truncate(keep_everything).prediction_score(
                     scorer="neg_mse",
                 ),
                 0,
@@ -70,9 +67,9 @@ class TestLatticeBooleanAnalysis(TestCase):
     def test_cache(self):
         with tempfile.TemporaryDirectory() as cache_dir:
             system = HeisenbergJ1J2(
-                KagomeLattice(width=2, height=2),
+                SquareLattice(width=4, height=2),
                 J1=1.0,
-                J2=0.0,
+                J2=0.5,
             )
             analyzer1 = LatticeBooleanAnalyzer(
                 LBFFromSpinSystem(
@@ -204,9 +201,9 @@ class TestLatticeBooleanAnalysis(TestCase):
         analyzer = LatticeBooleanAnalyzer(
             signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
-                    KagomeLattice(width=2, height=3),
+                    SquareLattice(width=2, height=4),
                     J1=1,
-                    J2=0.8,
+                    J2=0.5,
                     use_symmetries=True,
                     spin_inversion=1,
                 ),
@@ -234,7 +231,7 @@ class TestLatticeBooleanAnalysis(TestCase):
         analyzer = LatticeBooleanAnalyzer(
             signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
-                    KagomeLattice(width=2, height=3),
+                    SquareLattice(width=4, height=4),
                     J1=1,
                     J2=0,
                     use_symmetries=True,
@@ -262,9 +259,9 @@ class TestLatticeBooleanAnalysis(TestCase):
         analyzer = LatticeBooleanAnalyzer(
             signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
-                    KagomeLattice(width=2, height=3),
+                    SquareLattice(width=4, height=4),
                     J1=1,
-                    J2=0.8,
+                    J2=0.5,
                     use_symmetries=True,
                     spin_inversion=1,
                 ),
@@ -288,9 +285,9 @@ class TestLatticeBooleanAnalysis(TestCase):
         analyzer = LatticeBooleanAnalyzer(
             signal=LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
-                    KagomeLattice(width=2, height=2),
+                    SquareLattice(width=2, height=4),
                     J1=1,
-                    J2=0.8,
+                    J2=0.5,
                     use_symmetries=True,
                     spin_inversion=1,
                 ),

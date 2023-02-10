@@ -9,6 +9,7 @@ import numpy.typing as npt
 import pandas as pd
 import scipy
 import scipy.sparse.linalg
+from loguru import logger
 from spin_lattices import SpinLattice
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -58,7 +59,7 @@ class SpinSystem:
             eigenstate_path = self.eigenstate_path(eigenstate)
             if eigenstate_path and eigenstate_path.exists():
                 if self.show_progress:
-                    print(
+                    logger.debug(
                         f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
                     )
                 eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
@@ -92,7 +93,7 @@ class SpinSystem:
         else:
             # Diagonalize the Hamiltonian using ARPACK
             if self.show_progress:
-                print("Calculating eigenvalues / eigenstates")
+                logger.debug("Calculating eigenvalues / eigenstates")
             eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(self.hamiltonian, k=k, which="SA")
             eigenstates = eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1)
             # make sure that the first element of each eigenvector is positive
@@ -104,7 +105,7 @@ class SpinSystem:
                     eigenstate_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
 
         if self.show_progress:
-            print("Ground state energy is {:.10f}".format(eigenvalues[0]))
+            logger.debug("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
         self.ground_energy = eigenvalues[0]
         self.ground_state = eigenstates[:, 0]
@@ -189,16 +190,16 @@ class SpinSystem:
 
         reprs = self.basis.states
         if self.show_progress:
-            print("Finding basis_state_info")
+            logger.debug("Finding basis_state_info")
         corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
 
         if self.show_progress:
-            print("Finding corresp_repr_indices")
+            logger.debug("Finding corresp_repr_indices")
         corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
         # TODO: replace with self.basis.index
 
         if self.show_progress:
-            print("Finding coeffs")
+            logger.debug("Finding coeffs")
 
         coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
         coeffs[self.canonical_basis.states] = (
@@ -348,7 +349,17 @@ class SpinSystem:
 
 
 class HeisenbergJ1J2(SpinSystem):
-    symmetries_whitelist = {"KagomeLattice2x4", "SquareLattice4x4"}
+    symmetries_whitelist = {
+        "KagomeLattice2x4",
+        "SquareLattice4x4",
+        "SquareLattice2x4",
+        "SquareLattice4x2",
+        "SquareLattice2x2",
+        "ChainLattice4x1",
+        "ChainLattice8x1",
+        "ChainLattice12x1",
+        "KagomeLattice4x2",
+    }
 
     def __init__(
         self,
@@ -359,14 +370,21 @@ class HeisenbergJ1J2(SpinSystem):
         spin_inversion: Optional[int] = 1,
         ground_state_cache_dir: Path | None = None,
         show_progress: bool = True,
+        skip_symmetries_whitelist: bool = False,
     ):
         if (
             use_symmetries or spin_inversion is not None
         ) and lattice.get_cache_id() not in self.symmetries_whitelist:
-            raise ValueError(
-                f"Symmetries are not implemented for {lattice.get_cache_id()}, "
-                f"set use_symmetries=False instead"
-            )
+            if skip_symmetries_whitelist:
+                logger.warning(
+                    f"Symmetries are not tested with {lattice.get_cache_id()}, "
+                    f"and can produce incorrect results. Using them anyway due to skip_symmetries_whitelist=True."
+                )
+            else:
+                raise ValueError(
+                    f"Symmetries are not tested with {lattice.get_cache_id()}, "
+                    f"set use_symmetries=False instead. For testing, use skip_symmetries_whitelist=True."
+                )
 
         J1 = float(J1)
         J2 = float(J2)
@@ -378,7 +396,7 @@ class HeisenbergJ1J2(SpinSystem):
 
         number_spins = len(lattice.sites)
         if self.show_progress:
-            print(f"{number_spins=}")
+            logger.debug(f"{number_spins=}")
         hamming_weight = number_spins // 2  # Hamming weight (i.e. number of spin ups)
 
         # Constructing symmetries
@@ -389,7 +407,7 @@ class HeisenbergJ1J2(SpinSystem):
             symmetries = ls.Symmetries([])
 
         if show_progress:
-            print("Symmetry group contains {} elements".format(len(symmetries)))
+            logger.debug("Symmetry group contains {} elements".format(len(symmetries)))
 
         # Constructing the basis
         basis = lattice.get_basis(
@@ -399,7 +417,7 @@ class HeisenbergJ1J2(SpinSystem):
         )
 
         if show_progress:
-            print("Hilbert space dimension is {}".format(basis.number_states))
+            logger.debug("Hilbert space dimension is {}".format(basis.number_states))
 
         # Constructing the Hamiltonian
         expr_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"

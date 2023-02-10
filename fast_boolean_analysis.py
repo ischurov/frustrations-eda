@@ -90,7 +90,7 @@ class FourierSeries:
         scorer: str | ScorerType,
         min_terms: int = 1,
         max_terms: int | None = None,
-        orbitwise: bool = True,
+        orbitwise: bool = False,
     ) -> tuple[bool, int, npt.NDArray[np.float64]]:
         """
         Find the number of terms needed to achieve a target score.
