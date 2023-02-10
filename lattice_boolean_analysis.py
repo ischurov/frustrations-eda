@@ -17,14 +17,18 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
-from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (SpinSystem, batched_state_info_df,
-                                     make_unpacked_configurations)
-from parity import calculate_fourier_transform_matrix, parity, popcount
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
-from spin_lattices import SpinLattice
 from tqdm import tqdm
+
+from boolean_fourier_learner import BooleanFourierLearner
+from heisenberg_hamiltonians import (
+    SpinSystem,
+    batched_state_info_df,
+    make_unpacked_configurations,
+)
+from parity import calculate_fourier_transform_matrix, parity, popcount
+from spin_lattices import SpinLattice
 from utils import hadamard_transform
 
 
@@ -183,7 +187,10 @@ def scorer(f: ScorerType):
 
 @scorer
 def sign_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
-    return (true * np.sign(predict) * prob).sum() / prob.sum()
+    mask = true != 0
+    # ignore zero values of true vector
+
+    return (true[mask] * np.sign(predict[mask]) * prob[mask]).sum() / prob[mask].sum()
 
 
 @scorer

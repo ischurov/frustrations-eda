@@ -10,6 +10,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
+from loguru import logger
 
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
@@ -188,7 +189,10 @@ class SpinLattice:
 
     def make_fourier_basis(self):
         if hasattr(self, "fourier_basis"):
+            logger.debug("Using cached fourier_basis")
             return self.fourier_basis
+
+        logger.debug("Cached fourier_basis not found, building...")
 
         symmetries = ls.Symmetries(
             [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
@@ -224,6 +228,7 @@ class SpinLattice:
 
         """
         if hasattr(self, "fourier_repr"):
+            logger.debug("Using cached fourier_repr")
             return self.fourier_repr
 
         basis = self.make_fourier_basis()
@@ -581,6 +586,45 @@ class SquareLattice(SpinLattice):
         }
 
         named_edges = [("AB", 1), ("AC", 1), ("CD", 1), ("BD", 1), ("CB", 2), ("AD", 2)]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=1,
+            width=width,
+            height=height,
+        )
+
+
+class TriangleLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        r"""
+        Generates triangular lattice.
+
+        The fundamental domain:
+
+        ```
+             C
+            /\\
+           /  \\
+          /    \\
+         A ----- B                    
+        ```
+        Size of the fundamentail domain is 1×1
+        """
+        theta = np.pi / 3
+        u = np.array([1, 0])
+        v = np.array([np.cos(theta), np.sin(theta)])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([0, 1]),
+        }
+
+        named_edges = [("AB", 1), ("AC", 1), ("BC", 2)]
 
         super().__init__(
             u=u,

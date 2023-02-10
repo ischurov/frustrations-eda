@@ -11,7 +11,13 @@ import lattice_symmetries as ls
 import numpy as np
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice
+from spin_lattices import (
+    ChainLattice,
+    KagomeLattice,
+    SpinLattice,
+    SquareLattice,
+    TriangleLattice,
+)
 
 
 class TestDiagonalization(TestCase):
@@ -43,11 +49,16 @@ class TestDiagonalization(TestCase):
             SquareLattice(width=2, height=2),
             SquareLattice(width=2, height=4),
             SquareLattice(width=4, height=4),
+            TriangleLattice(width=2, height=2),
+            TriangleLattice(width=2, height=4),
+            TriangleLattice(width=4, height=4),
             ChainLattice(width=4),
             ChainLattice(width=8),
             ChainLattice(width=12),
+            # SquareLattice(width=4, height=6),
             # KagomeLattice(width=2, height=4),
-            # # the last one is known to be working, but takes too long
+            # TriangleLattice(width=4, height=6),
+            # the last are known to be working, but takes too long
         ]:
             print(lattice.__class__.__name__)
             system = HeisenbergJ1J2(

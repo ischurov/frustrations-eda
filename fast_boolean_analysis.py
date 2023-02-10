@@ -111,10 +111,12 @@ class FourierSeries:
 
         Returns:
         --------
-        bool: True if the target score was achieved, False otherwise
-        int: the number of terms needed to achieve the target score
-        np.ndarray: the prediction corresponding to the number of terms
-        needed to achieve the target score
+        success: bool
+            Whether the target score was achieved
+        terms: int
+            The number of terms needed to achieve the target score
+        prediction: np.ndarray
+            The prediction for the signal achieved with the number of terms returned
 
         """
 
@@ -132,12 +134,16 @@ class FourierSeries:
 
         score, prediction = truncate(max_terms).prediction_score(scorer)
         if score < target_score:
-            logger.debug(f"score={score} < target_score={target_score}")
+            logger.debug(
+                f"At {max_terms=}, score={score} < target_score={target_score}, so we can't achieve the target score"
+            )
             return False, max_terms, prediction
 
         score, prediction = truncate(min_terms).prediction_score(scorer)
         if score >= target_score:
-            logger.debug(f"score={score} >= target_score={target_score}")
+            logger.debug(
+                f"At {min_terms=}, score={score} >= target_score={target_score}, so we can achieve the target score with {min_terms} terms"
+            )
             return True, min_terms, prediction
 
         while max_terms - min_terms > 1:
@@ -147,9 +153,11 @@ class FourierSeries:
             logger.debug(f"{mid=}, score={score}")
 
             if score >= target_score:
+                logger.debug("score >= target_score, so we can decrease max_terms")
                 max_terms = mid
                 # this is biased towards the lower end, but that's fine
             else:
+                logger.debug("score < target_score, so we can increase min_terms")
                 min_terms = mid
 
         return True, max_terms, prediction
