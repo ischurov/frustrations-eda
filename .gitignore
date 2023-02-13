@@ -22,3 +22,5 @@ checkpoint.pt
 fourier_learners_cache_wrongsign/*
 *.log
 *.swp
+*.out
+*.feather

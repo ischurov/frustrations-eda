@@ -10,6 +10,7 @@ import pandas as pd
 import scipy
 import scipy.sparse.linalg
 from loguru import logger
+
 from spin_lattices import SpinLattice
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -189,8 +190,10 @@ class SpinSystem:
         corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
 
         logger.debug("Finding corresp_repr_indices")
-        corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
-        # TODO: replace with self.basis.index
+        
+        corresp_repr_indices = self.basis.index(corresp_reprs)
+        # Old implementation:
+        # corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
 
         logger.debug("Finding coeffs")
 

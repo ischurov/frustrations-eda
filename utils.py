@@ -87,7 +87,7 @@ def hadamard_transform(x: npt.NDArray[np.float64], verbose: bool = False):
     return (x / np.sqrt(d)).reshape(*original_shape)
 
 
-@torch.jit.script
+@torch.jit.script  # type: ignore
 @torch.no_grad()
 def hadamard_transform_pytorch_inplace(x: torch.Tensor, chunks: int = 8):
     """Fast Walsh–Hadamard transform
@@ -112,21 +112,23 @@ def hadamard_transform_pytorch_inplace(x: torch.Tensor, chunks: int = 8):
         x = x.unsqueeze(0)
     batch_dim, d = x.shape
 
-    chunk_size = (d // 2 + chunks - 1) // chunks
-
     h = 2
     while h <= d:
         hf = h // 2
-        x = x.view(batch_dim, d // h, h)
+        d_over_h = d // h
+        x = x.view(batch_dim, d_over_h, h)
+
+        chunk_size = (d_over_h + chunks - 1) // chunks
+        #        logger.debug(f"iteration {np.log2(h)} of {np.log2(d)}")
 
         for i in range(chunks):
             chunk_start = i * chunk_size
-            chunk_end = min((i + 1) * chunk_size, hf)
-            half_1 = x[:, :, chunk_start:chunk_end].clone()
-            x[:, :, chunk_start:chunk_end] += x[:, :, hf + chunk_start : hf + chunk_end]
-            x[:, :, hf + chunk_start : hf + chunk_end] = (
-                half_1 - x[:, :, hf + chunk_start : hf + chunk_end]
-            )
+            chunk_end = min((i + 1) * chunk_size, d_over_h)
+            chunk_slice = slice(chunk_start, chunk_end)
+            half_1 = x[:, chunk_slice, :hf].clone()
+            x[:, chunk_slice, :hf] += x[:, chunk_slice, hf:]
+            x[:, chunk_slice, hf:] *= -1
+            x[:, chunk_slice, hf:] += half_1
 
         h *= 2
 
