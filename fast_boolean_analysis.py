@@ -3,6 +3,7 @@ from typing import Literal, overload
 
 import numpy as np
 import numpy.typing as npt
+import torch
 from loguru import logger
 
 from lattice_boolean_analysis import (
@@ -11,7 +12,7 @@ from lattice_boolean_analysis import (
     SignalKind,
     get_scorer,
 )
-from utils import hadamard_transform
+from utils import hadamard_transform_pytorch_inplace
 
 TruncateStrategy = Callable[[npt.NDArray[np.float64]], npt.NDArray[np.bool_]]
 
@@ -40,7 +41,9 @@ class FourierSeries:
         self.coeffs = coeffs
 
     def predict(self) -> npt.NDArray:
-        return hadamard_transform(self.coeffs)[self.signal.canonical_basis.states]
+        return hadamard_transform_pytorch_inplace(
+            torch.tensor(self.coeffs.copy(), dtype=torch.float64)
+        ).numpy()[self.signal.canonical_basis.states]
 
     def truncate(self, strategy: TruncateStrategy) -> "FourierSeries":
         keep_mask = strategy(self.coeffs)
@@ -132,12 +135,12 @@ class FourierSeries:
             else:
                 max_terms = len(self.coeffs)
 
-        score, prediction = truncate(max_terms).prediction_score(scorer)
+        score, max_prediction = truncate(max_terms).prediction_score(scorer)
         if score < target_score:
             logger.debug(
                 f"At {max_terms=}, score={score} < target_score={target_score}, so we can't achieve the target score"
             )
-            return False, max_terms, prediction
+            return False, max_terms, max_prediction
 
         score, prediction = truncate(min_terms).prediction_score(scorer)
         if score >= target_score:
@@ -155,17 +158,21 @@ class FourierSeries:
             if score >= target_score:
                 logger.debug("score >= target_score, so we can decrease max_terms")
                 max_terms = mid
+                max_prediction = prediction
                 # this is biased towards the lower end, but that's fine
             else:
                 logger.debug("score < target_score, so we can increase min_terms")
                 min_terms = mid
 
-        return True, max_terms, prediction
+        return True, max_terms, max_prediction
 
 
-def fourier_expand(signal: LatticeBooleanFunction, verbose: bool = False) -> FourierSeries:
+def fourier_expand(signal: LatticeBooleanFunction) -> FourierSeries:
     x = signal.canonical_basis.states
-    if verbose:
-        print("Calculating signal value")
-    signal_value = signal.as_long_array(x)
-    return FourierSeries(signal=signal, coeffs=hadamard_transform(signal_value, verbose=verbose))
+    signal_value = signal.as_long_array(x).copy()
+    return FourierSeries(
+        signal=signal,
+        coeffs=hadamard_transform_pytorch_inplace(
+            torch.tensor(signal_value, dtype=torch.float64)
+        ).numpy(),
+    )

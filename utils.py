@@ -1,7 +1,10 @@
+from math import ceil, sqrt
+
 import lattice_symmetries as ls
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import torch
 from loguru import logger
 
 
@@ -82,6 +85,54 @@ def hadamard_transform(x: npt.NDArray[np.float64], verbose: bool = False):
         h *= 2
 
     return (x / np.sqrt(d)).reshape(*original_shape)
+
+
+@torch.jit.script
+@torch.no_grad()
+def hadamard_transform_pytorch_inplace(x: torch.Tensor, chunks: int = 8):
+    """Fast Walsh–Hadamard transform
+
+    The hadamard transform is not numerically stable by nature (lots of subtractions),
+    it is recommended to use with float64 when possible
+
+    :param x: Either a vector or a batch of vectors where the first dimension is the batch dimension.
+              Each vector's length is expected to be a power of 2! (or each row if it is batched)
+
+    :param chunks: The number of chunks to split the Hadamard transform into.
+                   This is done to avoid memory issues when the input is too large.
+
+    :return: The normalized Hadamard transform of each vector in x
+    """
+
+    original_shape = x.shape
+    assert 1 <= len(original_shape) <= 2, "input's dimension must be either 1 or 2"
+    if len(original_shape) == 1:
+        # add fake 1 batch dimension
+        # for making the code a follow a single (batched) path
+        x = x.unsqueeze(0)
+    batch_dim, d = x.shape
+
+    chunk_size = (d // 2 + chunks - 1) // chunks
+
+    h = 2
+    while h <= d:
+        hf = h // 2
+        x = x.view(batch_dim, d // h, h)
+
+        for i in range(chunks):
+            chunk_start = i * chunk_size
+            chunk_end = min((i + 1) * chunk_size, hf)
+            half_1 = x[:, :, chunk_start:chunk_end].clone()
+            x[:, :, chunk_start:chunk_end] += x[:, :, hf + chunk_start : hf + chunk_end]
+            x[:, :, hf + chunk_start : hf + chunk_end] = (
+                half_1 - x[:, :, hf + chunk_start : hf + chunk_end]
+            )
+
+        h *= 2
+
+    x /= torch.sqrt(torch.scalar_tensor(d))
+
+    return x.view(original_shape)
 
 
 ### END BASED

@@ -9,15 +9,8 @@ from unittest import TestCase
 
 import lattice_symmetries as ls
 import numpy as np
-
 from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import (
-    ChainLattice,
-    KagomeLattice,
-    SpinLattice,
-    SquareLattice,
-    TriangleLattice,
-)
+from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
 
 
 class TestDiagonalization(TestCase):
@@ -167,6 +160,57 @@ class TestDiagonalization(TestCase):
 
             eigenstate_in_full_basis[system_sym.canonical_basis.states] = 0
             self.assertTrue((eigenstate_in_full_basis == 0).all())
+
+    def test_lattice_equivalence(self):
+        class OneDiagonalSquareLattice(SpinLattice):
+            def __init__(self, width=1, height=1):
+                r"""
+                Generates square J1-J2 lattice with one diagonal
+                (Should be equivalent to triangle lattice)
+
+                The fundamental domain:
+
+                ```
+                C ----- D
+                | \\    |
+                |  \\   |
+                |   \\  |
+                |    \\ |
+                A ----- B
+                ```
+
+                Size of the fundamentail domain is 1×1
+                """
+                u = np.array([1, 0])
+                v = np.array([0, 1])
+
+                named_sites = {
+                    "A": np.array([0, 0]),
+                    "B": np.array([1, 0]),
+                    "C": np.array([0, 1]),
+                    "D": np.array([1, 1]),
+                }
+
+                named_edges = [("AB", 1), ("AC", 1), ("CD", 1), ("BD", 1), ("CB", 2)]
+
+                super().__init__(
+                    u=u,
+                    v=v,
+                    named_sites=named_sites,
+                    named_edges=named_edges,
+                    fundamental_domain_size=1,
+                    width=width,
+                    height=height,
+                )
+
+        self.assertTrue(
+            HeisenbergJ1J2(
+                lattice=TriangleLattice(3, 3), use_symmetries=False, spin_inversion=None
+            ).hamiltonian.expression
+            == HeisenbergJ1J2(
+                lattice=OneDiagonalSquareLattice(3, 3), use_symmetries=False, spin_inversion=None
+            ).hamiltonian.expression
+        )
 
 
 class TestHamiltonianProperties(TestCase):

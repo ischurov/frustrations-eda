@@ -5,6 +5,7 @@ from loguru import logger
 logger.remove()
 logger.add(sys.stderr, level="DEBUG", colorize=False)
 
+from itertools import product
 from unittest import TestCase
 
 import numpy as np
@@ -136,31 +137,43 @@ class TestFourierSeries(TestCase):
         )
 
     def test_how_many_terms_to_achieve_score_not_orbitwise(self):
-        signal = LBFFromSpinSystem(
-            system=HeisenbergJ1J2(
-                KagomeLattice(width=2, height=3),
-                J1=1,
-                J2=0.8,
-                use_symmetries=False,
-                spin_inversion=None,
-            ),
-            kind=SignSignalKind(),
-        )
+        for J2, (scorer, target_score) in product(
+            [0.7, 0.8], [("sign_overlap", 0.95), ("f1", 0.8)]
+        ):
 
-        fourier = fourier_expand(signal)
+            signal = LBFFromSpinSystem(
+                system=HeisenbergJ1J2(
+                    KagomeLattice(width=2, height=3),
+                    J1=1,
+                    J2=J2,
+                    use_symmetries=False,
+                    spin_inversion=None,
+                ),
+                kind=SignSignalKind(),
+            )
 
-        success, terms, _ = fourier.how_many_terms_to_achieve_score(
-            target_score=0.95, scorer="sign_overlap", min_terms=1, max_terms=1001
-        )
+            fourier = fourier_expand(signal)
 
-        assert success
+            success, terms, prediction = fourier.how_many_terms_to_achieve_score(
+                target_score=target_score, scorer=scorer, min_terms=1, max_terms=None
+            )
 
-        self.assertTrue(
-            fourier.truncate(keep_largest_n(terms)).prediction_score("sign_overlap")[0] >= 0.95
-        )
-        self.assertTrue(
-            fourier.truncate(keep_largest_n(terms - 1)).prediction_score("sign_overlap")[0] < 0.95
-        )
+            assert success
+            print(
+                f"J2={J2}, scorer={scorer}, terms={terms}. Checking that the score is at least {target_score}"
+            )
+            self.assertTrue(
+                fourier.truncate(keep_largest_n(terms)).prediction_score(scorer)[0] >= target_score
+            )
+            print("Checking that the score is lower when we truncate by one term")
+            self.assertTrue(
+                fourier.truncate(keep_largest_n(terms - 1)).prediction_score(scorer)[0]
+                < target_score
+            )
+
+            np.testing.assert_allclose(
+                fourier.truncate(keep_largest_n(terms)).predict(), prediction
+            )
 
     def test_how_many_terms_to_achieve_score2(self):
         # Marshall
