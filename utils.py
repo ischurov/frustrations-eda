@@ -1,5 +1,7 @@
 from math import ceil, sqrt
+from pathlib import Path
 
+import jsonlines
 import lattice_symmetries as ls
 import numpy as np
 import numpy.typing as npt
@@ -138,3 +140,18 @@ def hadamard_transform_pytorch_inplace(x: torch.Tensor, chunks: int = 8):
 
 
 ### END BASED
+
+
+def read_jsonl_to_df(file: str | Path):
+    with jsonlines.open(file) as reader:
+        return pd.DataFrame(reader)
+
+
+def get_abslargest_terms(
+    coeffs: npt.NDArray, n: int
+) -> tuple[npt.NDArray[np.uint64], npt.NDArray]:
+    """Get the n largest terms in absolute value."""
+    abs_values = np.abs(coeffs)
+    indices = np.asarray(np.argpartition(abs_values, -n)[-n:], dtype=np.uint64)
+    sorted_indices = indices[np.argsort(-abs_values[indices])]
+    return sorted_indices, coeffs[sorted_indices]

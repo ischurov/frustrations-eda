@@ -12,6 +12,7 @@ from lattice_boolean_analysis import (
     SignalKind,
     get_scorer,
 )
+from parity import popcount
 from utils import hadamard_transform_pytorch_inplace
 
 TruncateStrategy = Callable[[npt.NDArray[np.float64]], npt.NDArray[np.bool_]]
@@ -165,6 +166,11 @@ class FourierSeries:
                 min_terms = mid
 
         return True, max_terms, max_prediction
+
+    def total_hamming_weight(self, terms: int) -> int:
+        popcounts = popcount(np.asarray(np.argpartition(self.coeffs, -terms)[-terms:]))
+        inv_popcounts = self.signal.number_spins - popcounts
+        return int(np.sum(np.minimum(popcounts, inv_popcounts)))
 
 
 def fourier_expand(signal: LatticeBooleanFunction) -> FourierSeries:
