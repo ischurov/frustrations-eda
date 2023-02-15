@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import Any, NamedTuple
 
 import fire
-import jsonlines
 import lattice_symmetries as ls
 import numpy as np
 import numpy.typing as npt
@@ -37,7 +36,6 @@ ground_state_cache_dir = Path("groundstates")
 outdir = Path("experiments/boolean-analysis-complexity")
 outdir.mkdir(exist_ok=True, parents=True)
 
-outfile = outdir / "complexity.jsonl"
 
 scorers = ["sign_overlap", "accuracy", "f1"]
 target_score = 0.8
@@ -85,6 +83,18 @@ signal_kinds: list[SignalKind] = [SignSignalKind(), AmplitudeMedianBinSignalKind
 max_keep_terms = 10
 
 
+def mk_filename(row):
+    return (
+        "-".join(
+            [
+                f"{col}={row[col]}"
+                for col in ["lattice_name", "J2", "signal_kind", "target_scorer", "target_score"]
+            ]
+        )
+        + ".json"
+    )
+
+
 def main(J2s: list[float]):
     logger.remove()
     logger.add(
@@ -97,40 +107,37 @@ def main(J2s: list[float]):
 
     for (lattice_opt, J2, signal_kind) in product(lattice_opts, J2s, signal_kinds):
         how_many_terms = None
-        existing_row = {}
         success = "Error"
-
-        if outfile.exists():
-            with jsonlines.open(outfile) as reader:
-                if (
-                    existing_row := (
-                        next(
-                            (
-                                row
-                                for row in reader
-                                if (
-                                    row.get("lattice_name") == lattice_opt.lattice.get_cache_id()
-                                    and row.get("J2") == J2
-                                    and row.get("signal_kind") == signal_kind.name
-                                    and row.get("target_score") == target_score
-                                    and row.get("target_scorer") == target_scorer
-                                    and row.get("success")
-                                )
-                            ),
-                            {},
-                        )
-                    )
-                ) != {}:
-                    how_many_terms = existing_row["terms"]
-                    success = True
-                    logger.debug(
-                        f"Found existing row with {how_many_terms} terms for lattice: {lattice_opt.lattice.get_cache_id()}, J2: {J2}, signal_kind: {signal_kind.name}"
-                    )
 
         lattice, use_symmetries, max_terms = lattice_opt
         logger.debug(
             f"lattice: {lattice.get_cache_id()}, J2: {J2}, signal_kind: {signal_kind.name}"
         )
+
+        row = {
+            "lattice_name": lattice.get_cache_id(),
+            "J2": J2,
+            "signal_kind": signal_kind.name,
+            "target_score": target_score,
+            "target_scorer": target_scorer,
+        }
+
+        outfile = outdir / mk_filename(row)
+
+        if outfile.exists():
+            row.update(json.loads(outfile.read_text()))
+            logger.debug(f"File already exists, current row is {row}")
+
+        if (
+            row.get("success")
+            and "terms" in row
+            and "total_hamming_weight" in row
+            and "largest_terms" in row
+            and "largest_coeffs" in row
+        ):
+            logger.debug("Everything already done, skipping")
+            continue
+
         system = HeisenbergJ1J2(
             lattice=lattice,
             J1=1,
@@ -144,7 +151,8 @@ def main(J2s: list[float]):
         logger.debug(f"Finding fourier expansion")
         series = fourier_expand(LBFFromSpinSystem(system=system, eigenstate=0, kind=signal_kind))
 
-        if how_many_terms is None:
+        if "terms" not in row or not row.get("sucess"):
+            logger.debug("Finding number of terms to achieve target score")
             success, how_many_terms, prediction = series.how_many_terms_to_achieve_score(
                 target_score, scorer=target_scorer, max_terms=max_terms, orbitwise=False
             )
@@ -152,34 +160,35 @@ def main(J2s: list[float]):
                 scorer: series.prediction_score(scorer=scorer, prediction=prediction)[0]
                 for scorer in scorers
             }
+            row["success"] = success
+            row["terms"] = how_many_terms
+            row["total_hamming_weight"] = series.total_hamming_weight(how_many_terms)
+
+            row.update(scores)
+            
+            update_largest = True
+
         else:
-            scores = {}
+            how_many_terms = row["terms"]
+            success = row["success"]
 
-        reprs = series.signal.lattice.get_fourier_repr().reprs
-        coeffs = series.coeffs
-        idxs, coeffs = get_abslargest_terms(coeffs[reprs], min(max_keep_terms, how_many_terms))
-        subsets = reprs[idxs]
+            update_largest = False
 
-        with jsonlines.open(outfile, "a") as writer:
-            new_row = (
-                existing_row
-                | {
-                    "lattice_name": lattice.get_cache_id(),
-                    "J2": J2,
-                    "signal_kind": signal_kind.name,
-                    "success": success,
-                    "terms": how_many_terms,
-                    "target_score": target_score,
-                    "target_scorer": target_scorer,
-                    "total_hamming_weight": series.total_hamming_weight(how_many_terms),
-                    "number_spins": lattice.number_spins,
-                    "largest_terms": [int(x) for x in subsets.tolist()],
-                    "largest_coeffs": coeffs.tolist(),
-                }
-                | scores
-            )
-            logger.debug(f"Writing row: {new_row}")
-            writer.write(new_row)
+
+        if update_largest or "largest_terms" not in row or "largest_coeffs" not in row:
+            reprs = series.signal.lattice.get_fourier_repr().reprs
+            coeffs = series.coeffs
+            idxs, coeffs = get_abslargest_terms(coeffs[reprs], min(max_keep_terms, how_many_terms))
+            subsets = reprs[idxs]
+
+            row["largest_terms"] = [int(x) for x in subsets.tolist()]
+            row["largest_coeffs"] = coeffs.tolist()
+
+
+        
+        logger.debug(f"Writing row: {row}")
+        outfile.write_text(json.dumps(row, indent=4)) 
+        
         logger.debug("Done")
 
 
