@@ -9,8 +9,15 @@ from unittest import TestCase
 
 import lattice_symmetries as ls
 import numpy as np
+
 from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
+from spin_lattices import (
+    ChainLattice,
+    KagomeLattice,
+    SpinLattice,
+    SquareLattice,
+    TriangleLattice,
+)
 
 
 class TestDiagonalization(TestCase):

@@ -4,13 +4,17 @@ from unittest import TestCase, skip
 
 import lattice_symmetries as ls
 import numpy as np
+import pandas as pd
 import pandas.testing as pdt
+import torch
+import torch.nn as nn
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from lattice_boolean_analysis import (
     AmplitudeMedianBinSignalKind,
     AmplitudeSignalKind,
     LatticeBooleanAnalyzer,
+    LBFFromNN,
     LBFFromSpinSystem,
     SignSignalKind,
     keep_everything,
@@ -304,3 +308,36 @@ class TestLatticeBooleanAnalysis(TestCase):
                 ),
             )
         )
+
+    def test_lbf_from_nn_batch(self):
+        lattice = SquareLattice(width=4, height=4)
+        number_spins = lattice.number_spins
+        net = nn.Sequential(
+            nn.Linear(number_spins, 2, dtype=torch.float64),
+        )
+        net[0].bias.data = torch.zeros(2, dtype=torch.float64)
+        print("Making signal1")
+        signal1 = LBFFromNN(
+            lattice=lattice,
+            nn=net,
+            probs=pd.Series(1, index=np.arange(2**number_spins)),
+            batch_size=10,
+        )
+
+        print("Making signal2")
+        signal2 = LBFFromNN(
+            lattice=lattice,
+            nn=net,
+            probs=pd.Series(1, index=np.arange(2**number_spins)),
+            batch_size=2**number_spins,
+        )
+
+        x = np.arange(2**number_spins, dtype=np.uint64)
+        print("Predicting signal1")
+        y1 = signal1(x)
+        print("Predicting signal2")
+        y2 = signal2(x)
+        print("Asserting")
+        np.testing.assert_equal(y1, y2)
+        self.assertTrue((y1 != 1).any() and (y1 != -1).any())
+        self.assertTrue((y2 != 1).any() and (y2 != -1).any())

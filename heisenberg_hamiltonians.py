@@ -23,7 +23,7 @@ class SpinSystem:
         hamiltonian: ls.Operator,
         symmetries: ls.Symmetries,
         ground_state_cache_dir: Path | None = None,
-        use_symmetries: bool = True,
+        use_symmetries: bool = False,
     ):
         self.lattice = lattice
         self.basis = basis
@@ -93,7 +93,9 @@ class SpinSystem:
 
             logger.debug("Calculating eigenvalues / eigenstates")
             eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(self.hamiltonian, k=k, which="SA")
-            eigenstates = eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1)
+            eigenstates = np.asarray(
+                eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1), dtype=np.float64
+            )
             # make sure that the first element of each eigenvector is positive
             # for reproducibility
 
@@ -118,6 +120,7 @@ class SpinSystem:
         unpack_configurations=False,
         expand_basis_columns=False,
         canonical_basis=False,
+        add_amplitude=True,
     ) -> pd.DataFrame:
         """
         Returns the dataframe with the k'th eigenstate indexed by basis states
@@ -151,7 +154,8 @@ class SpinSystem:
         if canonical_basis:
             df = self.transform_df_to_canonical(df)
 
-        df["amplitude"] = np.abs(df["eigenstate_coeff"])
+        if add_amplitude:
+            df["amplitude"] = np.abs(df["eigenstate_coeff"])
 
         if unpack_configurations:
             unpacked_configurations = make_unpacked_configurations(df.index, self.number_spins)
@@ -185,35 +189,64 @@ class SpinSystem:
             self.ground_state_in_full_basis = coeffs
             return self.ground_state_in_full_basis
 
+        logger.debug("Finding coeffs")
+
+        coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
+        coeffs[self.canonical_basis.states] = self.get_ground_state_in_canonical_basis()
+
+        self.ground_state_in_full_basis = coeffs
+        return coeffs
+
+    def get_ground_state_in_canonical_basis(self) -> npt.NDArray[np.float64]:
+        """
+        Returns the ground state in the canonical basis
+        """
+        if self.ground_state is None:
+            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
+
+        if hasattr(self, "ground_state_in_canonical_basis"):
+            return self.ground_state_in_canonical_basis
+
+        if not self.use_symmetries:
+            self.ground_state_in_canonical_basis = self.ground_state
+            return self.ground_state_in_canonical_basis
+
         reprs = self.basis.states
         logger.debug("Finding basis_state_info")
         corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
 
         logger.debug("Finding corresp_repr_indices")
-        
+
         corresp_repr_indices = self.basis.index(corresp_reprs)
         # Old implementation:
         # corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
 
         logger.debug("Finding coeffs")
-
-        coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
-        coeffs[self.canonical_basis.states] = (
+        self.ground_state_in_canonical_basis = (
             self.ground_state[corresp_repr_indices] * characters * norms
         )
 
-        self.ground_state_in_full_basis = coeffs
-        return coeffs
+        return self.ground_state_in_canonical_basis
 
     def get_df_ground_state(
         self,
         unpack_configurations=False,
         expand_basis_columns=False,
         canonical_basis=False,
+        add_amplitude=True,
     ) -> pd.DataFrame:
         """
         Alias for get_df_eigenstate(k=0, ...)
         """
+        if canonical_basis and not unpack_configurations:
+            df = pd.DataFrame(
+                dict(eigenstate_coeff=self.get_ground_state_in_canonical_basis()),
+                index=self.canonical_basis.states,
+            )
+            if add_amplitude:
+                df["amplitude"] = np.abs(df["eigenstate_coeff"])
+            return df
+
         return self.get_df_eigenstate(
             k=0,
             unpack_configurations=unpack_configurations,
@@ -370,8 +403,8 @@ class HeisenbergJ1J2(SpinSystem):
         lattice: SpinLattice,
         J1: float = 1.0,
         J2: float = 1.0,
-        use_symmetries=True,
-        spin_inversion: Optional[int] = 1,
+        use_symmetries: bool | None = None,
+        spin_inversion: int | None = None,
         ground_state_cache_dir: Path | None = None,
         skip_symmetries_whitelist: bool = False,
     ):
@@ -388,6 +421,20 @@ class HeisenbergJ1J2(SpinSystem):
                     f"Symmetries are not tested with {lattice.get_cache_id()}, "
                     f"set use_symmetries=False instead. For testing, use skip_symmetries_whitelist=True."
                 )
+        if use_symmetries is None:
+            if lattice.get_cache_id() in self.symmetries_whitelist:
+
+                logger.debug(
+                    "use_symmetries is None and lattice is in symmetries whitelist, setting use_symmetries=True, spin_inversion=1"
+                )
+                use_symmetries = True
+                spin_inversion = 1
+            else:
+                logger.debug(
+                    "use_symmetries is None and lattice is not in symmetries whitelist, setting use_symmetries=False"
+                )
+                use_symmetries = False
+                spin_inversion = None
 
         J1 = float(J1)
         J2 = float(J2)

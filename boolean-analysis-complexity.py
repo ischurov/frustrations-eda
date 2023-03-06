@@ -165,7 +165,7 @@ def main(J2s: list[float]):
             row["total_hamming_weight"] = series.total_hamming_weight(how_many_terms)
 
             row.update(scores)
-            
+
             update_largest = True
 
         else:
@@ -173,7 +173,6 @@ def main(J2s: list[float]):
             success = row["success"]
 
             update_largest = False
-
 
         if update_largest or "largest_terms" not in row or "largest_coeffs" not in row:
             reprs = series.signal.lattice.get_fourier_repr().reprs
@@ -184,11 +183,9 @@ def main(J2s: list[float]):
             row["largest_terms"] = [int(x) for x in subsets.tolist()]
             row["largest_coeffs"] = coeffs.tolist()
 
-
-        
         logger.debug(f"Writing row: {row}")
-        outfile.write_text(json.dumps(row, indent=4)) 
-        
+        outfile.write_text(json.dumps(row, indent=4))
+
         logger.debug("Done")
 
 

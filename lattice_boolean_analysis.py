@@ -17,6 +17,7 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 import torch.nn as nn
+from loguru import logger
 from scipy.stats import entropy
 from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
@@ -141,7 +142,7 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
 
 
 class LBFFromNN(LatticeBooleanFunction):
-    def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series):
+    def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series, batch_size=1000):
         super().__init__(
             lattice,
             canonical_basis=lattice.get_basis(
@@ -150,16 +151,38 @@ class LBFFromNN(LatticeBooleanFunction):
         )
         self.nn = nn
         self._probs = probs
+        self.batch_size = batch_size
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
-        net_output = self.nn(
-            torch.tensor(
-                make_unpacked_configurations(x, self.lattice.number_spins).astype("float32"),
-                dtype=torch.float32,
-            )
-        )
+        x_is_canonical = (x.shape == self.canonical_basis.states.shape) and (
+            x == self.canonical_basis.states
+        ).all()
+        if x_is_canonical and hasattr(self, "_canonical_predictions"):
+            return self._canonical_predictions.copy()
 
-        return 1 - torch.max(net_output, 1)[1].detach().numpy() * 2
+        n_batches = (len(x) + self.batch_size - 1) // self.batch_size
+
+        predictions = np.empty_like(x, dtype=np.float64)
+
+        for i in range(n_batches):
+            if i % 10000 == 0:
+                logger.debug(f"Batch {i} of {n_batches}")
+            batch = x[i * self.batch_size : (i + 1) * self.batch_size]
+            net_output = self.nn(
+                torch.tensor(
+                    make_unpacked_configurations(batch, self.lattice.number_spins).astype(
+                        "float64"
+                    ),
+                    dtype=torch.float64,
+                )
+            )
+            predictions[i * self.batch_size : (i + 1) * self.batch_size] = (
+                1 - torch.max(net_output, 1)[1].detach().numpy() * 2
+            )
+        if x_is_canonical:
+            self._canonical_predictions = predictions.copy()
+
+        return predictions
 
     def get_probs(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
         return self._probs.loc[x].values

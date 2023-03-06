@@ -523,6 +523,15 @@ class SpinLattice:
         ax.axis("equal")
         return ax
 
+    def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
+        fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
+        for ax, subset, title in zip(axes[0], subsets, titles):
+            self.plot(spins=subset, ax=ax)
+            ax.axis("off")
+            ax.set_title(title)
+        return fig
+
+
 
 class ChainLattice(SpinLattice):
     def __init__(self, width=1, height=1):

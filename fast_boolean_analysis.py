@@ -168,14 +168,32 @@ class FourierSeries:
         return True, max_terms, max_prediction
 
     def total_hamming_weight(self, terms: int) -> int:
-        popcounts = popcount(np.asarray(np.argpartition(self.coeffs, -terms)[-terms:]))
+        """
+        Returns total hamming weight of the terms with the largest coefficients.
+        Hamming weight is measures up to the spin inversion symmetry, so the
+        hamming weight of a term is the minimum of the hamming weight and the
+        hamming weight of the spin inversion of the term.
+
+        Parameters:
+        -----------
+        terms: int
+            The number of terms to consider
+
+        Returns:
+        --------
+        total_hamming_weight: int
+            The total hamming weight of the terms with the largest coefficients
+        """
+        popcounts = popcount(np.asarray(np.argpartition(np.abs(self.coeffs), -terms)[-terms:]))
         inv_popcounts = self.signal.number_spins - popcounts
         return int(np.sum(np.minimum(popcounts, inv_popcounts)))
 
 
 def fourier_expand(signal: LatticeBooleanFunction) -> FourierSeries:
     x = signal.canonical_basis.states
+    logger.debug("Finding signal")
     signal_value = signal.as_long_array(x).copy()
+    logger.debug("Doing ")
     return FourierSeries(
         signal=signal,
         coeffs=hadamard_transform_pytorch_inplace(
