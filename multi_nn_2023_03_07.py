@@ -1,5 +1,4 @@
 import json
-import shutil
 from itertools import product
 from pathlib import Path
 
@@ -32,21 +31,7 @@ self_name = "multi_nn_2023_03_06.py"
 
 
 def mkdir(path: Path):
-    if __name__ == "__main__" and path.exists():
-        print(f"{path} already exists. Remove it? (y/n)")
-        if input() == "y":
-            # remove directory and all its contents
-            shutil.rmtree(path)
-        else:
-            raise FileExistsError(f"{path} already exists")
-
-    path.mkdir(parents=True, exist_ok=__name__ != "__main__")
-    return path
-
-
-def ensure_newfile(path: Path):
-    if path.exists():
-        raise FileExistsError(f"{path} already exists")
+    path.mkdir(parents=True, exist_ok=True)
     return path
 
 
@@ -66,19 +51,17 @@ lattices: list[SpinLattice] = [
     TriangleLattice(width=6, height=4),
     KagomeLattice(width=2, height=4),
 ]
-signal_kinds = [SignSignalKind()]
+signal_kinds = [SignSignalKind(), AmplitudeMedianBinSignalKind()]
 
 target_scorer = "accuracy"
 target_score = 0.8
 
-eps_trains = [5e-3, 1e-2, 2e-2]
+eps_trains = [1e-3, 1e-2, 5e-2]
 J2s = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 val_eps = 5e-2
 test_eps = 5e-2
 epochs = 20000
-min_epochs = 300
-
 patience = 100
 delta = 0.01
 batch_size = 64
@@ -145,7 +128,7 @@ def train_net(
 
         early_stopping(-accuracy_val, net)
 
-        if epoch % report_each == 0 or (epoch > min_epochs and early_stopping.early_stop):
+        if epoch % report_each == 0 or early_stopping.early_stop:
             logger.debug(f"[epoch: {epoch + 1}] loss: {loss}")
             logger.debug(
                 f"Train set: accuracy: {100 * accuracy} %, sign overlap: {sign_overlap}, f1: {f1}"
@@ -155,7 +138,7 @@ def train_net(
                 f", f1: {f1_val}"
             )
 
-        if epoch > min_epochs and early_stopping.early_stop:
+        if early_stopping.early_stop:
             logger.debug("Early stopping")
             break
 
@@ -217,7 +200,7 @@ def write_terms_to_file(
     row["largest_coeffs"] = coeffs.tolist()
     row["lattice"] = series.signal.lattice.get_cache_id()
 
-    ensure_newfile(file).write_text(json.dumps(row | params))
+    file.write_text(json.dumps(row | params))
 
 
 def get_train_val_test(
@@ -283,7 +266,7 @@ def main():
 
             model_path = (
                 nn_checkpoints_dir
-                / f"FC1-1hidden-64-sign-{system.get_cache_id()}_eps_train={eps_train}_signal_kind={signal_kind.name}.pt"
+                / f"FC1-1hidden-64-sign-{system.get_cache_id()}_eps_train={eps_train}.pt"
             )
             early_stopping = EarlyStopping(
                 patience=patience, delta=delta, verbose=False, path=str(model_path)
@@ -313,9 +296,8 @@ def main():
             logger.debug(
                 f"Test set: accuracy: {100 * accuracy_test} %, sign overlap: {sign_overlap_test}, f1: {f1_test}"
             )
-            ensure_newfile(
-                model_evaluation_dir
-                / f"{J2=}_lattice={lattice.get_cache_id()}_{eps_train=}_signal_kind={signal_kind.name}.json"
+            (
+                model_evaluation_dir / f"{J2=}_lattice={lattice.get_cache_id()}_{eps_train=}.json"
             ).write_text(
                 json.dumps(
                     {
@@ -323,12 +305,10 @@ def main():
                         "eps_train": eps_train,
                         "accuracy_test": accuracy_test,
                         "sign_overlap_test": sign_overlap_test,
-                        "f1_test": f1_test,
                         "epoch": epoch,
                         "lattice": lattice.get_cache_id(),
                         "train_size": len(df_train),
                         "path": str(model_path),
-                        "signal_kind": signal_kind.name,
                     }
                 )
             )
@@ -344,8 +324,7 @@ def main():
             nn_series = fourier_expand(nn_signal)
 
             write_terms_to_file(
-                file=nn_terms_dir
-                / f"{J2=}_lattice={lattice.get_cache_id()}_{eps_train=}_signal_kind={signal_kind.name}.json",
+                file=nn_terms_dir / f"{J2=}_lattice={lattice.get_cache_id()}_{eps_train=}.json",
                 series=nn_series,
                 scorer=target_scorer,
                 scorers=["f1", "sign_overlap", "accuracy"],
@@ -358,8 +337,7 @@ def main():
         system_series = fourier_expand(system_signal)
 
         write_terms_to_file(
-            file=system_terms_dir
-            / f"{J2=}_lattice={lattice.get_cache_id()}_signal_kind={signal_kind.name}.json",
+            file=nn_terms_dir / f"{J2=}_lattice={lattice.get_cache_id()}.json",
             series=system_series,
             scorer=target_scorer,
             scorers=["f1", "sign_overlap", "accuracy"],
