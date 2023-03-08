@@ -155,3 +155,8 @@ def get_abslargest_terms(
     indices = np.asarray(np.argpartition(abs_values, -n)[-n:], dtype=np.uint64)
     sorted_indices = indices[np.argsort(-abs_values[indices])]
     return sorted_indices, coeffs[sorted_indices]
+
+def ensure_newfile(path: Path):
+    if path.exists():
+        raise FileExistsError(f"{path} already exists")
+    return path
