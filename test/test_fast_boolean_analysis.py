@@ -136,6 +136,28 @@ class TestFourierSeries(TestCase):
             < 0.95
         )
 
+    def test_how_many_terms_to_achieve_relative_weight(self):
+        signal = LBFFromSpinSystem(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=4),
+                J1=1,
+                J2=0.8,
+                use_symmetries=True,
+                spin_inversion=1,
+            ),
+            kind=SignSignalKind(),
+        )
+
+        fourier = fourier_expand(signal)
+
+        for target in [0.1, 0.5, 0.8]:
+
+            terms = fourier.how_many_terms_to_achieve_relative_weight(target)
+            weights = fourier.coeffs**2
+            weights /= np.sum(weights)
+            self.assertTrue(np.sum(weights[np.argsort(weights)[-terms:]]) >= target)
+            self.assertTrue(np.sum(weights[np.argsort(weights)[-terms + 1 :]]) < target)
+
     def test_how_many_terms_to_achieve_score_not_orbitwise(self):
         for J2, (scorer, target_score) in product(
             [0.7, 0.8], [("sign_overlap", 0.95), ("f1", 0.8)]

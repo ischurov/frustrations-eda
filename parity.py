@@ -1,5 +1,6 @@
 import numpy as np
 import numpy.typing as npt
+
 from _parity import ffi, lib
 
 
@@ -28,7 +29,7 @@ def parity(x: np.ndarray) -> np.ndarray:
     return out
 
 
-def popcount(x: np.ndarray) -> np.ndarray:
+def popcount(x: npt.NDArray[np.uint64]) -> npt.NDArray[np.uint8]:
     """
     Calculates the number of 1's for all elements of x
 
@@ -42,7 +43,9 @@ def popcount(x: np.ndarray) -> np.ndarray:
     popcount : np.ndarray
                dtype == 'uint8'
     """
-
+    if x.dtype != np.uint64:
+        raise ValueError("x must have dtype == 'uint64'")
+    
     x = np.ascontiguousarray(x, dtype="uint64")
     out = np.empty_like(x, dtype="uint8")
     x_ptr = ffi.from_buffer("uint64_t[]", x, require_writable=False)

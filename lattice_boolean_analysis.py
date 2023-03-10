@@ -142,7 +142,15 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
 
 
 class LBFFromNN(LatticeBooleanFunction):
-    def __init__(self, lattice: SpinLattice, nn: nn.Module, probs: pd.Series, batch_size=1000):
+    def __init__(
+        self,
+        lattice: SpinLattice,
+        nn: nn.Module,
+        probs: pd.Series,
+        batch_size=1000,
+        binarize: bool = True,
+        binarization_threshold: float = 0.0,
+    ):
         super().__init__(
             lattice,
             canonical_basis=lattice.get_basis(
@@ -152,6 +160,8 @@ class LBFFromNN(LatticeBooleanFunction):
         self.nn = nn
         self._probs = probs
         self.batch_size = batch_size
+        self.binarize = binarize
+        self.binarization_threshold = binarization_threshold
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
         x_is_canonical = (x.shape == self.canonical_basis.states.shape) and (
@@ -176,9 +186,12 @@ class LBFFromNN(LatticeBooleanFunction):
                     dtype=torch.float64,
                 )
             )
-            predictions[i * self.batch_size : (i + 1) * self.batch_size] = (
-                1 - torch.max(net_output, 1)[1].detach().numpy() * 2
-            )
+            prediction = (net_output[:, 0] - net_output[:, 1]).detach().numpy()
+            if self.binarize:
+                prediction = np.sign(prediction - self.binarization_threshold)
+
+            predictions[i * self.batch_size : (i + 1) * self.batch_size] = prediction
+
         if x_is_canonical:
             self._canonical_predictions = predictions.copy()
 

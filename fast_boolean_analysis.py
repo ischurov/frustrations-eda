@@ -88,6 +88,15 @@ class FourierSeries:
 
         return score, prediction
 
+    def how_many_terms_to_achieve_relative_weight(self, target_weight: float) -> int:
+        weights = self.coeffs**2
+        total_weight = np.sum(weights)
+        relative_weights = weights / total_weight
+        sorted_relative_weights = np.sort(relative_weights)[::-1]
+        cumulative_weights = np.cumsum(sorted_relative_weights)
+        terms = np.argmax(cumulative_weights >= target_weight) + 1
+        return int(terms)
+
     def how_many_terms_to_achieve_score(
         self,
         target_score: float,
@@ -184,9 +193,52 @@ class FourierSeries:
         total_hamming_weight: int
             The total hamming weight of the terms with the largest coefficients
         """
-        popcounts = popcount(np.asarray(np.argpartition(np.abs(self.coeffs), -terms)[-terms:]))
+        popcounts = popcount(
+            np.asarray(np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64")
+        )
         inv_popcounts = self.signal.number_spins - popcounts
         return int(np.sum(np.minimum(popcounts, inv_popcounts)))
+
+    def ipr(self, hamming_weighted: bool = False, ignore_free_term: bool = False) -> float:
+        """
+        Returns the inverse participation ratio of the Fourier series.
+
+        Parameters:
+        -----------
+        hamming_weighted: bool
+            Whether to weight the IPR by the hamming weight of the terms
+
+        Returns:
+        --------
+        ipr: float
+            The inverse participation ratio of the Fourier series
+        """
+        coeffs = self.coeffs.copy()
+
+        if ignore_free_term:
+            indexes = np.arange(len(self.coeffs), dtype="uint64")
+            popcounts = popcount(indexes)
+            free_terms = (popcounts == 0) | (popcounts == self.signal.number_spins)
+            coeffs[free_terms] = 0
+
+        return get_ipr(coeffs, hamming_weighted)
+
+
+def get_ipr(coeffs: npt.NDArray[np.float64], hamming_weighted: bool = False) -> float:
+    number_spins = int(np.log2(len(coeffs)))
+    if len(coeffs) != 2**number_spins:
+        raise ValueError("coeffs must be a power of 2 in length")
+
+    weights = coeffs**2
+    weights /= weights.sum()
+
+    if not hamming_weighted:
+        return (weights**2).sum()
+
+    popcounts = popcount(np.arange(2**number_spins, dtype="uint64"))
+    inv_popcounts = number_spins - popcounts
+    hamming_ipr = (weights**2 / (np.minimum(popcounts, inv_popcounts) + 1)).sum()
+    return hamming_ipr
 
 
 def fourier_expand(signal: LatticeBooleanFunction) -> FourierSeries:
