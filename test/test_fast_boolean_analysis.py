@@ -159,8 +159,9 @@ class TestFourierSeries(TestCase):
             self.assertTrue(np.sum(weights[np.argsort(weights)[-terms + 1 :]]) < target)
 
     def test_how_many_terms_to_achieve_score_not_orbitwise(self):
-        for J2, (scorer, target_score) in product(
-            [0.7, 0.8], [("sign_overlap", 0.95), ("f1", 0.8)]
+        np.random.seed(123)
+        for J2, (scorer, target_score), x_type in product(
+            [0.7, 0.8], [("sign_overlap", 0.95), ("f1", 0.8)], ["full", "random"]
         ):
 
             signal = LBFFromSpinSystem(
@@ -174,10 +175,15 @@ class TestFourierSeries(TestCase):
                 kind=SignSignalKind(),
             )
 
+            if x_type == "random":
+                x = np.random.choice(signal.canonical_basis.states, size=100)
+            else:
+                x = None
+
             fourier = fourier_expand(signal)
 
             success, terms, prediction = fourier.how_many_terms_to_achieve_score(
-                target_score=target_score, scorer=scorer, min_terms=1, max_terms=None
+                target_score=target_score, x=x, scorer=scorer, min_terms=1, max_terms=None
             )
 
             assert success
@@ -185,16 +191,17 @@ class TestFourierSeries(TestCase):
                 f"J2={J2}, scorer={scorer}, terms={terms}. Checking that the score is at least {target_score}"
             )
             self.assertTrue(
-                fourier.truncate(keep_largest_n(terms)).prediction_score(scorer)[0] >= target_score
+                fourier.truncate(keep_largest_n(terms)).prediction_score(scorer, x=x)[0]
+                >= target_score
             )
             print("Checking that the score is lower when we truncate by one term")
             self.assertTrue(
-                fourier.truncate(keep_largest_n(terms - 1)).prediction_score(scorer)[0]
+                fourier.truncate(keep_largest_n(terms - 1)).prediction_score(scorer, x=x)[0]
                 < target_score
             )
 
             np.testing.assert_allclose(
-                fourier.truncate(keep_largest_n(terms)).predict(), prediction
+                fourier.truncate(keep_largest_n(terms)).predict(x=x), prediction
             )
 
     def test_how_many_terms_to_achieve_score2(self):
@@ -257,3 +264,23 @@ class TestFourierSeries(TestCase):
         )
 
         self.assertTrue(not success or terms > 1)
+
+    def test_predict(self):
+        signal = LBFFromSpinSystem(
+            system=HeisenbergJ1J2(
+                KagomeLattice(width=2, height=3),
+                J1=1,
+                J2=0.8,
+                use_symmetries=False,
+                spin_inversion=None,
+            ),
+            kind=SignSignalKind(),
+        )
+        fourier = fourier_expand(signal).truncate(keep_largest_n(10))
+        prediction_canonical_basis = fourier.predict()
+        np.random.seed(123)
+        x = np.random.choice(signal.canonical_basis.states, size=10)
+        prediction = fourier.predict(x)
+        np.testing.assert_allclose(
+            prediction, prediction_canonical_basis[signal.canonical_basis.index(x)]
+        )

@@ -41,10 +41,12 @@ class FourierSeries:
         self.signal = signal
         self.coeffs = coeffs
 
-    def predict(self) -> npt.NDArray:
+    def predict(self, x: npt.NDArray[np.uint64] | None = None) -> npt.NDArray:
+        if x is None:
+            x = self.signal.canonical_basis.states
         return hadamard_transform_pytorch_inplace(
             torch.tensor(self.coeffs.copy(), dtype=torch.float64)
-        ).numpy()[self.signal.canonical_basis.states]
+        ).numpy()[x]
 
     def truncate(self, strategy: TruncateStrategy) -> "FourierSeries":
         keep_mask = strategy(self.coeffs)
@@ -75,15 +77,11 @@ class FourierSeries:
 
         if x is None:
             x = self.signal.canonical_basis.states
-        else:
-            raise NotImplementedError(
-                "Only score over the whole domain (x=None) is supported for now"
-            )
 
         signal = self.signal(x)
         prob = self.signal.get_probs(x)
         if prediction is None:
-            prediction = self.predict()  # FIXME: should take only part that corresponds to x
+            prediction = self.predict(x)
         score = get_scorer(scorer)(signal, prediction, prob)
 
         return score, prediction
@@ -101,6 +99,7 @@ class FourierSeries:
         self,
         target_score: float,
         scorer: str | ScorerType,
+        x: npt.NDArray[np.uint64] | None = None,
         min_terms: int = 1,
         max_terms: int | None = None,
         orbitwise: bool = False,
@@ -145,14 +144,14 @@ class FourierSeries:
             else:
                 max_terms = len(self.coeffs)
 
-        score, max_prediction = truncate(max_terms).prediction_score(scorer)
+        score, max_prediction = truncate(max_terms).prediction_score(scorer, x)
         if score < target_score:
             logger.debug(
                 f"At {max_terms=}, score={score} < target_score={target_score}, so we can't achieve the target score"
             )
             return False, max_terms, max_prediction
 
-        score, prediction = truncate(min_terms).prediction_score(scorer)
+        score, prediction = truncate(min_terms).prediction_score(scorer, x)
         if score >= target_score:
             logger.debug(
                 f"At {min_terms=}, score={score} >= target_score={target_score}, so we can achieve the target score with {min_terms} terms"
@@ -162,7 +161,7 @@ class FourierSeries:
         while max_terms - min_terms > 1:
             logger.debug(f"min_terms={min_terms}, max_terms={max_terms}")
             mid = (max_terms + min_terms) // 2
-            score, prediction = truncate(mid).prediction_score(scorer)
+            score, prediction = truncate(mid).prediction_score(scorer, x)
             logger.debug(f"{mid=}, score={score}")
 
             if score >= target_score:
