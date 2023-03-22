@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import product
-from typing import Union
+from typing import Any, Union
 
 import igraph as ig
 import lattice_symmetries as ls
@@ -65,9 +65,9 @@ class SpinLattice:
         self,
         u,
         v,
-        named_sites,
+        named_sites: dict[str, npt.NDArray],
         named_edges,
-        fundamental_domain_size: Union[int, npt.NDArray[np.int_]] = 1,
+        fundamental_domain_size: int | npt.NDArray[np.int_] = 1,
         width=1,
         height=1,
     ):
@@ -101,12 +101,12 @@ class SpinLattice:
         frame = fundamental_domain_size * np.array([width, height])
         self.frame = frame
 
-        edges = [
+        edges: list[tuple[tuple[npt.NDArray, npt.NDArray], Any]] = [
             ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
         ]
 
         sites = []
-        self.edges = []
+        self.edges: list[tuple[tuple[npt.NDArray, npt.NDArray], int]] = []
 
         for i, j in product(range(width), range(height)):
             shift = fundamental_domain_size * np.array([i, j])
@@ -120,7 +120,7 @@ class SpinLattice:
                     )
                 )
 
-        self.site_to_num = {}
+        self.site_to_num: dict[tuple[float, float], int] = {}
         new_num = 0
 
         for site in sites:
@@ -151,7 +151,7 @@ class SpinLattice:
         return sites_df
 
     @property
-    def edges_to_kind(self):
+    def edges_to_kind(self) -> dict[tuple[int, int], int]:
         edges_to_kind = {}
         for (start, end), kind in self.edges:
             edges_to_kind[(self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])] = kind
@@ -365,6 +365,11 @@ class SpinLattice:
         return subsets, fourier_basis_state_info_df
 
     def get_heisenberg_symmetries(self) -> ls.Symmetries:
+        """
+        Returns ls.Symmetries object for the lattice.
+        Each symmetry has sector=0, which is appropriate for some (not any!)
+        Heisenberg hamiltonians.
+        """
         return ls.Symmetries(
             [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
         )
@@ -523,6 +528,20 @@ class SpinLattice:
         ax.axis("equal")
         return ax
 
+    def indicies_tensor(self) -> npt.NDArray:
+        """
+        Returns a tensor that contains indicies of the sites.
+
+        E.g. for square lattice that looks like
+
+        0 -- 1
+        |    |
+        3 -- 2
+
+        it will return np.array([[0, 1], [3, 2]])
+        """
+        raise NotImplementedError
+
     def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
         fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
         for ax, subset, title in zip(axes[0], subsets, titles):
@@ -530,7 +549,6 @@ class SpinLattice:
             ax.axis("off")
             ax.set_title(title)
         return fig
-
 
 
 class ChainLattice(SpinLattice):
@@ -605,6 +623,24 @@ class SquareLattice(SpinLattice):
             width=width,
             height=height,
         )
+
+    def indicies_tensor(self) -> npt.NDArray:
+        """
+        Returns a tensor that contains indicies of the sites.
+
+        E.g. for square lattice that looks like
+
+        0 --- 1
+        |  X  |
+        3 --- 2
+
+        it will return np.array([[0, 1], [3, 2]])
+        """
+        tensor = np.zeros((self.height, self.width), dtype=np.uint64)
+        for i in range(self.height):
+            for j in range(self.width):
+                tensor[i, j] = self.site_to_num[(j, i)]
+        return tensor
 
 
 class TriangleLattice(SpinLattice):

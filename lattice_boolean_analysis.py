@@ -141,6 +141,26 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
         return f"{self.system.get_cache_id()}-{self.eigenstate}-{self.kind.name}"
 
 
+class LBFFromEigenstateSeries(LatticeBooleanFunction):
+    def __init__(self, lattice: SpinLattice, eigenstate_series: pd.Series):
+        super().__init__(
+            lattice,
+            canonical_basis=lattice.get_basis(
+                use_symmetries=False, hamming_weight=lattice.number_spins // 2, spin_inversion=None
+            ),
+        )
+        self.eigenstate_series = eigenstate_series
+
+    def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
+        return self.eigenstate_series[x]
+
+    def get_probs(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
+        return np.abs(self.eigenstate_series[x]) ** 2
+
+    def get_cache_id(self) -> str:
+        return f"eigenstate-series-{self.eigenstate_series.name}"
+
+
 class LBFFromNN(LatticeBooleanFunction):
     def __init__(
         self,

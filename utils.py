@@ -158,5 +158,5 @@ def get_abslargest_terms(
 
 def ensure_newfile(path: Path):
     if path.exists():
-        raise FileExistsError(f"{path} already exists")
+        logger.debug(f"Warning! {path} already exists")
     return path
