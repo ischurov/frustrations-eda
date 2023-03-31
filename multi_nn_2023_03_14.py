@@ -33,13 +33,13 @@ self_name = Path(__file__).name
 
 
 def mkdir(path: Path):
-#    if __name__ == "__main__" and path.exists():
-#        print(f"{path} already exists. Remove it? (y/n)")
-#        if input() == "y":
-#            # remove directory and all its contents
-#            shutil.rmtree(path)
-#        else:
-#            raise FileExistsError(f"{path} already exists")
+    #    if __name__ == "__main__" and path.exists():
+    #        print(f"{path} already exists. Remove it? (y/n)")
+    #        if input() == "y":
+    #            # remove directory and all its contents
+    #            shutil.rmtree(path)
+    #        else:
+    #            raise FileExistsError(f"{path} already exists")
 
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -66,7 +66,7 @@ signal_kinds = [SignSignalKind()]
 target_scorer = "accuracy"
 target_score = 0.8
 
-eps_trains = [1e-2, 5e-3, 3e-1]
+eps_trains = [3e-1, 1e-2, 5e-3]
 J2s: dict[Type[SpinLattice], list[float]] = {
     TriangleLattice: [
         1.0,
@@ -74,11 +74,8 @@ J2s: dict[Type[SpinLattice], list[float]] = {
         1.2,
     ],
     KagomeLattice: [
-        0.5,
         0.6,
-        0.7,
         0.8,
-        0.9,
         1.0,
     ],
 }
@@ -227,16 +224,16 @@ def get_train_val_test(
             prob=(lambda df: np.abs(df["eigenstate_coeff"]) ** 2),
         )
     )[["y", "prob"]]
-
+    
     logger.debug(f"{eps_train=}, {val_eps=}, {test_eps=}")
 
     logger.debug("Making train, val, test splits")
 
-    df_train = df.sample(frac=eps_train, weights="prob")
+    df_train = df.sample(frac=eps_train, weights="prob", replace=True)
     df_for_val = df.drop(df_train.index)
-    df_val = df_for_val.sample(frac=val_eps, weights="prob")
+    df_val = df_for_val.sample(frac=val_eps, weights="prob", replace=True)
     df_for_test = df_for_val.drop(df_val.index)
-    df_test = df_for_test.sample(frac=test_eps, weights="prob")
+    df_test = df_for_test.sample(frac=test_eps, weights="prob", replace=True)
 
     logger.debug(f"{df_train.shape=}, {df_val.shape=}, {df_test.shape=}")
     return df_train, df_val, df_test

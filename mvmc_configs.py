@@ -1,11 +1,14 @@
 import contextlib
 import itertools
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Literal, overload
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
@@ -62,6 +65,8 @@ class MVMCConfig:
         NVMCSample: int = 1000,
         seed: int | None = None,
         in_files: bool = False,
+        kill_all_mvmc_on_error: bool = True,
+        in_orbital_type_to_t: dict[int, float] | None = None,
     ):
         """
         Generates a configuration for the mVMC package. Can be used only with
@@ -90,6 +95,8 @@ class MVMCConfig:
         self.DSROptStepDt = DSROptStepDt
         self.NVMCSample = NVMCSample
         self.in_files = in_files
+        self.kill_all_mvmc_on_error = kill_all_mvmc_on_error
+        self.in_orbital_type_to_t = in_orbital_type_to_t
 
     def _write_modpara(self, NVMCCalMode: int) -> None:
         with open(self.directory / "modpara.def", "w") as f:
@@ -255,17 +262,17 @@ class MVMCConfig:
             for z in range(n_orb):
                 f.write("    {:d}      1\n".format(z))
 
-    def _write_in_orbital(self):
-        n_orb = self.n_sites**2
-        with open(self.directory / "InOrbital.def", "w") as f:
-            f.write("======================\n")
-            f.write("NOrbitalIdx  {:d}\n".format(n_orb))
-            f.write("======================\n")
-            f.write("== i_j_OrbitIdx  ===\n")
-            f.write("======================\n")
+    # def _write_in_orbital(self):
+    #     n_orb = self.n_sites**2
+    #     with open(self.directory / "InOrbital.def", "w") as f:
+    #         f.write("======================\n")
+    #         f.write("NOrbitalIdx  {:d}\n".format(n_orb))
+    #         f.write("======================\n")
+    #         f.write("== i_j_OrbitIdx  ===\n")
+    #         f.write("======================\n")
 
-            for i in range(n_orb):
-                f.write("{:d} {:.20f}  {:.20}\n".format(i, self.rng.random(), 0.0))
+    #         for i in range(n_orb):
+    #             f.write("{:d} {:.20f}  {:.20}\n".format(i, self.rng.random(), 0.0))
 
     def _write_qptransidx(self):
         with open(self.directory / "qptransidx.def", "w") as f:
@@ -311,7 +318,28 @@ class MVMCConfig:
                     )
                 )
 
-    def _write_namelist(self):
+    def _write_in_orbital(self):
+
+        assert self.in_orbital_type_to_t is not None
+
+        K0 = np.zeros((self.n_sites, self.n_sites), dtype=np.complex128)
+        for edge, kind in self.edges.items():
+            K0[edge[0], edge[1]] = self.in_orbital_type_to_t[kind]
+        K0 = K0 + K0.T
+        energies, orbitals = np.linalg.eigh(K0)
+        half_orbitals = orbitals[:, : self.n_sites // 2]
+        f_ij = half_orbitals @ half_orbitals.T.conj()
+        with open(self.directory / "InOrbital.def", "w") as f:
+            f.write("=============================================\n")
+            f.write("NOrbitalIdx          {:d}\n".format(self.n_sites**2))
+            f.write("ComplexType          0\n")
+            f.write("=============================================\n")
+            f.write("=============================================\n")
+
+            for k, val in enumerate(f_ij.reshape((-1,))):
+                f.write("{:d} {:.20f}  {:.20}\n".format(k, val.real, 0.0))
+
+    def _write_namelist(self, in_files: bool | None = None, in_orbitals: bool | None = None):
         with open(self.directory / "namelist.def", "w") as f:
             f.write("         ModPara  modpara.def\n")
             f.write("         LocSpin  locspn.def\n")
@@ -325,9 +353,12 @@ class MVMCConfig:
             f.write("         Jastrow  jastrowidx.def\n")
             f.write("         Orbital  orbitalidx.def\n")
             f.write("        TransSym  qptransidx.def\n")
-            if self.in_files:
+            if (in_files is not None and in_files) or (in_files is None and self.in_files):
                 f.write("       InJastrow  InJastrow.def\n")
                 f.write("    InGutzwiller  InGutzwiller.def\n")
+            if (in_orbitals is not None and in_orbitals) or (
+                in_orbitals is None and self.in_orbital_type_to_t is not None
+            ):
                 f.write("       InOrbital  InOrbital.def\n")
 
     def write_configuration(self, NVMCCalMode: int):
@@ -340,13 +371,13 @@ class MVMCConfig:
         self._write_jastrowidx()
         self._write_locspn()
         self._write_modpara(NVMCCalMode=NVMCCalMode)
-        self._write_namelist()
         self._write_orbitalidx()
         self._write_qptransidx()
         self._write_trans()
         if self.in_files:
             self._write_in_gutzwiller()
             self._write_in_jastrow()
+        if self.in_orbital_type_to_t is not None:
             self._write_in_orbital()
 
     def cleanup(self):
@@ -354,16 +385,52 @@ class MVMCConfig:
             self.temp_directory.cleanup()
 
     def do_monte_carlo_optimization(self):
+        self._write_namelist(in_files=None, in_orbitals=None)
+        self.write_configuration(NVMCCalMode=0)
+        trials = 10
         with chdir(self.directory):
-            self.write_configuration(NVMCCalMode=0)
-            subprocess.run(VMC_OUT + ["-e", "namelist.def"], check=True, encoding="utf-8")
+            for i in range(trials):
+                subprocess.run(VMC_OUT + ["-e", "namelist.def"], check=True, encoding="utf-8")
+                if (
+                    len((self.directory / "output" / "zvo_out_001.dat").read_text().splitlines())
+                    > 1
+                ):
+                    break
+            else:
+                raise RuntimeError(f"mVMC did not produce output after {trials} trials.")
+            shutil.copytree("output", "output_backup")
 
-    def extract_wavefunction(self, walk: bool = True):
+    def extract_out(self):
+        zvo_file = self.directory / "output" / "zvo_out_001.dat"
+        if not zvo_file.exists():
+            raise RuntimeError("No zvo file found. Did you run do_monte_carlo_optimization?")
+        df = pd.read_csv(
+            self.directory / "output" / "zvo_out_001.dat",
+            index_col=None,
+            sep=r"\s+",
+            header=None,
+            names=[
+                "energy_real",
+                "energy_imag",
+                "energy_square",
+                "energy_variance",
+                "sz",
+                "sz_squared",
+            ],
+        )
+        print(df)
+        return df
+
+    def report_energy(self):
+        return self.extract_out()["energy_real"].values
+
+    def extract_wavefunction(self, walk: bool = True) -> pd.Series:
+        self._write_namelist(in_files=False, in_orbitals=False)
+        self.write_configuration(NVMCCalMode=1)
         with chdir(self.directory):
             wavefunction_file = Path("./wavefunction.dat")
             if wavefunction_file.exists():
                 wavefunction_file.unlink()
-            self.write_configuration(NVMCCalMode=1)
             my_env = os.environ.copy()
             my_env["EXTRACT_WAVEFUNCTION"] = str(wavefunction_file)
             if walk:
@@ -393,14 +460,36 @@ class MVMCConfig:
 
         return series
 
-    def get_ground_state(self, walk : bool = True, keep_files: bool = False):
+    @overload
+    def get_ground_state(
+        self, walk: bool = ..., keep_files: bool = ..., report_energy: Literal[False] = ...
+    ) -> pd.Series:
+        ...
+
+    @overload
+    def get_ground_state(
+        self, walk: bool = ..., keep_files: bool = ..., report_energy: Literal[True] = ...
+    ) -> tuple[pd.Series, npt.ArrayLike]:
+        ...
+
+    def get_ground_state(
+        self, walk: bool = True, keep_files: bool = False, report_energy: bool = False
+    ) -> pd.Series | tuple[pd.Series, npt.ArrayLike]:
         try:
             self.do_monte_carlo_optimization()
+            energy = self.report_energy()
             series = self.extract_wavefunction(walk=walk)
         finally:
+            if self.kill_all_mvmc_on_error:
+                subprocess.run(["killall", "vmc.out"])
             if not keep_files:
                 self.cleanup()
+        if report_energy:
+            return series, energy  # type: ignore
         return series
+
+    def __del__(self):
+        self.cleanup()
 
 
 # END BASED

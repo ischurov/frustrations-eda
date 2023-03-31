@@ -33,11 +33,11 @@ self_name = Path(__file__).name
 
 
 def mkdir(path: Path):
-#    if __name__ == "__main__" and path.exists():
-#        print(f"{path} already exists. Remove it? (y/n)")
-#        if input() == "y":
-#            # remove directory and all its contents
-#            shutil.rmtree(path)
+    #    if __name__ == "__main__" and path.exists():
+    #        print(f"{path} already exists. Remove it? (y/n)")
+    #        if input() == "y":
+    #            # remove directory and all its contents
+    #            shutil.rmtree(path)
 
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -55,14 +55,14 @@ nn_terms_dir = mkdir(experiment_dir / "nn-terms")
 system_terms_dir = mkdir(experiment_dir / "system-terms")
 
 lattices: list[SpinLattice] = [
-    TriangleLattice(width=6, height=4),
     KagomeLattice(width=2, height=4),
+    TriangleLattice(width=6, height=4),
 ]
 
 signal_kinds = [SignSignalKind()]
 
 
-eps_trains = [5e-3, 1e-2, 3e-1]
+eps_trains = [3e-1, 5e-3, 1e-2]
 J2s: dict[Type[SpinLattice], list[float]] = {
     TriangleLattice: [
         1.0,
@@ -70,13 +70,10 @@ J2s: dict[Type[SpinLattice], list[float]] = {
         1.2,
     ],
     KagomeLattice: [
-        0.5,
         0.6,
-        0.7,
         0.8,
-        0.9,
         1.0,
-    ]
+    ],
 }
 
 
@@ -252,11 +249,11 @@ def get_train_val_test(
 
     logger.debug("Making train, val, test splits")
 
-    df_train = df.sample(frac=eps_train, weights="prob")
+    df_train = df.sample(frac=eps_train, weights="prob", replace=True)
     df_for_val = df.drop(df_train.index)
-    df_val = df_for_val.sample(frac=val_eps, weights="prob")
+    df_val = df_for_val.sample(frac=val_eps, weights="prob", replace=True)
     df_for_test = df_for_val.drop(df_val.index)
-    df_test = df_for_test.sample(frac=test_eps, weights="prob")
+    df_test = df_for_test.sample(frac=test_eps, weights="prob", replace=True)
 
     logger.debug(f"{df_train.shape=}, {df_val.shape=}, {df_test.shape=}")
     return df_train, df_val, df_test
