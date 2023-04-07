@@ -119,7 +119,7 @@ class SpinSystem:
         k: int,
         unpack_configurations=False,
         expand_basis_columns=False,
-        canonical_basis=False,
+        canonical_basis=True,
         add_amplitude=True,
     ) -> pd.DataFrame:
         """
@@ -232,7 +232,7 @@ class SpinSystem:
         self,
         unpack_configurations=False,
         expand_basis_columns=False,
-        canonical_basis=False,
+        canonical_basis=True,
         add_amplitude=True,
     ) -> pd.DataFrame:
         """

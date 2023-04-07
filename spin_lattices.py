@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import product
-from typing import Any, Union
+from typing import Any, Literal, Union
 
 import igraph as ig
 import lattice_symmetries as ls
@@ -70,6 +70,7 @@ class SpinLattice:
         fundamental_domain_size: int | npt.NDArray[np.int_] = 1,
         width=1,
         height=1,
+        boundary_conditions: Literal["periodic", "open"] = "periodic",
     ):
         """
         Generic class to generate lattices with different kinds of edges (i.e. for J1-J2 systems)
@@ -97,8 +98,11 @@ class SpinLattice:
         self.height = height
         self.width = width
         self.fundamental_domain_size = fundamental_domain_size
+        self.boundary_conditions = boundary_conditions
         self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
-        frame = fundamental_domain_size * np.array([width, height])
+        frame = fundamental_domain_size * (
+            np.array([width, height]) + (boundary_conditions == "open")
+        )
         self.frame = frame
 
         edges: list[tuple[tuple[npt.NDArray, npt.NDArray], Any]] = [
@@ -177,7 +181,8 @@ class SpinLattice:
         return k_to_e
 
     def get_cache_id(self):
-        return f"{self.__class__.__name__}{self.width}x{self.height}"
+        boundary = "" if self.boundary_conditions == "periodic" else self.boundary_conditions
+        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}"
 
     def as_igraph(self) -> ig.Graph:
         edges, kinds = zip(*self.edges_to_kind.items())
@@ -552,7 +557,7 @@ class SpinLattice:
 
 
 class ChainLattice(SpinLattice):
-    def __init__(self, width=1, height=1):
+    def __init__(self, width=1, height=1, **kwargs):
         """
         Generates chain lattice.
 
@@ -581,11 +586,12 @@ class ChainLattice(SpinLattice):
             fundamental_domain_size=np.array([1, 1]),
             width=width,
             height=height,
+            **kwargs,
         )
 
 
 class SquareLattice(SpinLattice):
-    def __init__(self, width=1, height=1):
+    def __init__(self, width=1, height=1, **kwargs):
         r"""
         Generates square J1-J2 lattice.
 
@@ -622,6 +628,7 @@ class SquareLattice(SpinLattice):
             fundamental_domain_size=1,
             width=width,
             height=height,
+            **kwargs,
         )
 
     def indicies_tensor(self) -> npt.NDArray:
@@ -643,8 +650,50 @@ class SquareLattice(SpinLattice):
         return tensor
 
 
+class SquareLattice1Diag(SpinLattice):
+    def __init__(self, width=1, height=1, **kwargs):
+        r"""
+        Generates square lattice with one J2 diagonal.
+
+        The fundamental domain:
+
+        ```
+        C ----- D
+        | \\    |
+        |  \\   |
+        |   \\  |
+        |    \\ |
+        A ----- B
+        ```
+
+        Size of the fundamentail domain is 1×1
+        """
+        u = np.array([1, 0])
+        v = np.array([0, 1])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([0, 1]),
+            "D": np.array([1, 1]),
+        }
+
+        named_edges = [("AB", 1), ("AC", 1), ("CD", 1), ("BD", 1), ("CB", 2)]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=1,
+            width=width,
+            height=height,
+            **kwargs,
+        )
+
+
 class TriangleLattice(SpinLattice):
-    def __init__(self, width=1, height=1):
+    def __init__(self, width=1, height=1, **kwargs):
         r"""
         Generates triangular lattice.
 
@@ -679,11 +728,12 @@ class TriangleLattice(SpinLattice):
             fundamental_domain_size=1,
             width=width,
             height=height,
+            **kwargs,
         )
 
 
 class KagomeLattice(SpinLattice):
-    def __init__(self, width=1, height=1):
+    def __init__(self, width=1, height=1, **kwargs):
         """
         Generates Kagome lattice.
 
@@ -733,4 +783,5 @@ class KagomeLattice(SpinLattice):
             fundamental_domain_size=2,
             width=width,
             height=height,
+            **kwargs,
         )
