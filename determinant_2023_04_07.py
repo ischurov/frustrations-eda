@@ -57,9 +57,7 @@ class SlaterDeterminant(nn.Module):
 
         matrices = self.f[row_indices, col_indices]
 
-        return (torch.linalg.det(matrices) * torch.tensor(signs)).reshape(
-            original_shape[:-2]
-        ) * factorial(self.n_sites // 2)
+        return (torch.linalg.det(matrices) * torch.tensor(signs)).reshape(original_shape[:-2])
 
 
 def configuration_to_tensor(configuration: Iterable, up=1, down=0):

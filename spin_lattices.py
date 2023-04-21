@@ -11,7 +11,6 @@ import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 from loguru import logger
-
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -97,7 +96,7 @@ class SpinLattice:
         self.lattice_basis = np.c_[u, v]
         self.height = height
         self.width = width
-        self.fundamental_domain_size = fundamental_domain_size
+        self.fundamental_domain_size = fundamental_domain_size * np.array([1, 1])
         self.boundary_conditions = boundary_conditions
         self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
         frame = fundamental_domain_size * (
@@ -106,7 +105,8 @@ class SpinLattice:
         self.frame = frame
 
         edges: list[tuple[tuple[npt.NDArray, npt.NDArray], Any]] = [
-            ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
+            ((named_sites[start], named_sites[end]), kind)
+            for (start, end), kind in named_edges
         ]
 
         sites = []
@@ -137,28 +137,74 @@ class SpinLattice:
                 new_num += 1
 
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
-        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
+        self.state_info_dfs: dict[
+            tuple[bool, int | None, int | None], pd.DataFrame
+        ] = {}
         self.fourier_repr: BasisData
         self.fourier_basis: ls.SpinBasis
+        self.x_translation = self.get_translation("x")
+        self.y_translation = self.get_translation("y")
+
+    def get_translation(self, direction: str):
+        if direction not in ["x", "y"]:
+            raise ValueError("direction must be 'x' or 'y'")
+
+        n_direction = {"x": 0, "y": 1}[direction]
+        sites_df_shifted = self.sites_df.query("is_canonical")[
+            ["num", "ix", "iy"]
+        ].assign(
+            **{
+                f"i{direction}_shifted": lambda df: (
+                    df[f"i{direction}"] + self.fundamental_domain_size[n_direction]
+                )
+                % self.frame[n_direction]
+            }
+        )
+
+        shift = (
+            self.sites_df[["num", "ix", "iy"]]
+            .merge(
+                sites_df_shifted,
+                left_on=["ix", "iy"],
+                right_on=["ix_shifted", "iy"]
+                if direction == "x"
+                else ["ix", "iy_shifted"],
+                suffixes=["", "__shifted"],
+            )[["num", "num__shifted"]]
+            .set_index("num__shifted")["num"]
+            .to_dict()
+        )
+
+        assert len(shift) == self.number_spins
+
+        return [shift[i] for i in range(self.number_spins)]
 
     @property
     def sites_df(self):
         sites_df = pd.DataFrame(
             [
-                [num, *coords, (np.array(coords) == np.array(coords) % self.frame).all()]
+                [
+                    num,
+                    *coords,
+                    (np.array(coords) == np.array(coords) % self.frame).all(),
+                ]
                 for coords, num in self.site_to_num.items()
             ],
             columns=["num", "ix", "iy", "is_canonical"],
         )
 
-        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
+        sites_df[["emb_x", "emb_y"]] = (
+            self.lattice_basis @ sites_df[["ix", "iy"]].T.values
+        ).T
         return sites_df
 
     @property
     def edges_to_kind(self) -> dict[tuple[int, int], int]:
         edges_to_kind = {}
         for (start, end), kind in self.edges:
-            edges_to_kind[(self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])] = kind
+            edges_to_kind[
+                (self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])
+            ] = kind
         return edges_to_kind
 
     @property
@@ -181,7 +227,9 @@ class SpinLattice:
         return k_to_e
 
     def get_cache_id(self):
-        boundary = "" if self.boundary_conditions == "periodic" else self.boundary_conditions
+        boundary = (
+            "" if self.boundary_conditions == "periodic" else self.boundary_conditions
+        )
         return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}"
 
     def as_igraph(self) -> ig.Graph:
@@ -200,7 +248,10 @@ class SpinLattice:
         logger.debug("Cached fourier_basis not found, building...")
 
         symmetries = ls.Symmetries(
-            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+            [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in self.get_automorphisms()
+            ]
         )
 
         number_spins = self.number_spins
@@ -262,11 +313,15 @@ class SpinLattice:
 
         reprs = np.sort(np.unique(subset_to_repr))
 
-        subset_to_repr_index = np.asarray(np.searchsorted(reprs, subset_to_repr), dtype=np.uint64)
+        subset_to_repr_index = np.asarray(
+            np.searchsorted(reprs, subset_to_repr), dtype=np.uint64
+        )
         # TODO: replace with basis.index (?)
 
         self.fourier_repr = BasisData(
-            reprs=reprs, bits_to_repr=subset_to_repr, bits_to_repr_index=subset_to_repr_index
+            reprs=reprs,
+            bits_to_repr=subset_to_repr,
+            bits_to_repr_index=subset_to_repr_index,
         )
 
         return self.fourier_repr
@@ -294,7 +349,10 @@ class SpinLattice:
             return self.fourier_basis_state_info
 
         symmetries = ls.Symmetries(
-            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+            [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in self.get_automorphisms()
+            ]
         )
         number_spins = self.number_spins
 
@@ -314,9 +372,9 @@ class SpinLattice:
         if show_progress:
             print("MFBSIS: Computing state info...")
 
-        fourier_basis_state_info = batched_state_info_df(fourier_basis, all_subsets).drop(
-            "norm", axis=1
-        )
+        fourier_basis_state_info = batched_state_info_df(
+            fourier_basis, all_subsets
+        ).drop("norm", axis=1)
 
         if show_progress:
             print("MFBSIS: Computing sign flip basis correspondence...")
@@ -376,7 +434,10 @@ class SpinLattice:
         Heisenberg hamiltonians.
         """
         return ls.Symmetries(
-            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+            [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in self.get_automorphisms()
+            ]
         )
 
     @property
@@ -438,16 +499,22 @@ class SpinLattice:
         The canonical basis is the basis with the following parameters:
         use_symmetries=False, hamming_weight=number_spins // 2, spin_inversion=None.
         """
-        state_info_df = self.state_info_dfs.get((use_symmetries, hamming_weight, spin_inversion))
+        state_info_df = self.state_info_dfs.get(
+            (use_symmetries, hamming_weight, spin_inversion)
+        )
         if state_info_df is not None:
             return state_info_df
 
         basis = self.get_basis(use_symmetries, hamming_weight, spin_inversion)
         canonical_basis = self.get_basis(
-            use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
+            use_symmetries=False,
+            hamming_weight=self.number_spins // 2,
+            spin_inversion=None,
         )
         state_info_df = batched_state_info_df(basis, canonical_basis.states)
-        self.state_info_dfs[(use_symmetries, hamming_weight, spin_inversion)] = state_info_df
+        self.state_info_dfs[
+            (use_symmetries, hamming_weight, spin_inversion)
+        ] = state_info_df
         return state_info_df
 
     # def get_canonical_heisenberg_basis(self):
@@ -502,7 +569,9 @@ class SpinLattice:
             # see https://github.com/numpy/numpy/issues/23007
 
             spins = np.array(
-                make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)
+                make_unpacked_configurations(
+                    np.array(spins, dtype="uint64"), self.number_spins
+                )
             )
         spins_df = pd.DataFrame(dict(spin=spins))
         sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
@@ -548,7 +617,9 @@ class SpinLattice:
         raise NotImplementedError
 
     def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
-        fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
+        fig, axes = plt.subplots(
+            1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False
+        )
         for ax, subset, title in zip(axes[0], subsets, titles):
             self.plot(spins=subset, ax=ax)
             ax.axis("off")

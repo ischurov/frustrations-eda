@@ -24,3 +24,9 @@ fourier_learners_cache_wrongsign/*
 *.swp
 *.out
 *.feather
+**/*.def
+graph (2).ipynb
+graph (2).py
+graph.py
+*.dat
+signs_cache/*
