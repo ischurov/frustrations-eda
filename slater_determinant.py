@@ -1,20 +1,29 @@
 import itertools
 from hashlib import md5
+from itertools import product
 from math import factorial
 from pathlib import Path
+from typing import Callable, Literal
 
 import lattice_symmetries as ls
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 import torch
 import torch.nn as nn
 from loguru import logger
+from scipy.linalg import schur
 from scipy.optimize import minimize
 from sympy.combinatorics import Permutation
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import KagomeLattice, SquareLattice1Diag, TriangleLattice
+from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_lattices import (
+    KagomeLattice,
+    SpinLattice,
+    SquareLattice1Diag,
+    TriangleLattice,
+)
 from utils import make_unpacked_configurations
 
 
@@ -38,20 +47,90 @@ def configurations_to_tensors(configurations: torch.Tensor | np.ndarray, up=1, d
 
 # END FROM
 
+Initializer = Callable[[SpinLattice], npt.NDArray[np.float64]]
+
+
+def tight_binding_init(
+    ts: list[float],
+    keep_symmetries: Literal["x", "xy"] | None = "xy",
+) -> Initializer:
+    def tight_binding(lattice: SpinLattice) -> npt.NDArray[np.float64]:
+        adj = np.zeros((lattice.number_spins, lattice.number_spins), dtype=np.int64)
+        for edge, kind in lattice.edges_to_kind.items():
+            adj[edge[0], edge[1]] = 1
+            adj[edge[1], edge[0]] = 1
+
+        tight_binding_hamiltonian = np.zeros(
+            (lattice.number_spins, lattice.number_spins), dtype=np.complex128
+        )
+
+        nbd = adj
+        for t in ts:
+            tight_binding_hamiltonian += t * ((tight_binding_hamiltonian == 0) & (nbd > 0))
+            nbd = nbd @ adj
+
+        energies, orbitals = np.linalg.eigh(tight_binding_hamiltonian)
+
+        if keep_symmetries is not None and "x" in keep_symmetries:
+            tr_x = lattice.x_translation
+
+            ### BASED ON: Nikita Astrakhantsev's code
+            e_round = np.around(energies, decimals=7)
+            orbitals_tx = orbitals * 0.0 + 0.0j
+
+            tx_momenta = np.zeros(
+                orbitals.shape[0], dtype=np.complex128
+            )  # this is later needed to select joint (e, t_x) sectors
+            for e_sector in np.unique(e_round):
+                idxs = np.where(e_round == e_sector)[0]
+
+                tx_matrix = orbitals[:, idxs].conj().T @ orbitals[:, idxs][tr_x]
+
+                momenta, Um = schur(tx_matrix)[:2]
+                momenta = np.diag(momenta)
+                orbitals_tx[:, idxs] = orbitals[:, idxs] @ Um
+                tx_momenta[idxs] = momenta
+            orbitals = orbitals_tx
+            tx_momenta = np.around(tx_momenta, decimals=5)
+
+            if "y" in keep_symmetries:
+                tr_y = lattice.y_translation
+                orbitals_ty = orbitals * 0.0 + 0.0j
+
+                for e_sector, kx_sector in product(np.unique(e_round), np.unique(tx_momenta)):
+                    idxs = np.where((e_round == e_sector) & (tx_momenta == kx_sector))[0]
+                    if len(idxs) == 0:
+                        continue
+                    ty_matrix = orbitals[:, idxs].conj().T @ orbitals[:, idxs][tr_y]
+
+                    momenta, Um = schur(ty_matrix)[:2]
+                    momenta = np.diag(momenta)
+                    orbitals_ty[:, idxs] = orbitals[:, idxs].dot(Um)
+                orbitals = orbitals_ty
+
+            ### END BASED
+        half_orbitals = orbitals[:, : lattice.number_spins // 2]
+        f_ij = half_orbitals @ half_orbitals.T.conj()
+        return f_ij.astype(np.float64)
+
+    return tight_binding
+
 
 class SlaterDeterminant(nn.Module):
     def __init__(
         self,
+        lattice: SpinLattice,
         basis: ls.Basis,
         factorial_correction=False,
-        initialization="orthogonal",
+        initialization: str | Initializer = "orthogonal",
         sign_cache_dir: Path | None = None,
     ):
         super().__init__()
+        self.lattice = lattice
         self.basis = basis
-        self.n_sites = basis.number_bits
+        self.n_sites = self.basis.number_bits
         unpacked_configurations = make_unpacked_configurations(
-            basis.states, number_spins=self.n_sites
+            self.basis.states, number_spins=self.n_sites
         ).astype("int64")
 
         self.configurations = configurations_to_tensors(unpacked_configurations)
@@ -65,6 +144,8 @@ class SlaterDeterminant(nn.Module):
                 torch.randn(self.n_sites, self.n_sites, dtype=torch.float64)
                 / np.sqrt(self.n_sites)
             )
+        elif isinstance(initialization, Callable):
+            self.f = nn.Parameter(torch.from_numpy(initialization(self.lattice)))
         else:
             raise ValueError(f"Unknown initialization {initialization}")
         signs = None
