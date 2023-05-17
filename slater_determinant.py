@@ -196,3 +196,24 @@ class SlaterDeterminant(nn.Module):
         return (torch.linalg.det(matrices) * signs).reshape(x.shape) * (
             factorial(self.n_sites // 2) if self.factorial_correction else 1
         )
+
+
+class HalfSpaceProjector(nn.Module):
+    def forward(self, orth: torch.Tensor):
+        n = orth.shape[0]
+        half_orth = orth[:, : n // 2]
+        return half_orth @ half_orth.T
+
+    def right_inverse(self, f):
+        return f
+
+
+class TwoHalvesOuterProduct(nn.Module):
+    def forward(self, orth: torch.Tensor):
+        n = orth.shape[0]
+        half1_orth = orth[:, : n // 2]
+        half2_orth = orth[:, n // 2 :]
+        return half1_orth @ half2_orth.T
+
+    def right_inverse(self, f):
+        return f

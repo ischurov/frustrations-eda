@@ -4,14 +4,13 @@ from typing import Literal, overload
 import numpy as np
 import numpy.typing as npt
 import torch
-from loguru import logger
-
 from lattice_boolean_analysis import (
     LatticeBooleanFunction,
     ScorerType,
     SignalKind,
     get_scorer,
 )
+from loguru import logger
 from parity import popcount
 from utils import hadamard_transform_pytorch_inplace
 
@@ -54,7 +53,7 @@ class FourierSeries:
         return FourierSeries(signal=self.signal, coeffs=truncated_coeffs)
 
     def truncate_orbitwise(self, strategy: TruncateStrategy) -> "FourierSeries":
-        fourier_basis_data = self.signal.lattice.get_fourier_repr()
+        fourier_basis_data = self.signal.lattice.get_fourier_basis_data()
         repr_coeffs = self.coeffs[fourier_basis_data.reprs]
 
         keep_mask = strategy(repr_coeffs)
@@ -74,7 +73,6 @@ class FourierSeries:
         x: npt.NDArray[np.uint64] | None = None,
         prediction: npt.NDArray[np.float64] | None = None,
     ) -> tuple[float, npt.NDArray[np.float64]]:
-
         if x is None:
             x = self.signal.canonical_basis.states
 
@@ -140,7 +138,7 @@ class FourierSeries:
 
         if max_terms is None:
             if orbitwise:
-                max_terms = len(self.signal.lattice.get_fourier_repr().reprs)
+                max_terms = len(self.signal.lattice.get_fourier_basis_data().reprs)
             else:
                 max_terms = len(self.coeffs)
 
@@ -193,12 +191,16 @@ class FourierSeries:
             The total hamming weight of the terms with the largest coefficients
         """
         popcounts = popcount(
-            np.asarray(np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64")
+            np.asarray(
+                np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64"
+            )
         )
         inv_popcounts = self.signal.number_spins - popcounts
         return int(np.sum(np.minimum(popcounts, inv_popcounts)))
 
-    def ipr(self, hamming_weighted: bool = False, ignore_free_term: bool = False) -> float:
+    def ipr(
+        self, hamming_weighted: bool = False, ignore_free_term: bool = False
+    ) -> float:
         """
         Returns the inverse participation ratio of the Fourier series.
 
@@ -221,6 +223,55 @@ class FourierSeries:
             coeffs[free_terms] = 0
 
         return get_ipr(coeffs, hamming_weighted)
+
+    @staticmethod
+    def from_signal(signal: LatticeBooleanFunction) -> "FourierSeries":
+        """
+        Returns the Fourier series of a signal.
+
+        Parameters:
+        -----------
+        signal: LatticeBooleanFunction
+            The signal to find the Fourier series of
+
+        Returns:
+        --------
+        fourier_series: FourierSeries
+            The Fourier series of the signal
+        """
+        return fourier_expand(signal)
+
+    @staticmethod
+    def from_representatives_coeffs(
+        signal: LatticeBooleanFunction, coeffs: npt.NDArray[np.float64]
+    ) -> "FourierSeries":
+        """
+        Extends a Fourier series given by its coefficients on the representatives
+        using the symmetries.
+
+        Note that signal is used only to keep information about the lattice and
+        number of spins, and is not used to compute the Fourier series.
+
+        It is expected that signal is invariant under the symmetries of the
+        lattice, and is non-zero only on the sector of zero magnetization
+
+        Parameters:
+        -----------
+        signal: LatticeBooleanFunction
+            The signal that corresponds to the Fourier series
+
+        coeffs: np.ndarray
+            The coefficients of the Fourier series,
+            i'th element is the coefficient of the i'th representative
+
+        Returns:
+        --------
+        fourier_series: FourierSeries
+            The Fourier series
+        """
+        basis_data = signal.lattice.get_fourier_basis_data()
+        full_coeffs = coeffs[basis_data.bits_to_repr_index] * basis_data.bits_to_char
+        return FourierSeries(signal, full_coeffs)
 
 
 def get_ipr(coeffs: npt.NDArray[np.float64], hamming_weighted: bool = False) -> float:

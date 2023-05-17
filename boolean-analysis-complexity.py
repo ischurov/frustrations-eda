@@ -105,7 +105,7 @@ def main(J2s: list[float]):
         )
     )
 
-    for (lattice_opt, J2, signal_kind) in product(lattice_opts, J2s, signal_kinds):
+    for lattice_opt, J2, signal_kind in product(lattice_opts, J2s, signal_kinds):
         how_many_terms = None
         success = "Error"
 
@@ -175,7 +175,7 @@ def main(J2s: list[float]):
             update_largest = False
 
         if update_largest or "largest_terms" not in row or "largest_coeffs" not in row:
-            reprs = series.signal.lattice.get_fourier_repr().reprs
+            reprs = series.signal.lattice.get_fourier_basis_data().reprs
             coeffs = series.coeffs
             idxs, coeffs = get_abslargest_terms(coeffs[reprs], min(max_keep_terms, how_many_terms))
             subsets = reprs[idxs]

@@ -28,7 +28,6 @@ from utils import make_unpacked_configurations
 
 class TestTruncateStrategies(TestCase):
     def test_keep_largest_n(self):
-
         np.random.seed(123)
 
         x = np.random.uniform(-1, 1, size=1000)
@@ -151,7 +150,6 @@ class TestFourierSeries(TestCase):
         fourier = fourier_expand(signal)
 
         for target in [0.1, 0.5, 0.8]:
-
             terms = fourier.how_many_terms_to_achieve_relative_weight(target)
             weights = fourier.coeffs**2
             weights /= np.sum(weights)
@@ -163,7 +161,6 @@ class TestFourierSeries(TestCase):
         for J2, (scorer, target_score), x_type in product(
             [0.7, 0.8], [("sign_overlap", 0.95), ("f1", 0.8)], ["full", "random"]
         ):
-
             signal = LBFFromSpinSystem(
                 system=HeisenbergJ1J2(
                     KagomeLattice(width=2, height=3),
@@ -284,3 +281,23 @@ class TestFourierSeries(TestCase):
         np.testing.assert_allclose(
             prediction, prediction_canonical_basis[signal.canonical_basis.index(x)]
         )
+
+    def test_from_representative_coeffs(self):
+        for lattice in [KagomeLattice(2, 2), KagomeLattice(2, 3)]:
+            signal = LBFFromSpinSystem(
+                system=HeisenbergJ1J2(
+                    lattice,
+                    J1=1,
+                    J2=0.8,
+                    use_symmetries=True,
+                    spin_inversion=1,
+                    skip_symmetries_whitelist=True,
+                ),
+                kind=SignSignalKind(),
+            )
+            fourier = FourierSeries.from_signal(signal)
+            basis_data = lattice.get_fourier_basis_data()
+            fourier2 = FourierSeries.from_representatives_coeffs(
+                signal, fourier.coeffs[basis_data.reprs]
+            )
+            np.testing.assert_allclose(fourier.coeffs, fourier2.coeffs)

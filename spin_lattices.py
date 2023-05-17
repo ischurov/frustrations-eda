@@ -11,7 +11,6 @@ import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 from loguru import logger
-
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
 
@@ -58,6 +57,7 @@ class BasisData:
     reprs: npt.NDArray[np.uint64]
     bits_to_repr: npt.NDArray[np.uint64]
     bits_to_repr_index: npt.NDArray[np.uint64]
+    bits_to_char: npt.NDArray[np.float64]
 
 
 class SpinLattice:
@@ -71,6 +71,7 @@ class SpinLattice:
         width=1,
         height=1,
         boundary_conditions: Literal["periodic", "open"] = "periodic",
+        enumerate_along: Literal["x", "y"] | None = None,
     ):
         """
         Generic class to generate lattices with different kinds of edges (i.e. for J1-J2 systems)
@@ -100,13 +101,16 @@ class SpinLattice:
         self.fundamental_domain_size = fundamental_domain_size * np.array([1, 1])
         self.boundary_conditions = boundary_conditions
         self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
+        self.enumerate_along = enumerate_along
+
         frame = fundamental_domain_size * (
             np.array([width, height]) + (boundary_conditions == "open")
         )
         self.frame = frame
 
         edges: list[tuple[tuple[npt.NDArray, npt.NDArray], Any]] = [
-            ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
+            ((named_sites[start], named_sites[end]), kind)
+            for (start, end), kind in named_edges
         ]
 
         sites = []
@@ -127,6 +131,11 @@ class SpinLattice:
         self.site_to_num: dict[tuple[float, float], int] = {}
         new_num = 0
 
+        if enumerate_along == "y":
+            sites = sorted(sites, key=lambda x: (x[0], x[1]))
+        elif enumerate_along == "x":
+            sites = sorted(sites, key=lambda x: (x[1], x[0]))
+
         for site in sites:
             canonical_coords = tuple(site % frame)
             if canonical_coords in self.site_to_num:
@@ -137,7 +146,9 @@ class SpinLattice:
                 new_num += 1
 
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
-        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
+        self.state_info_dfs: dict[
+            tuple[bool, int | None, int | None], pd.DataFrame
+        ] = {}
         self.fourier_repr: BasisData
         self.fourier_basis: ls.SpinBasis
         self.x_translation = self.get_translation("x")
@@ -148,7 +159,9 @@ class SpinLattice:
             raise ValueError("direction must be 'x' or 'y'")
 
         n_direction = {"x": 0, "y": 1}[direction]
-        sites_df_shifted = self.sites_df.query("is_canonical")[["num", "ix", "iy"]].assign(
+        sites_df_shifted = self.sites_df.query("is_canonical")[
+            ["num", "ix", "iy"]
+        ].assign(
             **{
                 f"i{direction}_shifted": lambda df: (
                     df[f"i{direction}"] + self.fundamental_domain_size[n_direction]
@@ -162,7 +175,9 @@ class SpinLattice:
             .merge(
                 sites_df_shifted,
                 left_on=["ix", "iy"],
-                right_on=["ix_shifted", "iy"] if direction == "x" else ["ix", "iy_shifted"],
+                right_on=["ix_shifted", "iy"]
+                if direction == "x"
+                else ["ix", "iy_shifted"],
                 suffixes=["", "__shifted"],
             )[["num", "num__shifted"]]
             .set_index("num__shifted")["num"]
@@ -187,14 +202,18 @@ class SpinLattice:
             columns=["num", "ix", "iy", "is_canonical"],
         )
 
-        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
+        sites_df[["emb_x", "emb_y"]] = (
+            self.lattice_basis @ sites_df[["ix", "iy"]].T.values
+        ).T
         return sites_df
 
     @property
     def edges_to_kind(self) -> dict[tuple[int, int], int]:
         edges_to_kind = {}
         for (start, end), kind in self.edges:
-            edges_to_kind[(self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])] = kind
+            edges_to_kind[
+                (self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])
+            ] = kind
         return edges_to_kind
 
     @property
@@ -217,8 +236,13 @@ class SpinLattice:
         return k_to_e
 
     def get_cache_id(self):
-        boundary = "" if self.boundary_conditions == "periodic" else self.boundary_conditions
-        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}"
+        boundary = (
+            "" if self.boundary_conditions == "periodic" else self.boundary_conditions
+        )
+        ordered = (
+            f"-enumerate-along-{self.enumerate_along}" if self.enumerate_along else ""
+        )
+        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}{ordered}"
 
     def as_igraph(self) -> ig.Graph:
         edges, kinds = zip(*self.edges_to_kind.items())
@@ -236,7 +260,10 @@ class SpinLattice:
         logger.debug("Cached fourier_basis not found, building...")
 
         symmetries = ls.Symmetries(
-            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+            [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in self.get_automorphisms()
+            ]
         )
 
         number_spins = self.number_spins
@@ -251,7 +278,7 @@ class SpinLattice:
 
         return self.fourier_basis
 
-    def get_fourier_repr(self) -> BasisData:
+    def get_fourier_basis_data(self) -> BasisData:
         """
         Fourier basis consists of subsets factored by symmetries and spin inversion.
         Subsets are encoded as unsigned integers (uint64).
@@ -262,10 +289,11 @@ class SpinLattice:
 
         Here we compute a dictionary with the following keys:
         - "reprs": all unique representatives of the subsets.
-        - "subset_to_repr": an array whose i-th element is the representative
+        - "bits_to_repr": an array whose i-th element is the representative
             of the i-th subset.
-        - "repr_to_subsets": an array whose i-th element is the index of the i-th representative
+        - "bits_to_repr_index": an array whose i-th element is the index of the i-th representative
             in the array of all representatives.
+        - "bits_to_char": character of a group element that brings the representative into an element
 
         """
         if hasattr(self, "fourier_repr"):
@@ -274,37 +302,45 @@ class SpinLattice:
 
         basis = self.make_fourier_basis()
         all_subsets = np.arange(2**self.number_spins, dtype=np.uint64)
-        subset_to_repr, _, _ = basis.state_info(all_subsets)
-        assert isinstance(subset_to_repr, np.ndarray)
+        subset_to_repr_original, _, _ = basis.state_info(all_subsets)
+        assert isinstance(subset_to_repr_original, np.ndarray)
 
-        hamming_weights = popcount(subset_to_repr)
+        hamming_weights = popcount(subset_to_repr_original)
 
         inverted = np.bitwise_xor(all_subsets, 2**self.number_spins - 1)
         subset_to_repr_inverted, _, _ = basis.state_info(inverted)
 
         subset_to_repr = np.where(
             hamming_weights < self.number_spins / 2,
-            subset_to_repr,
+            subset_to_repr_original,
             np.where(
                 hamming_weights > self.number_spins / 2,
                 subset_to_repr_inverted,
                 np.where(
-                    subset_to_repr < subset_to_repr_inverted,
-                    subset_to_repr,
+                    subset_to_repr_original < subset_to_repr_inverted,
+                    subset_to_repr_original,
                     subset_to_repr_inverted,
                 ),
             ),
         )
 
+        if (self.number_spins // 2) % 2 == 0:
+            characters = np.ones_like(subset_to_repr)
+        else:
+            characters = np.where(subset_to_repr == subset_to_repr_original, 1, -1)
+
         reprs = np.sort(np.unique(subset_to_repr))
 
-        subset_to_repr_index = np.asarray(np.searchsorted(reprs, subset_to_repr), dtype=np.uint64)
+        subset_to_repr_index = np.asarray(
+            np.searchsorted(reprs, subset_to_repr), dtype=np.uint64
+        )
         # TODO: replace with basis.index (?)
 
         self.fourier_repr = BasisData(
             reprs=reprs,
             bits_to_repr=subset_to_repr,
             bits_to_repr_index=subset_to_repr_index,
+            bits_to_char=characters,
         )
 
         return self.fourier_repr
@@ -332,7 +368,10 @@ class SpinLattice:
             return self.fourier_basis_state_info
 
         symmetries = ls.Symmetries(
-            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+            [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in self.get_automorphisms()
+            ]
         )
         number_spins = self.number_spins
 
@@ -352,9 +391,9 @@ class SpinLattice:
         if show_progress:
             print("MFBSIS: Computing state info...")
 
-        fourier_basis_state_info = batched_state_info_df(fourier_basis, all_subsets).drop(
-            "norm", axis=1
-        )
+        fourier_basis_state_info = batched_state_info_df(
+            fourier_basis, all_subsets
+        ).drop("norm", axis=1)
 
         if show_progress:
             print("MFBSIS: Computing sign flip basis correspondence...")
@@ -414,7 +453,10 @@ class SpinLattice:
         Heisenberg hamiltonians.
         """
         return ls.Symmetries(
-            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+            [
+                ls.Symmetry(automorphism, sector=0)
+                for automorphism in self.get_automorphisms()
+            ]
         )
 
     @property
@@ -476,7 +518,9 @@ class SpinLattice:
         The canonical basis is the basis with the following parameters:
         use_symmetries=False, hamming_weight=number_spins // 2, spin_inversion=None.
         """
-        state_info_df = self.state_info_dfs.get((use_symmetries, hamming_weight, spin_inversion))
+        state_info_df = self.state_info_dfs.get(
+            (use_symmetries, hamming_weight, spin_inversion)
+        )
         if state_info_df is not None:
             return state_info_df
 
@@ -487,7 +531,9 @@ class SpinLattice:
             spin_inversion=None,
         )
         state_info_df = batched_state_info_df(basis, canonical_basis.states)
-        self.state_info_dfs[(use_symmetries, hamming_weight, spin_inversion)] = state_info_df
+        self.state_info_dfs[
+            (use_symmetries, hamming_weight, spin_inversion)
+        ] = state_info_df
         return state_info_df
 
     # def get_canonical_heisenberg_basis(self):
@@ -542,7 +588,9 @@ class SpinLattice:
             # see https://github.com/numpy/numpy/issues/23007
 
             spins = np.array(
-                make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)
+                make_unpacked_configurations(
+                    np.array(spins, dtype="uint64"), self.number_spins
+                )
             )
         spins_df = pd.DataFrame(dict(spin=spins))
         sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
@@ -588,7 +636,9 @@ class SpinLattice:
         raise NotImplementedError
 
     def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
-        fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
+        fig, axes = plt.subplots(
+            1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False
+        )
         for ax, subset, title in zip(axes[0], subsets, titles):
             self.plot(spins=subset, ax=ax)
             ax.axis("off")
