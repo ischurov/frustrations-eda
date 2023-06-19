@@ -255,7 +255,6 @@ class SpinSystem:
         )
 
     def transform_df_to_canonical(self, df):
-
         state_info_df = batched_state_info_df(self.basis, self.canonical_basis.states)
 
         return (
@@ -423,7 +422,6 @@ class HeisenbergJ1J2(SpinSystem):
                 )
         if use_symmetries is None:
             if lattice.get_cache_id() in self.symmetries_whitelist:
-
                 logger.debug(
                     "use_symmetries is None and lattice is in symmetries whitelist, setting use_symmetries=True, spin_inversion=1"
                 )
