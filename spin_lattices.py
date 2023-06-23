@@ -103,6 +103,7 @@ class SpinLattice:
         self.boundary_conditions = boundary_conditions
         self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
         self.enumerate_along = enumerate_along
+        self.num_tensor_order: npt.NDArray
 
         frame = fundamental_domain_size * (
             np.array([width, height]) + (boundary_conditions == "open")
@@ -152,7 +153,6 @@ class SpinLattice:
         self.x_translation = self.get_translation("x")
         self.y_translation = self.get_translation("y")
 
-    
     def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
         raise NotImplementedError
 
