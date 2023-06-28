@@ -554,7 +554,7 @@ class SpinLattice:
     #     self.heisenberg_basis.build()
     #     return self.heisenberg_basis
 
-    def plot(self, spins=None, show_edges=True, ax=None):
+    def plot(self, spins=None, show_edges=True, show_numbers=True, ax=None):
         """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is None:
             spins = 0
@@ -588,8 +588,9 @@ class SpinLattice:
                     linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1],
                 )
 
-        for site, num in self.site_to_num.items():
-            ax.annotate("  " + str(num), self.lattice_basis @ site)
+        if show_numbers:
+            for site, num in self.site_to_num.items():
+                ax.annotate("  " + str(num), self.lattice_basis @ site)
 
         ax.axis("equal")
         return ax
