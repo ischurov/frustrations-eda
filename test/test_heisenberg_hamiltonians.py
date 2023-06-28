@@ -14,6 +14,7 @@ from heisenberg_hamiltonians import HeisenbergJ1J2
 from spin_lattices import (
     ChainLattice,
     KagomeLattice,
+    ParallelogramSpinLattice,
     SpinLattice,
     SquareLattice,
     TriangleLattice,
@@ -169,7 +170,7 @@ class TestDiagonalization(TestCase):
             self.assertTrue((eigenstate_in_full_basis == 0).all())
 
     def test_lattice_equivalence(self):
-        class OneDiagonalSquareLattice(SpinLattice):
+        class OneDiagonalSquareLattice(ParallelogramSpinLattice):
             def __init__(self, width=1, height=1):
                 r"""
                 Generates square J1-J2 lattice with one diagonal

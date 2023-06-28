@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import product
@@ -11,6 +12,7 @@ import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 from loguru import logger
+from sympy.combinatorics import Permutation
 
 from parity import parity, popcount
 from utils import batched_state_info_df, make_unpacked_configurations
@@ -62,146 +64,25 @@ class BasisData:
 
 
 class SpinLattice:
-    def __init__(
-        self,
-        u,
-        v,
-        named_sites: dict[str, npt.NDArray],
-        named_edges,
-        fundamental_domain_size: int | npt.NDArray[np.int_] = 1,
-        width=1,
-        height=1,
-        boundary_conditions: Literal["periodic", "open"] = "periodic",
-        enumerate_along: Literal["x", "y"] | None = None,
-    ):
-        """
-        Generic class to generate lattices with different kinds of edges (i.e. for J1-J2 systems)
-
-        Parameters
-        ----------
-
-        u, v : np.array([x, y])
-            lattice generators
-
-        named_sites : dict[str, np.array]
-            dictionary name_of_site -> site_coordinates, like {"A": np.array([0, 0]), ...}
-
-        named_edges : list[tuple[str, int]]
-            list of two-tuples (name, kind), e.g. [("AB", 1), ("BC", 2), ...]
-
-        fundamental_domain_size: int | np.array
-            the size of fundamental domain, can be integer number or np.array([w, h])
-
-        width, height: int
-            weight and height of the lattice (in factors of width and height of the fundamental domain)
-        """
-
-        self.lattice_basis = np.c_[u, v]
-        self.height = height
-        self.width = width
-        self.fundamental_domain_size = fundamental_domain_size * np.array([1, 1])
-        self.boundary_conditions = boundary_conditions
-        self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
-        self.enumerate_along = enumerate_along
-        self.num_tensor_order: npt.NDArray
-
-        frame = fundamental_domain_size * (
-            np.array([width, height]) + (boundary_conditions == "open")
-        )
-        self.frame = frame
-
-        edges: list[tuple[tuple[npt.NDArray, npt.NDArray], Any]] = [
-            ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
-        ]
-
-        sites = []
-        self.edges: list[tuple[tuple[npt.NDArray, npt.NDArray], int]] = []
-
-        for i, j in product(range(width), range(height)):
-            shift = fundamental_domain_size * np.array([i, j])
-            for site in named_sites.values():
-                sites.append(site + shift)
-            for (start, end), kind in edges:
-                self.edges.append(
-                    (
-                        (start + shift, end + shift),
-                        kind,
-                    )
-                )
-
-        self.site_to_num: dict[tuple[float, float], int] = {}
-        new_num = 0
-
-        if enumerate_along == "y":
-            sites = sorted(sites, key=lambda x: (x[0], x[1]))
-        elif enumerate_along == "x":
-            sites = sorted(sites, key=lambda x: (x[1], x[0]))
-
-        for site in sites:
-            canonical_coords = tuple(site % frame)
-            if canonical_coords in self.site_to_num:
-                self.site_to_num[tuple(site)] = self.site_to_num[canonical_coords]
-            else:
-                self.site_to_num[canonical_coords] = new_num
-                self.site_to_num[tuple(site)] = new_num
-                new_num += 1
-
-        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
-        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
+    def __init__(self):
+        self.lattice_basis: npt.NDArray[np.int_]
+        self.edges: list[tuple[tuple[npt.NDArray, npt.NDArray], int]]  # (start, end), kind
+        self.site_to_num: dict[tuple[float, float], int]  # (x, y) -> num
         self.fourier_repr: BasisData
         self.fourier_basis: ls.SpinBasis
-        self.x_translation = self.get_translation("x")
-        self.y_translation = self.get_translation("y")
+        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis]
+        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame]
+        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
+        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
 
-    def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
+    @abstractmethod
+    def get_cache_id(self) -> str:
         raise NotImplementedError
 
-    def get_translation(self, direction: str) -> list[int]:
-        if direction not in ["x", "y"]:
-            raise ValueError("direction must be 'x' or 'y'")
-
-        n_direction = {"x": 0, "y": 1}[direction]
-        sites_df_shifted = self.sites_df.query("is_canonical")[["num", "ix", "iy"]].assign(
-            **{
-                f"i{direction}_shifted": lambda df: (
-                    df[f"i{direction}"] + self.fundamental_domain_size[n_direction]
-                )
-                % self.frame[n_direction]
-            }
-        )
-
-        shift = (
-            self.sites_df[["num", "ix", "iy"]]
-            .merge(
-                sites_df_shifted,
-                left_on=["ix", "iy"],
-                right_on=["ix_shifted", "iy"] if direction == "x" else ["ix", "iy_shifted"],
-                suffixes=("", "__shifted"),
-            )[["num", "num__shifted"]]
-            .set_index("num__shifted")["num"]
-            .to_dict()
-        )
-
-        assert len(shift) == self.number_spins
-
-        return [shift[i] for i in range(self.number_spins)]
-
     @property
+    @abstractmethod
     def sites_df(self):
-        sites_df = pd.DataFrame(
-            [
-                [
-                    num,
-                    *coords,
-                    (np.array(coords) == np.array(coords) % self.frame).all(),
-                ]
-                for coords, num in self.site_to_num.items()
-            ],
-            columns=["num", "ix", "iy", "is_canonical"],
-        )
-
-        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
-        return sites_df
+        ...
 
     @property
     def edges_to_kind(self) -> dict[tuple[int, int], int]:
@@ -228,11 +109,6 @@ class SpinLattice:
         for edge, kind in self.edges_to_kind.items():
             k_to_e[kind].append(edge)
         return k_to_e
-
-    def get_cache_id(self):
-        boundary = "" if self.boundary_conditions == "periodic" else self.boundary_conditions
-        ordered = f"-enumerate-along-{self.enumerate_along}" if self.enumerate_along else ""
-        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}{ordered}"
 
     def as_igraph(self) -> ig.Graph:
         edges, kinds = zip(*self.edges_to_kind.items())
@@ -595,20 +471,6 @@ class SpinLattice:
         ax.axis("equal")
         return ax
 
-    def indicies_tensor(self) -> npt.NDArray:
-        """
-        Returns a tensor that contains indicies of the sites.
-
-        E.g. for square lattice that looks like
-
-        0 -- 1
-        |    |
-        3 -- 2
-
-        it will return np.array([[0, 1], [3, 2]])
-        """
-        raise NotImplementedError
-
     def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
         fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
         for ax, subset, title in zip(axes[0], subsets, titles):
@@ -618,7 +480,153 @@ class SpinLattice:
         return fig
 
 
-class ChainLattice(SpinLattice):
+class ParallelogramSpinLattice(SpinLattice):
+    def __init__(
+        self,
+        u,
+        v,
+        named_sites: dict[str, npt.NDArray],
+        named_edges,
+        fundamental_domain_size: int | npt.NDArray[np.int_] = 1,
+        width=1,
+        height=1,
+        boundary_conditions: Literal["periodic", "open"] = "periodic",
+        enumerate_along: Literal["x", "y"] | None = None,
+    ):
+        """
+        Generic class to generate lattices with different kinds of edges (i.e. for J1-J2 systems)
+
+        Parameters
+        ----------
+
+        u, v : np.array([x, y])
+            lattice generators
+
+        named_sites : dict[str, np.array]
+            dictionary name_of_site -> site_coordinates, like {"A": np.array([0, 0]), ...}
+
+        named_edges : list[tuple[str, int]]
+            list of two-tuples (name, kind), e.g. [("AB", 1), ("BC", 2), ...]
+
+        fundamental_domain_size: int | np.array
+            the size of fundamental domain, can be integer number or np.array([w, h])
+
+        width, height: int
+            weight and height of the lattice (in factors of width and height of the fundamental domain)
+        """
+
+        super().__init__()
+
+        self.lattice_basis = np.c_[u, v]
+        self.height = height
+        self.width = width
+        self.fundamental_domain_size = fundamental_domain_size * np.array([1, 1])
+        self.boundary_conditions = boundary_conditions
+        self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
+        self.enumerate_along = enumerate_along
+        self.num_tensor_order: npt.NDArray
+
+        frame = fundamental_domain_size * (
+            np.array([width, height]) + (boundary_conditions == "open")
+        )
+        self.frame = frame
+
+        edges: list[tuple[tuple[npt.NDArray, npt.NDArray], Any]] = [
+            ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
+        ]
+
+        sites = []
+        self.edges: list[tuple[tuple[npt.NDArray, npt.NDArray], int]] = []
+
+        for i, j in product(range(width), range(height)):
+            shift = fundamental_domain_size * np.array([i, j])
+            for site in named_sites.values():
+                sites.append(site + shift)
+            for (start, end), kind in edges:
+                self.edges.append(
+                    (
+                        (start + shift, end + shift),
+                        kind,
+                    )
+                )
+
+        self.site_to_num: dict[tuple[float, float], int] = {}
+        new_num = 0
+
+        if enumerate_along == "y":
+            sites = sorted(sites, key=lambda x: (x[0], x[1]))
+        elif enumerate_along == "x":
+            sites = sorted(sites, key=lambda x: (x[1], x[0]))
+
+        for site in sites:
+            canonical_coords = tuple(site % frame)
+            if canonical_coords in self.site_to_num:
+                self.site_to_num[tuple(site)] = self.site_to_num[canonical_coords]
+            else:
+                self.site_to_num[canonical_coords] = new_num
+                self.site_to_num[tuple(site)] = new_num
+                new_num += 1
+
+        self.x_translation = self.get_translation("x")
+        self.y_translation = self.get_translation("y")
+
+    def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
+        raise NotImplementedError
+
+    def get_translation(self, direction: str) -> list[int]:
+        if direction not in ["x", "y"]:
+            raise ValueError("direction must be 'x' or 'y'")
+
+        n_direction = {"x": 0, "y": 1}[direction]
+        sites_df_shifted = self.sites_df.query("is_canonical")[["num", "ix", "iy"]].assign(
+            **{
+                f"i{direction}_shifted": lambda df: (
+                    df[f"i{direction}"] + self.fundamental_domain_size[n_direction]
+                )
+                % self.frame[n_direction]
+            }
+        )
+
+        shift = (
+            self.sites_df[["num", "ix", "iy"]]
+            .merge(
+                sites_df_shifted,
+                left_on=["ix", "iy"],
+                right_on=["ix_shifted", "iy"] if direction == "x" else ["ix", "iy_shifted"],
+                suffixes=("", "__shifted"),
+            )[["num", "num__shifted"]]
+            .set_index("num__shifted")["num"]
+            .to_dict()
+        )
+
+        assert len(shift) == self.number_spins
+
+        return [shift[i] for i in range(self.number_spins)]
+
+    def get_cache_id(self) -> str:
+        boundary = "" if self.boundary_conditions == "periodic" else self.boundary_conditions
+        ordered = f"-enumerate-along-{self.enumerate_along}" if self.enumerate_along else ""
+        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}{ordered}"
+
+    @property
+    def sites_df(self) -> pd.DataFrame:
+        sites_df = pd.DataFrame(
+            [
+                [
+                    num,
+                    *coords,
+                    (np.array(coords) == np.array(coords) % self.frame).all(),
+                ]
+                for coords, num in self.site_to_num.items()
+            ],
+            columns=["num", "ix", "iy", "is_canonical"],
+        )
+
+        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
+        return sites_df
+
+
+class ChainLattice(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         """
         Generates chain lattice.
@@ -652,7 +660,7 @@ class ChainLattice(SpinLattice):
         )
 
 
-class SquareLattice(SpinLattice):
+class SquareLattice(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         r"""
         Generates square J1-J2 lattice.
@@ -693,26 +701,8 @@ class SquareLattice(SpinLattice):
             **kwargs,
         )
 
-    def indicies_tensor(self) -> npt.NDArray:
-        """
-        Returns a tensor that contains indicies of the sites.
 
-        E.g. for square lattice that looks like
-
-        0 --- 1
-        |  X  |
-        3 --- 2
-
-        it will return np.array([[0, 1], [3, 2]])
-        """
-        tensor = np.zeros((self.height, self.width), dtype=np.uint64)
-        for i in range(self.height):
-            for j in range(self.width):
-                tensor[i, j] = self.site_to_num[(j, i)]
-        return tensor
-
-
-class SquareLattice1Diag(SpinLattice):
+class SquareLattice1Diag(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         r"""
         Generates square lattice with one J2 diagonal.
@@ -754,7 +744,7 @@ class SquareLattice1Diag(SpinLattice):
         )
 
 
-class TriangleLattice(SpinLattice):
+class TriangleLattice(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         r"""
         Generates triangular lattice.
@@ -794,7 +784,7 @@ class TriangleLattice(SpinLattice):
         )
 
 
-class KagomeLattice(SpinLattice):
+class KagomeLattice(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         """
         Generates Kagome lattice.
@@ -873,3 +863,122 @@ class KagomeLattice(SpinLattice):
         return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
             ..., self.num_tensor_order
         ].reshape(-1, self.width, self.height, 3)
+
+
+def do_images_intersect(
+    domain: list[int], group_elements: list[Permutation], verbose=False
+) -> bool:
+    # For each element in the fundamental_domain
+    for a in domain:
+        # Apply each group element
+        for g in group_elements:
+            ga = g(a)
+            # If the result is in the fundamental_domain and different from a, return False
+            if ga in domain and ga != a:
+                if verbose:
+                    print(f"Found intersection between {a} and {ga}")
+                    print(f"Group element: {g.array_form}")
+                return True
+    return False
+
+
+def get_factor_graph(
+    graph: ig.Graph, group_elements: list[Permutation], fundamental_domain: list[int]
+) -> ig.Graph:
+    assert not do_images_intersect(fundamental_domain, group_elements)
+    # Create an empty graph with vertices corresponding to the fundamental_domain
+    factor_graph = ig.Graph()
+    factor_graph.add_vertices(map(str, fundamental_domain))
+
+    # For each pair of vertices a and b in fundamental_domain
+    for a in fundamental_domain:
+        for b in fundamental_domain:
+            if a == b:
+                continue
+            #           print(f"Considering vertices {a} and {b}")
+            # If there exists a permutation g in group such that a and g(b) are
+            # connected by an edge in the original graph
+            for g in [Permutation([[max(fundamental_domain)]])] + group_elements:
+                gb = g(b)
+                #              print(f"Considering vertex {gb=}")
+                if graph.are_connected(a, gb):
+                    #                    print("There is a connection!")
+                    # Check if the edge already exists in the factor_graph
+                    if factor_graph.get_eid(str(a), str(b), error=False) == -1:
+                        #                     print("Adding edge to factor graph")
+                        # If not, then add an edge between a and b in factor_graph,
+                        # preserving the edge attribute 'kind' from the original graph
+                        edge_id = graph.get_eid(a, gb)
+                        kind = graph.es[edge_id]["kind"]
+                        factor_graph.add_edge(str(a), str(b), kind=kind)
+    #                else:
+    #                    print("Edge already exists, skipping")
+
+    return factor_graph
+
+
+class FactorLattice(SpinLattice):
+    def __init__(
+        self,
+        initial_lattice: SpinLattice,
+        group_elements: list[Permutation],
+        fundamental_domain: list[int],
+    ):
+        assert set(group_elements).issubset(
+            {Permutation(g) for g in initial_lattice.get_automorphisms()}
+        )
+
+        self.initial_lattice = initial_lattice
+        self.lattice_basis = initial_lattice.lattice_basis
+        self.fundamental_domain = fundamental_domain
+
+        factor_graph = get_factor_graph(
+            initial_lattice.as_igraph(), group_elements, fundamental_domain
+        )
+
+        vertex_coords = (
+            initial_lattice.sites_df.query("is_canonical")
+            .set_index("num")
+            .loc[[int(v["name"]) for v in factor_graph.vs]][["ix", "iy"]]
+            .to_numpy()
+        )
+
+        self.edges = []
+
+        for i, edge in enumerate(factor_graph.es):
+            self.edges.append(
+                (
+                    (
+                        vertex_coords[edge.source],
+                        vertex_coords[edge.target],
+                    ),
+                    edge["kind"],
+                )
+            )
+
+        self.site_to_num = {}
+
+        for i, vertex_coord in enumerate(vertex_coords):
+            self.site_to_num[tuple(vertex_coord)] = i
+
+        super().__init__()
+
+    @property
+    def sites_df(self) -> pd.DataFrame:
+        sites_df = pd.DataFrame(
+            [
+                [
+                    num,
+                    *coords,
+                    True,
+                ]
+                for coords, num in self.site_to_num.items()
+            ],
+            columns=["num", "ix", "iy", "is_canonical"],
+        )
+
+        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
+        return sites_df
+
+    def get_cache_id(self):
+        return f"{self.initial_lattice.get_cache_id()}_factor_{'-'.join(map(str, self.fundamental_domain))}"
