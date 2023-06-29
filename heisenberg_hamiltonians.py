@@ -35,14 +35,18 @@ class SpinSystem:
         if use_symmetries and (len(symmetries) == 0):
             raise ValueError("symmetries must be provided if use_symmetries is True")
 
-        self.canonical_basis = self.lattice.get_basis(
-            use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
-        )
-
         self.eigenstates = None
         self.eigenvalues = None
         self.ground_energy = None
         self.ground_state = None
+
+    @property
+    def canonical_basis(self):
+        if not hasattr(self, "_canonical_basis"):
+            self._canonical_basis = self.lattice.get_basis(
+                use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
+            )
+        return self._canonical_basis
 
     def unpack_configurations(self):
         """
@@ -211,7 +215,6 @@ class SpinSystem:
             self.ground_state_in_canonical_basis = self.ground_state
             return self.ground_state_in_canonical_basis
 
-        reprs = self.basis.states
         logger.debug("Finding basis_state_info")
         corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
 
@@ -227,6 +230,13 @@ class SpinSystem:
         )
 
         return self.ground_state_in_canonical_basis
+
+    def get_ground_state_coeffs(self, states) -> npt.NDArray[np.float64]:
+        if self.ground_state is None:
+            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
+        corresp_reprs, characters, norms = self.basis.state_info(states)
+        corresp_repr_indices = self.basis.index(corresp_reprs)
+        return self.ground_state[corresp_repr_indices] * characters * norms
 
     def get_df_ground_state(
         self,

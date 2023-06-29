@@ -169,6 +169,40 @@ class TestDiagonalization(TestCase):
             eigenstate_in_full_basis[system_sym.canonical_basis.states] = 0
             self.assertTrue((eigenstate_in_full_basis == 0).all())
 
+    def test_get_eigenstate_coeffs(self):
+        J2 = 0.5
+        for lattice in [SquareLattice(4, 4), SquareLattice(2, 4)]:
+            system_nosym = HeisenbergJ1J2(
+                lattice,
+                J1=1,
+                J2=J2,
+                use_symmetries=False,
+                spin_inversion=None,
+            )
+            system_nosym.get_eigenstates(1)
+
+            system_sym = HeisenbergJ1J2(
+                lattice,
+                J1=1,
+                J2=J2,
+                use_symmetries=True,
+                spin_inversion=1,
+            )
+            system_sym.get_eigenstates(1)
+
+            eigenstate_in_full_basis = system_sym.get_ground_state_in_full_basis()
+            np.testing.assert_allclose(
+                eigenstate_in_full_basis[system_sym.canonical_basis.states],
+                system_nosym.get_ground_state_coeffs(system_sym.canonical_basis.states),
+                atol=1e-15,
+                rtol=10,
+                # Small coefficients can be found with some numeric error,
+                # so relative tolerance is so high
+            )
+
+            eigenstate_in_full_basis[system_sym.canonical_basis.states] = 0
+            self.assertTrue((eigenstate_in_full_basis == 0).all())
+
     def test_lattice_equivalence(self):
         class OneDiagonalSquareLattice(ParallelogramSpinLattice):
             def __init__(self, width=1, height=1):

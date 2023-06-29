@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from math import ceil, sqrt
 from pathlib import Path
 
@@ -51,7 +52,6 @@ def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
 ### BASED ON: https://github.com/amitport/hadamard-transform
 ### MIT LICENSE
 def hadamard_transform(x: npt.NDArray[np.float64], verbose: bool = False):
-
     """Fast Walsh–Hadamard transform
 
     The hadamard transform is not numerically stable by nature (lots of subtractions),
@@ -156,7 +156,18 @@ def get_abslargest_terms(
     sorted_indices = indices[np.argsort(-abs_values[indices])]
     return sorted_indices, coeffs[sorted_indices]
 
+
 def ensure_newfile(path: Path):
     if path.exists():
         logger.debug(f"Warning! {path} already exists")
     return path
+
+
+def one(iterable: Iterable):
+    it = iter(iterable)
+    x = next(it)
+    try:
+        next(it)
+    except StopIteration:
+        return x
+    raise ValueError("More than one element in iterable")

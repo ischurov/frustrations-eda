@@ -430,7 +430,14 @@ class SpinLattice:
     #     self.heisenberg_basis.build()
     #     return self.heisenberg_basis
 
-    def plot(self, spins=None, show_edges=True, show_numbers=True, ax=None):
+    def plot(
+        self,
+        spins=None,
+        show_edges=True,
+        show_numbers=True,
+        permutation: None | list[int] | Permutation = None,
+        ax=None,
+    ):
         """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is None:
             spins = 0
@@ -467,6 +474,16 @@ class SpinLattice:
         if show_numbers:
             for site, num in self.site_to_num.items():
                 ax.annotate("  " + str(num), self.lattice_basis @ site)
+
+        if permutation is not None:
+            if isinstance(permutation, Permutation):
+                permutation = permutation.array_form
+            for _, row in self.sites_df.iterrows():
+                plt.text(
+                    row["emb_x"] + 0.2,
+                    row["emb_y"] + 0.2,
+                    "(" + str(permutation[row["num"]]) + ")",
+                )
 
         ax.axis("equal")
         return ax
@@ -785,7 +802,7 @@ class TriangleLattice(ParallelogramSpinLattice):
 
 
 class KagomeLattice(ParallelogramSpinLattice):
-    def __init__(self, width=1, height=1, **kwargs):
+    def __init__(self, width=1, height=1, isotropic=False, **kwargs):
         """
         Generates Kagome lattice.
 
@@ -797,8 +814,9 @@ class KagomeLattice(ParallelogramSpinLattice):
          /  \\      /
         A -- B -- C
         ```
-        Size of the fundamental domain is 2×2
+        Size of the fundamental domain is 2×2. Bonds DB and GE have kind 2 if isotropic=False.
         """
+
         theta = np.pi / 3
         u = np.array([1, 0])
         v = np.array([np.cos(theta), np.sin(theta)])
@@ -818,14 +836,16 @@ class KagomeLattice(ParallelogramSpinLattice):
             ("AB", 1),
             ("BC", 1),
             ("AD", 1),
-            ("BD", 2),
+            ("BD", 1 + (not isotropic)),
             ("DF", 1),
             ("FG", 1),
-            ("GE", 2),
+            ("GE", 1 + (not isotropic)),
             ("GH", 1),
             ("EH", 1),
             ("CE", 1),
         ]
+
+        self.isotropic = isotropic
 
         super().__init__(
             u=u,
@@ -858,6 +878,9 @@ class KagomeLattice(ParallelogramSpinLattice):
         self.num_tensor_order = np.asarray(
             t_frame.sort_values(["tx", "ty", "tz"], ignore_index=True)["num"].values
         )
+
+    def get_cache_id(self) -> str:
+        return super().get_cache_id() + ("_isotropic" if self.isotropic else "")
 
     def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
         return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
