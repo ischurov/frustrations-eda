@@ -432,7 +432,7 @@ class SpinLattice:
 
     def plot(
         self,
-        spins=None,
+        spins: None | int | np.uint64 | npt.NDArray | list[int] = None,
         show_edges=True,
         show_numbers=True,
         permutation: None | list[int] | Permutation = None,
@@ -448,6 +448,9 @@ class SpinLattice:
             spins = np.array(
                 make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)
             )
+        elif isinstance(spins, list):
+            spins = np.eye(self.number_spins, dtype=np.int64)[spins].sum(axis=0)
+
         spins_df = pd.DataFrame(dict(spin=spins))
         sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
 

@@ -9,7 +9,24 @@ from unittest import TestCase
 
 import numpy as np
 
-from utils import hadamard_transform, hadamard_transform_pytorch_inplace
+from utils import (
+    hadamard_transform,
+    hadamard_transform_pytorch_inplace,
+    make_packed_configurations,
+    make_unpacked_configurations,
+)
+
+
+class TestMakeUnpackedConfigurations(TestCase):
+    def test_unpacked_configurations(self):
+        x = np.array([1, 2, 3, 5, 7], dtype="uint64")
+        number_spins = 3
+        np.testing.assert_allclose(
+            make_packed_configurations(
+                make_unpacked_configurations(x, number_spins), number_spins
+            ),
+            x,
+        )
 
 
 class TestHadamardTransform(TestCase):
@@ -37,6 +54,7 @@ class TestHadamardTransform(TestCase):
 
     def test_hadamard_transform_pytorch_inplace2(self):
         import torch
+
         torch.manual_seed(0)
 
         x = torch.randn(100, 2048, dtype=torch.float64)
@@ -45,4 +63,3 @@ class TestHadamardTransform(TestCase):
             hadamard_transform_pytorch_inplace(x).numpy(),
             hadamard_transform(x_bkp.numpy()),
         )
-

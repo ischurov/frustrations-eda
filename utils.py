@@ -22,6 +22,12 @@ def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
     ).reshape(initial_shape + (number_spins,))
 
 
+def make_packed_configurations(states: npt.ArrayLike, number_spins: int):
+    return (np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")).sum(
+        axis=1
+    )
+
+
 def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
     """
     Parameters
