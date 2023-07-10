@@ -236,7 +236,7 @@ class SpinSystem:
             raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
         corresp_reprs, characters, norms = self.basis.state_info(states)
         corresp_repr_indices = self.basis.index(corresp_reprs)
-        return self.ground_state[corresp_repr_indices] * characters * norms
+        return np.real_if_close(self.ground_state[corresp_repr_indices] * characters * norms)
 
     def get_df_ground_state(
         self,
