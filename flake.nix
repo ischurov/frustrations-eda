@@ -9,27 +9,31 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    nix-filter.url = "github:numtide/nix-filter";
+    lattice-symmetries = {
+      url = "github:twesterhout/lattice-symmetries";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
     };
-    lattice-symmetries = {
-      url = "github:twesterhout/lattice-symmetries-haskell";
-    };
   };
 
-  outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system:
-    with builtins;
+  outputs = inputs:
     let
-      pkgs = import inputs.nixpkgs { inherit system; };
+      pkgs-for = system: import inputs.nixpkgs {
+        inherit system;
+        overlays = [ inputs.lattice-symmetries.overlays.default ];
+      };
 
-      lattice-symmetries = inputs.lattice-symmetries.packages.${system}.python;
-      my-python = pkgs.python3.withPackages (ps: with ps; [
+      # Our Python dependencies
+      my-python-packages = ps: with ps; [
         bitarray
         igraph
         jsonlines
         jupyter
+        lattice-symmetries
         loguru
         matplotlib
         more-itertools
@@ -41,16 +45,14 @@
         seaborn
         sympy
         torch
-      ]);
+      ];
     in
     {
-      devShells.default =
-        pkgs.mkShell {
-          packages = [ ];
-          buildInputs = [ lattice-symmetries ];
-          nativeBuildInputs = with pkgs; [
-            my-python
-            # lsp support for Python
+      devShells = inputs.flake-utils.lib.eachDefaultSystemMap (system: with (pkgs-for system); {
+        default = mkShell {
+          nativeBuildInputs = [
+            (python3.withPackages my-python-packages)
+            # LSP support for Python
             python3Packages.black
             nodePackages.pyright
             # Nix stuff
@@ -59,10 +61,10 @@
           ];
           shellHook = ''
             export PROMPT_COMMAND=""
-            export PS1='🐍 Python ${pkgs.python3.version} \w $ '
-            export LS_PATH=${lattice-symmetries}
+            export PS1='🐍 Python ${python3.version} \w $ '
+            export LS_PATH=${lattice-symmetries.python}
           '';
         };
-      formatter = pkgs.nixpkgs-fmt;
-    });
+      });
+    };
 }
