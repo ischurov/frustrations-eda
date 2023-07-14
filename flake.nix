@@ -58,6 +58,8 @@
             # Nix stuff
             nil
             nixpkgs-fmt
+            # direnv
+            direnv
           ];
           shellHook = ''
             export PROMPT_COMMAND=""
