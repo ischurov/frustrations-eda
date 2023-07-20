@@ -29,7 +29,7 @@ from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLat
 from spin_nn import FC1SpinNN, SpinNN
 from utils import get_abslargest_terms, make_unpacked_configurations
 
-self_name = "multi_nn_2023_03_06.py"
+self_name = "multi_nn_2023_03_06_prim.py"
 
 
 def mkdir(path: Path):
@@ -72,8 +72,8 @@ signal_kinds = [SignSignalKind()]
 target_scorer = "accuracy"
 target_score = 0.8
 
-eps_trains = [5e-3, 1e-2, 2e-2]
-J2s = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+eps_trains = [1e-2, 5e-3, 2e-2]
+J2s = [0.5, 0.0, 0.1, 0.2, 0.3, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0]
 
 val_eps = 5e-2
 test_eps = 5e-2
@@ -238,11 +238,17 @@ def get_train_val_test(
 
     logger.debug("Making train, val, test splits")
 
-    df_train = df.sample(frac=eps_train, weights="prob")
+    df_train = df.sample(
+        frac=eps_train,
+    )  # weights="prob")
     df_for_val = df.drop(df_train.index)
-    df_val = df_for_val.sample(frac=val_eps, weights="prob")
+    df_val = df_for_val.sample(
+        frac=val_eps,
+    )  # weights="prob")
     df_for_test = df_for_val.drop(df_val.index)
-    df_test = df_for_test.sample(frac=test_eps, weights="prob")
+    df_test = df_for_test.sample(
+        frac=test_eps,
+    )  # weights="prob")
 
     logger.debug(f"{df_train.shape=}, {df_val.shape=}, {df_test.shape=}")
     return df_train, df_val, df_test
@@ -301,6 +307,7 @@ def main():
                 optimizer=optimizer,
                 n_batches=n_batches,
                 number_spins=system.number_spins,
+                report_each=1,
             )
 
             inputs_test, labels_test, probs_test = get_inputs_and_labels(

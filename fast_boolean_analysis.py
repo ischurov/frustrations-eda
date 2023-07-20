@@ -47,6 +47,9 @@ class FourierSeries:
             torch.tensor(self.coeffs.copy(), dtype=torch.float64)
         ).numpy()[x]
 
+    def __call__(self, x: npt.NDArray[np.uint64] | None = None) -> npt.NDArray:
+        return self.predict(x)
+
     def truncate(self, strategy: TruncateStrategy) -> "FourierSeries":
         keep_mask = strategy(self.coeffs)
         truncated_coeffs = np.where(keep_mask, self.coeffs, 0)
@@ -191,16 +194,12 @@ class FourierSeries:
             The total hamming weight of the terms with the largest coefficients
         """
         popcounts = popcount(
-            np.asarray(
-                np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64"
-            )
+            np.asarray(np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64")
         )
         inv_popcounts = self.signal.number_spins - popcounts
         return int(np.sum(np.minimum(popcounts, inv_popcounts)))
 
-    def ipr(
-        self, hamming_weighted: bool = False, ignore_free_term: bool = False
-    ) -> float:
+    def ipr(self, hamming_weighted: bool = False, ignore_free_term: bool = False) -> float:
         """
         Returns the inverse participation ratio of the Fourier series.
 

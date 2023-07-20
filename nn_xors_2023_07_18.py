@@ -88,13 +88,15 @@ def train(
     break_on_loss: None | float = None,
 ):
     for epoch in range(n_epochs):
+        hits = 0
         for i, (x, y) in enumerate(train_loader):
             optimizer.zero_grad()
             yhat = net(x)
             loss = criterion(yhat, y)
             loss.backward()
             optimizer.step()
-        train_accuracy = (yhat.argmax(dim=1) == y).float().mean()
+            hits += (yhat.argmax(dim=1) == y).float().sum()
+        train_accuracy = hits / len(train_loader.dataset)
 
         writer.add_scalar("train/loss", loss.item(), epoch)
         writer.add_scalar("train/accuracy", train_accuracy, epoch)

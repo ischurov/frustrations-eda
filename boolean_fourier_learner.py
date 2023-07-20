@@ -7,7 +7,8 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import torch
-from hadamard_transform import hadamard_transform
+
+# from hadamard_transform import hadamard_transform
 from tqdm import tqdm
 
 from parity import calculate_fourier_transform_matrix
@@ -54,6 +55,8 @@ class BooleanFourierLearner:
             raise ValueError("Lengths of x and weights should coincide")
 
         if self.hadamard:
+            from hadamard_transform import hadamard_transform
+
             print("Using Hadamard transform")
             signal = np.zeros(2**self.number_spins, dtype="float64")
             signal[x] = y * weights
