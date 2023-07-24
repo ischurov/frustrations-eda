@@ -30,7 +30,7 @@ from heisenberg_hamiltonians import (
 )
 from parity import calculate_fourier_transform_matrix, parity, popcount
 from spin_lattices import SpinLattice
-from utils import hadamard_transform
+from misc_utils import hadamard_transform
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -449,7 +449,6 @@ class LBATruncation:
         x: npt.NDArray[np.uint64] | None = None,
         max_batch_size: int | None = None,
     ) -> float | dict[str, float]:
-
         if x is None:
             x = self.analyzer.canonical_basis.states
 
@@ -525,7 +524,6 @@ class LatticeBooleanAnalyzer:
     def fit(
         self, x: npt.NDArray[np.uint64] | None = None, batch_size=100, from_cache_only=False
     ) -> "LatticeBooleanAnalyzer":
-
         if x is None:
             x = self.canonical_basis.states
 

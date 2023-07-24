@@ -29,7 +29,7 @@ from lattice_boolean_analysis import (
 from pytorchtools import EarlyStopping
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice
 from spin_nn import FC1SpinNN, SpinNN
-from utils import make_unpacked_configurations
+from misc_utils import make_unpacked_configurations
 
 self_name = os.path.basename(__file__)
 
@@ -92,7 +92,6 @@ def train_net(
     epoch = 0
     print(f"{n_batches=}")
     for epoch in range(epochs):  # loop over the dataset multiple times
-
         i = None
         loss = None
 
@@ -198,7 +197,6 @@ def main(J2s: list[float]):
         )
 
         for eps_train in eps_trains:
-
             batch_size = 64
 
             df_train = df_rep.sample(frac=eps_train, weights="prob")

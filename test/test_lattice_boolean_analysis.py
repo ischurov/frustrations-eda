@@ -21,7 +21,7 @@ from lattice_boolean_analysis import (
     keep_largest_n,
 )
 from spin_lattices import KagomeLattice, SquareLattice
-from utils import make_unpacked_configurations
+from misc_utils import make_unpacked_configurations
 
 
 class TestLatticeBooleanAnalysis(TestCase):

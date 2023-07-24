@@ -8,7 +8,7 @@ import torch.optim as optim
 import torch.utils.data
 
 from spin_lattices import SpinLattice
-from utils import make_unpacked_configurations
+from misc_utils import make_unpacked_configurations
 
 
 class SpinNN(nn.Module):

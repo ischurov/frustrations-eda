@@ -18,7 +18,7 @@ from spin_lattices import (
     SquareLattice,
     TriangleLattice,
 )
-from utils import get_abslargest_terms
+from misc_utils import get_abslargest_terms
 
 script_name = Path(__file__).stem
 

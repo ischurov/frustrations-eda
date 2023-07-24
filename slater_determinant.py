@@ -24,7 +24,7 @@ from spin_lattices import (
     SquareLattice1Diag,
     TriangleLattice,
 )
-from utils import make_unpacked_configurations
+from misc_utils import make_unpacked_configurations
 
 
 # FROM: GPT-4

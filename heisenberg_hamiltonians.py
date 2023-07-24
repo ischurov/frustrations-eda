@@ -12,7 +12,7 @@ import scipy.sparse.linalg
 from loguru import logger
 
 from spin_lattices import SpinLattice
-from utils import batched_state_info_df, make_unpacked_configurations
+from misc_utils import batched_state_info_df, make_unpacked_configurations
 
 
 class SpinSystem:

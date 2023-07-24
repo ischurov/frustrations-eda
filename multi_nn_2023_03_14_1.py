@@ -27,7 +27,7 @@ from lattice_boolean_analysis import (
 from pytorchtools import EarlyStopping
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
 from spin_nn import FC1SpinNN, SpinNN
-from utils import ensure_newfile, get_abslargest_terms, make_unpacked_configurations
+from misc_utils import ensure_newfile, get_abslargest_terms, make_unpacked_configurations
 
 self_name = Path(__file__).name
 
@@ -167,7 +167,6 @@ def train_net(
     epoch = 0
     logger.debug(f"{n_batches=}")
     for epoch in range(epochs):  # loop over the dataset multiple times
-
         i = None
         loss = None
 

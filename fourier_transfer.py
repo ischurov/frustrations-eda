@@ -33,7 +33,7 @@ from lattice_boolean_analysis import (
 )
 from parity import popcount
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
-from utils import read_jsonl_to_df
+from misc_utils import read_jsonl_to_df
 
 ground_state_cache_dir = Path("groundstates")
 

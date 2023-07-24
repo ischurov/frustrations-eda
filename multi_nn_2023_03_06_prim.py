@@ -27,7 +27,7 @@ from lattice_boolean_analysis import (
 from pytorchtools import EarlyStopping
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
 from spin_nn import FC1SpinNN, SpinNN
-from utils import get_abslargest_terms, make_unpacked_configurations
+from misc_utils import get_abslargest_terms, make_unpacked_configurations
 
 self_name = "multi_nn_2023_03_06_prim.py"
 

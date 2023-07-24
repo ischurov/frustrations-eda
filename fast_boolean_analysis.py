@@ -12,7 +12,7 @@ from lattice_boolean_analysis import (
 )
 from loguru import logger
 from parity import popcount
-from utils import hadamard_transform_pytorch_inplace
+from misc_utils import hadamard_transform_pytorch_inplace
 
 TruncateStrategy = Callable[[npt.NDArray[np.float64]], npt.NDArray[np.bool_]]
 

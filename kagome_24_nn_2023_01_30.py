@@ -27,7 +27,7 @@ from lattice_boolean_analysis import (
 from pytorchtools import EarlyStopping
 from spin_lattices import KagomeLattice, SpinLattice
 from spin_nn import FC1SpinNN, SpinNN
-from utils import make_unpacked_configurations
+from misc_utils import make_unpacked_configurations
 
 self_name = os.path.basename(__file__)
 
@@ -75,7 +75,6 @@ def get_inputs_and_labels(df: pd.DataFrame) -> tuple[torch.Tensor, torch.Tensor,
 
 def train_net(net: nn.Module, epochs: int, early_stopping: EarlyStopping):
     for epoch in range(epochs):  # loop over the dataset multiple times
-
         i = None
         loss = None
 
@@ -145,7 +144,6 @@ def write_terms_to_file(file, analyzer, J2, scorer, additional_scorers, target_s
 
 
 if __name__ == "__main__":
-
     system_accuracy_file.write_text("J2,terms,accuracy,sign_overlap\n")
     system_overlap_file.write_text("J2,terms,accuracy,sign_overlap\n")
     nn_accuracy_file.write_text("J2,terms,accuracy,sign_overlap\n")
@@ -154,7 +152,6 @@ if __name__ == "__main__":
     model_evaluation_file.write_text("J2,eps_train,test_accuracy,test_sign_overlap\n")
 
     for J2 in J2s:
-
         system = HeisenbergJ1J2(
             lattice=lattice,
             J1=1,
@@ -185,7 +182,6 @@ if __name__ == "__main__":
         )
 
         for eps_train in eps_trains:
-
             batch_size = 64
 
             df_train = df_rep.sample(frac=eps_train, weights="prob")

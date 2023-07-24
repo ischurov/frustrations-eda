@@ -14,7 +14,7 @@ from sympy.combinatorics import Permutation
 from determinant_2023_04_07 import configuration_to_tensor
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from spin_lattices import KagomeLattice, SquareLattice1Diag, TriangleLattice
-from utils import make_unpacked_configurations
+from misc_utils import make_unpacked_configurations
 
 lattice = SquareLattice1Diag(3, 3, boundary_conditions="open")
 system = HeisenbergJ1J2(

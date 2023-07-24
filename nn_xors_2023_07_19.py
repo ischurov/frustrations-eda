@@ -1,6 +1,6 @@
 from parity import calculate_fourier_transform_matrix, popcount
 import numpy as np
-from utils import make_unpacked_configurations, make_packed_configurations
+from misc_utils import make_unpacked_configurations, make_packed_configurations
 import matplotlib.pyplot as plt
 import numpy.typing as npt
 import torch

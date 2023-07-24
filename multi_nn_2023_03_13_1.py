@@ -27,17 +27,17 @@ from lattice_boolean_analysis import (
 from pytorchtools import EarlyStopping
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
 from spin_nn import FC1SpinNN, SpinNN
-from utils import ensure_newfile, get_abslargest_terms, make_unpacked_configurations
+from misc_utils import ensure_newfile, get_abslargest_terms, make_unpacked_configurations
 
 self_name = Path(__file__).name
 
 
 def mkdir(path: Path):
-#    if __name__ == "__main__" and path.exists():
-#        print(f"{path} already exists. Remove it? (y/n)")
-#        if input() == "y":
-#            # remove directory and all its contents
-#            shutil.rmtree(path)
+    #    if __name__ == "__main__" and path.exists():
+    #        print(f"{path} already exists. Remove it? (y/n)")
+    #        if input() == "y":
+    #            # remove directory and all its contents
+    #            shutil.rmtree(path)
 
     path.mkdir(parents=True, exist_ok=True)
     return path
@@ -76,7 +76,7 @@ J2s: dict[Type[SpinLattice], list[float]] = {
         0.8,
         0.9,
         1.0,
-    ]
+    ],
 }
 
 
@@ -170,7 +170,6 @@ def train_net(
     epoch = 0
     logger.debug(f"{n_batches=}")
     for epoch in range(epochs):  # loop over the dataset multiple times
-
         i = None
         loss = None
 

@@ -11,7 +11,7 @@ from sympy.combinatorics import Permutation, PermutationGroup
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from spin_lattices import ChainLattice, FactorLattice, KagomeLattice, SpinLattice
-from utils import one
+from misc_utils import one
 
 
 # %%

@@ -182,3 +182,15 @@ def one(iterable: Iterable):
     except StopIteration:
         return x
     raise ValueError("More than one element in iterable")
+
+
+def groupby_shuffle(values, groups):
+    # find unique groups and their indices
+    unique_groups = np.unique(groups)
+
+    # construct the shuffled values array
+    shuffled_values = np.empty_like(values)
+    for group in zip(unique_groups):
+        shuffled_values[groups == group] = np.random.permutation(values[groups == group])
+
+    return shuffled_values
