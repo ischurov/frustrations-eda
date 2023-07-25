@@ -33,18 +33,22 @@
         igraph
         jsonlines
         jupyter
+        fire
         lattice-symmetries
         loguru
         matplotlib
         more-itertools
         numpy
         pandas
+        pytest
         pyyaml
         scikit-learn
         scipy
         seaborn
         sympy
         torch
+	      torchmetrics
+        tqdm
       ];
     in
     {

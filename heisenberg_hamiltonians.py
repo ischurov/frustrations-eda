@@ -48,6 +48,9 @@ class SpinSystem:
             )
         return self._canonical_basis
 
+    def __repr__(self):
+        return f"<{self.__class__.__name__}:{self.get_cache_id()}>"
+
     def unpack_configurations(self):
         """
         Unpacks all configurations in the basis into an np.array

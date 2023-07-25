@@ -75,6 +75,9 @@ class SpinLattice:
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
         self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
 
+    def __repr__(self):
+        return f"<SpinLattice:{self.get_cache_id()}>"
+
     @abstractmethod
     def get_cache_id(self) -> str:
         raise NotImplementedError

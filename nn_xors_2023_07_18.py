@@ -19,11 +19,13 @@ import itertools
 import os
 from pathlib import Path
 import jsonlines
+from typing import Callable
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
 output_dir.mkdir(exist_ok=True)
 logger.add(output_dir / "log_{time}.log")
+
 
 
 class FourierSeries:
@@ -69,7 +71,7 @@ class MLPBinaryClassifier(nn.Module):
         return x
 
 
-def make_dataset(series: FourierSeries, states: npt.NDArray[np.uint64], n_spins) -> TensorDataset:
+def make_dataset(series: Callable, states: npt.NDArray[np.uint64], n_spins) -> TensorDataset:
     x = torch.tensor(
         make_unpacked_configurations(states, n_spins).astype(np.float32), dtype=torch.float32
     )

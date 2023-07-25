@@ -18,10 +18,10 @@ TruncateStrategy = Callable[[npt.NDArray[np.float64]], npt.NDArray[np.bool_]]
 
 
 def keep_largest_n(n: int) -> TruncateStrategy:
-    def truncate(signal: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]:
-        signal_abs = np.abs(signal)
-        out = np.zeros_like(signal_abs, dtype=np.bool_)
-        out[np.argpartition(signal_abs, -n)[-n:]] = True
+    def truncate(coeffs: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]:
+        coeffs_abs = np.abs(coeffs)
+        out = np.zeros_like(coeffs_abs, dtype=np.bool_)
+        out[np.argpartition(coeffs_abs, -n)[-n:]] = True
         return out
 
     return truncate

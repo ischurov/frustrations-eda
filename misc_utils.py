@@ -158,6 +158,12 @@ def read_jsonl_to_df(file: str | Path):
         return pd.DataFrame(reader)
 
 
+def read_json_dir_to_df(dir: str | Path):
+    return pd.concat(read_jsonl_to_df(file) for file in Path(dir).glob("*.json")).reset_index(
+        drop=True
+    )
+
+
 def get_abslargest_terms(
     coeffs: npt.NDArray, n: int
 ) -> tuple[npt.NDArray[np.uint64], npt.NDArray]:
@@ -194,3 +200,16 @@ def groupby_shuffle(values, groups):
         shuffled_values[groups == group] = np.random.permutation(values[groups == group])
 
     return shuffled_values
+
+
+class Compose:
+    def __init__(self, *funcs):
+        self.funcs = funcs
+
+    def __call__(self, x):
+        for f in self.funcs:
+            x = f(x)
+        return x
+
+    def __repr__(self):
+        return "∘".join(f.__name__ for f in self.funcs[::-1])
