@@ -75,6 +75,13 @@ class ProbSignalKind(SignalKind):
         # see https://github.com/numpy/numpy/issues/20099
 
 
+class SignedProbSignalKind(SignalKind):
+    @staticmethod
+    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        return np.sign(eigenstate_coeff) * (np.abs(eigenstate_coeff)) ** 2  # type: ignore
+        # see https://github.com/numpy/numpy/issues/20099
+
+
 class AmplitudeMedianBinSignalKind(SignalKind):
     @staticmethod
     def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
@@ -246,7 +253,7 @@ def sign_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArr
     mask = true != 0
     # ignore zero values of true vector
 
-    return (true[mask] * np.sign(predict[mask]) * prob[mask]).sum() / prob[mask].sum()
+    return (np.sign(true[mask]) * np.sign(predict[mask]) * prob[mask]).sum() / prob[mask].sum()
 
 
 @scorer

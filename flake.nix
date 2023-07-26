@@ -6,14 +6,10 @@
     extra-trusted-public-keys = "twesterhout-chapel.cachix.org-1:bs5PQPqy21+rP2KJl+O40/eFVzdsTe6m7ZTiOEE7PaI=";
   };
 
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-    lattice-symmetries = {
-      url = "github:twesterhout/lattice-symmetries";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.flake-utils.follows = "flake-utils";
-    };
+  inputs = rec {
+    nixpkgs.follows = "lattice-symmetries/nixpkgs";
+    flake-utils.follows = "lattice-symmetries/flake-utils";
+    lattice-symmetries.url = "github:twesterhout/lattice-symmetries";
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
@@ -47,7 +43,7 @@
         seaborn
         sympy
         torch
-	      torchmetrics
+        torchmetrics
         tqdm
       ];
     in
