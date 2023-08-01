@@ -10,6 +10,8 @@ from torch import Tensor
 
 # This code is derived from:
 # https://github.com/twesterhout/nqs-playground/blob/conda/nqs_playground/sampling.py
+# and
+# https://github.com/twesterhout/nqs-playground/blob/conda/nqs_playground/sgd.py
 # And modified by Ilya Schurov (Ilia Shchurov) in 2023.
 
 # Original license follows:
@@ -264,6 +266,7 @@ def safe_exp(x: Tensor, normalise: bool = True) -> Tensor:
     return x
 
 
+@torch.no_grad()
 def sample_full(
     log_prob_fn: Callable[[Tensor], Tensor], basis: ls.SpinBasis, options: SamplingOptions
 ) -> Tuple[Tensor, Tensor, Dict[str, Any]]:
@@ -289,11 +292,13 @@ def sample_full(
     return states, log_prob, {"weights": weights}
 
 
+@torch.no_grad()
 def sample_exactly(
     log_prob_fn: Callable[[torch.Tensor], torch.Tensor],
     basis: ls.SpinBasis,
     options: SamplingOptions,
-) -> tuple[torch.Tensor, torch.Tensor]:
+    return_all_probs: bool = False,
+) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     r"""Sample states by explicitly constructing the discrete probability distribution.
 
     Number of samples is `options.number_chains * options.number_samples`, and
@@ -329,4 +334,7 @@ def sample_exactly(
     log_prob = log_prob[indices]
     states = states[indices]
     shape = (options.number_samples, options.number_chains)
+    if return_all_probs:
+        prob /= torch.sum(prob)
+        return states.view(*shape), log_prob.view(*shape), prob
     return states.view(*shape), log_prob.view(*shape)
