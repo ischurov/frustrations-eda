@@ -125,6 +125,9 @@ class SlaterDeterminant(nn.Module):
         initialization: str | Initializer = "orthogonal",
         sign_cache_dir: Path | None = None,
     ):
+        """
+        Inputs of .forward are indices of the basis states, not the basis states themselves.
+        """
         super().__init__()
         self.lattice = lattice
         self.basis = basis
