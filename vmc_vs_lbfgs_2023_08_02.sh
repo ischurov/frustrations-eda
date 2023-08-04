@@ -6,8 +6,8 @@
 #SBATCH -c 16
 #SBATCH -p tcm
 #SBATCH --exclusive
-#SBATCH --array=0-5%5
-#SBATCH --exclude=cn90,cn91,cn41,cn42,cn39,cn24,cn19
+#SBATCH --array=0-5%2
+#S B ATCH --exclude=cn90,cn91,cn41,cn42,cn39,cn24,cn19
 set -x
 export PATH="/home/ischurov/.local/bin:$PATH"
 cd /home/ischurov/tcm10/frustrations-eda

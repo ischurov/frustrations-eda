@@ -32,7 +32,9 @@ from kagome_cnn import KagomeCNNRegression
 from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 import time
 from scipy.optimize import minimize
-from vmc_amplitude import compute_local_energies, almost_true_relsigns
+from vmc_amplitude import compute_log_local_energies, almost_true_relsigns, true_relsigns
+from collections import defaultdict
+from my_stopwatch import stopwatch
 
 
 def set_params(net: nn.Module, params: npt.NDArray):
@@ -48,90 +50,152 @@ class ScipyOptimizer:
         self,
         system: SpinSystem,
         log_prob_fn: torch.nn.Module,
-        relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
-        batch_size=64,
+        batch_size=8096,
         method="BFGS",
+        maxiter=100,
+        tb_writer: SummaryWriter | None = None,
     ):
         self.system = system
+        energy, _ = system.get_eigenstates(1)
+        self.true_energy = energy[0]
+
         self.log_prob_fn = log_prob_fn
-        self.relsigns_fn = relsigns_fn
+        self.relsigns_fn = true_relsigns(system)
         self.batch_size = batch_size
         self.init_params = get_params(log_prob_fn)
         self.method = method
+        self.maxiter = maxiter
+        self.nbd_matrix_w_signs = None
+        self.nbd_states = None
+        self.state_indices = None
+        self.all_probs = None
+        self.true_amplitudes = np.abs(
+            system.get_ground_state_coeffs(self.system.canonical_basis.states)
+        )
+        assert np.allclose((self.true_amplitudes**2).sum(), 1)
+        self.true_ipr = (self.true_amplitudes**4).sum()
 
-    def _compute_local_energies(
+        self.full_energy = None
+        self.tb_writer = tb_writer
+        self.iteration = 0
+
+    def _compute_log_local_energies(
         self, flat_params: npt.NDArray
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            log_E_loc: log of the local energies
+            states: the states that were sampled
+            log_probs: RESCALED (!!!) log of the probabilities of the sampled states
+            probs: the probabilities of the sampled states
+        """
+
         set_params(self.log_prob_fn, flat_params)
-        states, log_probs, _extra = sample_full(
-            self.log_prob_fn,
-            self.system.basis,
-            SamplingOptions(
-                number_samples=1,
-                number_chains=1,
-                mode="full",
-                sweep_size=1,
-                number_discarded=0,
-            ),
-        )
+        with stopwatch("vmc_vs_lbfgs/_compute_local_energies/sample_full"):
+            states, log_probs, _extra = sample_full(
+                self.log_prob_fn,
+                self.system.canonical_basis,
+                SamplingOptions(
+                    number_samples=1,
+                    number_chains=1,
+                    mode="full",
+                    sweep_size=1,
+                    number_discarded=0,
+                ),
+            )
+        log_probs = log_probs.view(-1)
         states = states.view(-1)
+        probs: torch.Tensor = _extra["weights"].view(-1)
 
-        all_probs: torch.Tensor = _extra["weights"].view(-1)
-
-        E = compute_local_energies(
-            self.system.hamiltonian,
-            states.detach().numpy(),
-            relsigns_fn=self.relsigns_fn,
-            log_prob_fn=lambda s: self.log_prob_fn(torch.from_numpy(s)).view(-1).detach().numpy(),
-        )
-        E = torch.from_numpy(E).to(torch.float32)
-
-        return E, states, all_probs
-
-    def objective(self, flat_params: npt.NDArray) -> float:
-        E, _, all_probs = self._compute_local_energies(flat_params)
-        full_energy = (E @ all_probs).item().real
-        print(full_energy)
-        return full_energy
-
-    def gradient(self, flat_params) -> npt.NDArray:
-        E, states, all_probs = self._compute_local_energies(flat_params)
-        weights = all_probs
         with torch.no_grad():
-            grad = 4 * (E - E @ weights) * weights
-            # coeff 4 is due to: 2 from formula, 2 due to we are working with log probs
-            # instead of log amplitudes
+            (
+                log_E_loc,
+                self.nbd_states,
+                self.state_indices,
+                _,
+                self.nbd_matrix_w_signs,
+            ) = compute_log_local_energies(
+                self.system.hamiltonian,
+                states.detach().numpy(),
+                relsigns_fn=self.relsigns_fn,
+                log_prob_fn=lambda s: self.log_prob_fn(torch.from_numpy(s.astype(np.int64)))
+                .view(-1)
+                .detach()
+                .numpy(),
+                override_nbd_states=self.nbd_states,
+                override_nbd_matrix_w_signs=self.nbd_matrix_w_signs,
+                override_state_indices=self.state_indices,
+            )
+            log_E_loc = torch.from_numpy(log_E_loc).to(torch.complex64)
+        return log_E_loc, states, log_probs, probs
 
-            grad = grad.view(-1, 1)
-            grad_norm = torch.linalg.norm(grad)
-            #    logger.info("‖∇E‖₂ = {}", grad_norm)
-            # writer.add_scalar("loss/‖∇E‖₂", grad_norm, step)
-            # writer.add_scalar("loss/E_variance", grad_norm / n_samples, step)
+    def objective(self, flat_params) -> tuple[float, npt.NDArray]:
+        log_E_loc, states, _, all_probs = self._compute_log_local_energies(
+            flat_params.astype(np.float32)
+        )
+        self.all_probs = all_probs.detach().numpy()
 
-            # # Calculate full energy
-            # if sampling_mode == "exact":
-            #     E_full = E @ safe_exp(log_prob_fn(states).view(-1), normalise=True)
-            #     writer.add_scalar("loss/E_full", E_full - torch.tensor(true_energy), step)
+        full_energy = (torch.exp(log_E_loc).to(torch.float32) @ all_probs).item().real
+        logger.info(full_energy)
+        self.full_energy = full_energy
 
+        weights = all_probs
+        with stopwatch("vmc_vs_lbfgs/gradient/grad"):
+            with torch.no_grad():
+                weighted_E_loc = torch.exp(log_E_loc + np.log(weights)).real
+                grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
+
+                # grad_norm = torch.linalg.norm(grad)
         self.log_prob_fn.zero_grad(set_to_none=True)
-
         forward_fn = self.log_prob_fn
         for states_chunk, grad_chunk in split_into_batches(
-            (states.view(-1, 1), grad), self.batch_size
+            (states.view(-1, 1), grad.view(-1, 1)), self.batch_size
         ):
-            output = forward_fn(states_chunk.view(-1))
-            output.backward(grad_chunk)
+            with stopwatch("vmc_vs_lbfgs/gradient/forward"):
+                output = forward_fn(states_chunk.view(-1))
+            with stopwatch("vmc_vs_lbfgs/gradient/backward"):
+                output.backward(grad_chunk)
+        with stopwatch("vmc_vs_lbfgs/gradient/extract_grad"):
+            # extract gradient from output
+            grad = torch.cat([p.grad.view(-1) for p in self.log_prob_fn.parameters()])
+        return full_energy, grad.detach().numpy().astype(np.float64)
 
-        # extract gradient from output
-        grad = torch.cat([p.grad.view(-1) for p in self.log_prob_fn.parameters()])
-        return grad.detach().numpy()
+    def extract_overlap(self) -> float:
+        if self.all_probs is None:
+            raise RuntimeError("Must call objective first")
+        assert np.allclose(self.all_probs.sum(), 1)
+
+        predicted_amplitudes = np.sqrt(self.all_probs)
+        return predicted_amplitudes @ self.true_amplitudes
+
+    def write_tb(self):
+        if self.tb_writer is None or self.full_energy is None or self.all_probs is None:
+            return
+
+        energy_delta = self.full_energy - self.true_energy
+        self.tb_writer.add_scalar("optimize/energy_delta", energy_delta, self.iteration)
+        self.tb_writer.add_scalar(
+            "optimize/rel_energy_delta", energy_delta / self.true_energy, self.iteration
+        )
+        ipr_delta = (self.all_probs**2).sum() - self.true_ipr
+        self.tb_writer.add_scalar("optimize/ipr_delta", ipr_delta, self.iteration)
+        self.tb_writer.add_scalar(
+            "optimize/rel_ipr_delta",
+            ipr_delta / self.true_ipr,
+            self.iteration,
+        )
+
+        self.tb_writer.add_scalar("optimize/overlap", self.extract_overlap(), self.iteration)
+        self.iteration += 1
 
     def optimize(self):
+        self.iteration = 0
         result = minimize(
             self.objective,
             self.init_params,
-            jac=self.gradient,
+            jac=True,
             method=self.method,
-            options={"maxiter": 1000},
+            callback=lambda x: self.write_tb(),
+            options={"maxiter": self.maxiter},
         )
         return result

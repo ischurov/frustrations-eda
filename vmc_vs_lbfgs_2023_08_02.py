@@ -32,9 +32,9 @@ from kagome_cnn import KagomeCNNRegression
 from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 import time
 from scipy.optimize import minimize
-from vmc_amplitude import compute_local_energies, almost_true_relsigns
 from vmc_vs_lbfgs import ScipyOptimizer
 import fire
+from my_stopwatch import stopwatch
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
@@ -82,18 +82,23 @@ def main(task_id: int):
         spin_inversion=None,
         ground_state_cache_dir=Path("groundstates"),
     )
-    print(f"System: {system.get_cache_id()}")
+    logger.info(f"System: {system.get_cache_id()}")
 
     energy, _ = system.get_eigenstates(1)
     log_prob_fn = LogProbDenseNet(system, n_hidden=512, hidden_layers=1)
-    print(f"True energy: {energy[0]}")
+    logger.info(f"True energy: {energy[0]}")
     optimizer = ScipyOptimizer(
         system=system,
         log_prob_fn=log_prob_fn,
-        relsigns_fn=almost_true_relsigns(system, eps=0.0),
-        method="BFGS",
+        method="L-BFGS-B",
+        maxiter=100000,
+        batch_size=8096,
     )
-    optimizer.optimize()
+    try:
+        r = optimizer.optimize()
+        print(r)
+    finally:
+        logger.info(str(stopwatch))
 
 
 if __name__ == "__main__":
