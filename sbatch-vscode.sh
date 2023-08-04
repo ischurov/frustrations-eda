@@ -6,7 +6,7 @@
 #SBATCH -c 16
 #SBATCH -p tcm
 #SBATCH --exclusive
-#SBATCH --exclude cn90
+#SBATCH --exclude cn[90,92,94]
 
 set -x
 

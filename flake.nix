@@ -41,6 +41,7 @@
         scikit-learn
         scipy
         seaborn
+        snakeviz
         sympy
         torch
         torchmetrics
