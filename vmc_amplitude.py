@@ -332,7 +332,8 @@ def compute_log_local_energies(
         log_abs_psi_nbd = log_prob_fn(nbd_states) * 0.5
         log_abs_psi_states = log_abs_psi_nbd[state_indices]
         abs_psi_nbd = safe_exp_numpy(log_abs_psi_nbd)
-
+    # print(f"{log_abs_psi_nbd.min()=}, {log_abs_psi_nbd.max()=}")
+    # print(f"{abs_psi_nbd.min()=}, {abs_psi_nbd.max()=}")
     with stopwatch("vmc_amplitude/compute_local_energies/local_energies"):
         log_local_energies = (
             np.log((nbd_matrix_w_signs @ abs_psi_nbd).astype(np.complex128))

@@ -32,7 +32,7 @@ from kagome_cnn import KagomeCNNRegression
 from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 import time
 from scipy.optimize import minimize
-from vmc_vs_lbfgs import ScipyOptimizer
+from vmc_vs_lbfgs import AmplitudeOptimizer
 import fire
 from my_stopwatch import stopwatch
 
@@ -41,7 +41,7 @@ logger.add(sys.stderr, level="INFO")
 
 
 class LogProbDenseNet(nn.Module):
-    def __init__(self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1):
+    def __init__(self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1, scaling=1.0):
         super().__init__()
         self.system = system
         self.n_hidden = n_hidden
@@ -53,9 +53,10 @@ class LogProbDenseNet(nn.Module):
 
         layers.append(nn.Linear(n_hidden, 1))
         self.net = nn.Sequential(*layers)
+        self.scaling = scaling
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.net(
+        return self.scaling * self.net(
             torch.from_numpy(
                 make_unpacked_configurations(x, self.system.number_spins).astype(np.float32)
             )

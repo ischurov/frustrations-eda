@@ -1011,3 +1011,22 @@ class FactorLattice(SpinLattice):
 
     def get_cache_id(self):
         return f"{self.initial_lattice.get_cache_id()}_factor_{'-'.join(map(str, self.fundamental_domain))}"
+
+
+class AllToAllLattice(SpinLattice):
+    def __init__(self, original_lattice: SpinLattice):
+        super().__init__()
+        self.original_lattice = original_lattice
+        self.lattice_basis = original_lattice.lattice_basis
+        self.site_to_num = original_lattice.site_to_num
+        sites = original_lattice.sites_df.query("is_canonical")[["ix", "iy"]].to_numpy()
+        self.edges: list[tuple[tuple[npt.NDArray, npt.NDArray], int]] = [  # (start, end), kind
+            ((p, q), 1) for p in sites for q in sites
+        ]
+
+    @property
+    def sites_df(self) -> pd.DataFrame:
+        return self.original_lattice.sites_df
+
+    def get_cache_id(self) -> str:
+        return f"AllToAll_{self.original_lattice.get_cache_id()}"
