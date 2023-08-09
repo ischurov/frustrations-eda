@@ -19,8 +19,6 @@ from collections import namedtuple
 from torch import Tensor
 import torch.nn as nn
 from misc_utils import make_unpacked_configurations
-import io
-from contextlib import redirect_stderr
 from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
 from nqs_playground_helpers import (
@@ -38,52 +36,38 @@ from kagome_cnn import KagomeCNNRegression
 from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 import time
 from scipy.optimize import minimize
+from vmc_amplitude import almost_true_relsigns
 from vmc_vs_lbfgs import AmplitudeOptimizer
 import fire
 from my_stopwatch import stopwatch
+from vmc_vs_lbfgs_2023_08_02 import LogProbDenseNet
+from slater_determinant import SlaterDeterminant, Initializer
+import matplotlib.pyplot as plt
+from torch.utils.data import TensorDataset, DataLoader
+
+# from misc_utils import torch_overlap as overlap
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
 
-
-class LogProbDenseNet(nn.Module):
-    def __init__(
-        self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1, scaling=1.0
-    ):
-        super().__init__()
-        self.system = system
-        self.n_hidden = n_hidden
-        self.hidden_layers = hidden_layers
-        layers = [nn.Linear(system.number_spins, n_hidden), nn.ReLU()]
-        for _ in range(hidden_layers - 1):
-            layers.append(nn.Linear(n_hidden, n_hidden))
-            layers.append(nn.ReLU())
-
-        layers.append(nn.Linear(n_hidden, 1))
-        self.net = nn.Sequential(*layers)
-        self.scaling = scaling
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.scaling * self.net(
-            torch.from_numpy(
-                make_unpacked_configurations(x, self.system.number_spins).astype(
-                    np.float32
-                )
-            )
-        )
+# @torch.no_grad()
+# def evaluate(system: SpinSystem, model: nn.Module):
+#     eval_set = torch.from_numpy(system.canonical_basis.states.astype(np.int64))
+#     log_probs = model(eval_set).view(-1)
+#     amplitudes = torch.exp(log_probs * 0.5)
+#     true_amplitudes = torch.from_numpy(
+#         np.abs(system.get_ground_state_coeffs(eval_set.detach().numpy())).astype(
+#             np.float32
+#         )
+#     )
+#     return overlap(amplitudes, true_amplitudes)
 
 
 def main(task_id: int):
-    system_specs = [
-        (KagomeLattice(2, 3), 1),
-        (KagomeLattice(2, 3), 0.5),
-        (KagomeLattice(2, 4), 1),
-        (KagomeLattice(2, 4), 0.5),
-        (SquareLattice(6, 4), 0.5),
-        (TriangleLattice(6, 4), 1.2),
-    ]
-
-    lattice, J2 = system_specs[task_id]
+    n_hidden = 512
+    stopwatch.reset()
+    lattice = KagomeLattice(2, 3)
+    J2 = 1.0
 
     system = HeisenbergJ1J2(
         lattice=lattice,
@@ -96,18 +80,36 @@ def main(task_id: int):
     logger.info(f"System: {system.get_cache_id()}")
 
     energy, _ = system.get_eigenstates(1)
-    log_prob_fn = LogProbDenseNet(system, n_hidden=512, hidden_layers=1)
+    log_prob_fn = LogProbDenseNet(system, n_hidden=n_hidden, hidden_layers=1)
+
     logger.info(f"True energy: {energy[0]}")
+
+    writer = SummaryWriter(
+        log_dir=(
+            f"experiments/{datetime.now().strftime('%Y_%m_%d')}_n_hidden/{n_hidden=}_{datetime.now().strftime('%H_%M_%S')}"
+        )
+    )
+
     optimizer = AmplitudeOptimizer(
         system=system,
         log_prob_fn=log_prob_fn,
         method="L-BFGS-B",
-        maxiter=100000,
+        maxiter=300,
         batch_size=8096,
+        tb_writer=writer,
+        full_spin_loss_weight=0.0,
+        full_energy_weight=1.0,
+        # clip_grad_value=0.02,
+        # clip_grad_norm=0.02,
+        # clip_grad_norm_type='inf',
+        # annealing_steps=0, #240,
+        # initial_temp=2,
+        # sign_noise_annealing_steps=10,
+        # sign_noise_initial_eps=0.2,
     )
     try:
-        r = optimizer.optimize()
-        print(r)
+        r = optimizer.optimize_scipy()
+        logger.info(str(r))
     finally:
         logger.info(str(stopwatch))
 

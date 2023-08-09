@@ -78,9 +78,9 @@ def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
 
 
 def make_packed_configurations(states: npt.ArrayLike, number_spins: int):
-    return (np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")).sum(
-        axis=1
-    )
+    return (
+        np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")
+    ).sum(axis=1)
 
 
 def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
@@ -159,9 +159,9 @@ def read_jsonl_to_df(file: str | Path):
 
 
 def read_json_dir_to_df(dir: str | Path):
-    return pd.concat(read_jsonl_to_df(file) for file in Path(dir).glob("*.json")).reset_index(
-        drop=True
-    )
+    return pd.concat(
+        read_jsonl_to_df(file) for file in Path(dir).glob("*.json")
+    ).reset_index(drop=True)
 
 
 def get_abslargest_terms(
@@ -197,7 +197,9 @@ def groupby_shuffle(values, groups):
     # construct the shuffled values array
     shuffled_values = np.empty_like(values)
     for group in zip(unique_groups):
-        shuffled_values[groups == group] = np.random.permutation(values[groups == group])
+        shuffled_values[groups == group] = np.random.permutation(
+            values[groups == group]
+        )
 
     return shuffled_values
 
@@ -213,3 +215,20 @@ class Compose:
 
     def __repr__(self):
         return "∘".join(f.__name__ for f in self.funcs[::-1])
+
+
+@torch.no_grad()
+def torch_overlap(x, y):
+    return torch.dot(x, y) / (torch.norm(x) * torch.norm(y))
+
+
+def differentiable_safe_exp(x: torch.Tensor, normalise: bool = True) -> torch.Tensor:
+    r"""Calculate ``exp(x)`` avoiding overflows. Result is not equal to
+    ``exp(x)``, but rather proportional to it. If ``normalise==True``, then
+    this function makes sure that output tensor elements sum up to 1.
+    """
+    x = x - torch.max(x)
+    x = torch.exp(x)
+    if normalise:
+        x = x / torch.sum(x)
+    return x

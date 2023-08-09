@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union, overload, Literal
 
 import lattice_symmetries as ls
 import numpy as np
@@ -157,7 +157,14 @@ class SamplingOptions(_SamplingOptionsBase):
         if other is None:
             other = dict()
         return super(SamplingOptions, cls).__new__(
-            cls, number_samples, number_chains, number_discarded, sweep_size, mode, device, other
+            cls,
+            number_samples,
+            number_chains,
+            number_discarded,
+            sweep_size,
+            mode,
+            device,
+            other,
         )
 
     def hparams(self) -> Dict[str, Any]:
@@ -180,19 +187,26 @@ def _determine_batch_size(options: SamplingOptions) -> int:
         batch_size = int(batch_size)
         if batch_size <= 0:
             raise ValueError(
-                "invalid 'batch_size': {}; expected a positive integer".format(batch_size)
+                "invalid 'batch_size': {}; expected a positive integer".format(
+                    batch_size
+                )
             )
     return batch_size
 
 
 def split_into_batches(
-    xs: Tensor | npt.NDArray | tuple[Tensor | npt.NDArray, ...] | list[Tensor | npt.NDArray],
+    xs: Tensor
+    | npt.NDArray
+    | tuple[Tensor | npt.NDArray, ...]
+    | list[Tensor | npt.NDArray],
     batch_size: int,
     device=None,
 ):
     batch_size = int(batch_size)
     if batch_size <= 0:
-        raise ValueError("invalid batch_size: {}; expected a positive integer".format(batch_size))
+        raise ValueError(
+            "invalid batch_size: {}; expected a positive integer".format(batch_size)
+        )
 
     expanded = False
     if isinstance(xs, (np.ndarray, Tensor)):
@@ -268,7 +282,9 @@ def safe_exp(x: Tensor, normalise: bool = True) -> Tensor:
 
 @torch.no_grad()
 def sample_full(
-    log_prob_fn: Callable[[Tensor], Tensor], basis: ls.SpinBasis, options: SamplingOptions
+    log_prob_fn: Callable[[Tensor], Tensor],
+    basis: ls.SpinBasis,
+    options: SamplingOptions,
 ) -> Tuple[Tensor, Tensor, Dict[str, Any]]:
     r"""Instead of sampling, take all basis vectors in the Hilbert space."""
     batch_size = _determine_batch_size(options)
@@ -281,7 +297,9 @@ def sample_full(
         "".format(batch_size)
     )
     # states = pad_states(states)
-    log_prob = forward_with_batches(log_prob_fn, states, batch_size=batch_size, device=device)
+    log_prob = forward_with_batches(
+        log_prob_fn, states, batch_size=batch_size, device=device
+    )
     if log_prob.dim() > 1:
         log_prob.squeeze_(dim=1)
     _check_log_prob_shape(log_prob, device)
@@ -292,13 +310,35 @@ def sample_full(
     return states, log_prob, {"weights": weights}
 
 
+@overload
+def sample_exactly(
+    log_prob_fn: Callable[[torch.Tensor], torch.Tensor],
+    basis: ls.SpinBasis,
+    options: SamplingOptions,
+    return_all_probs: Literal[False],
+) -> tuple[torch.Tensor, torch.Tensor]:
+    ...
+
+
+@overload
+def sample_exactly(
+    log_prob_fn: Callable[[torch.Tensor], torch.Tensor],
+    basis: ls.SpinBasis,
+    options: SamplingOptions,
+    return_all_probs: Literal[True],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    ...
+
+
 @torch.no_grad()
 def sample_exactly(
     log_prob_fn: Callable[[torch.Tensor], torch.Tensor],
     basis: ls.SpinBasis,
     options: SamplingOptions,
     return_all_probs: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> (
+    tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+):
     r"""Sample states by explicitly constructing the discrete probability distribution.
 
     Number of samples is `options.number_chains * options.number_samples`, and

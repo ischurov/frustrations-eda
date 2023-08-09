@@ -35,11 +35,15 @@ from nqs_playground_helpers import (
 from scipy.sparse import csr_matrix, coo_matrix, diags
 from scipy.sparse.csgraph import connected_components
 import sys
-from kagome_cnn import KagomeCNNRegression
+
 from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 import time
 from scipy.optimize import minimize
-from vmc_amplitude import compute_log_local_energies, almost_true_relsigns, true_relsigns
+from vmc_amplitude import (
+    compute_log_local_energies,
+    almost_true_relsigns,
+    true_relsigns,
+)
 from collections import defaultdict
 from my_stopwatch import stopwatch
 import matplotlib.pyplot as plt
@@ -78,10 +82,11 @@ class AmplitudeOptimizer:
         initial_temp=1.0,
         tb_writer: SummaryWriter | None = None,
         plot_each=None,
-        clip_grad_norm=None,
-        clip_grad_norm_type: int | str = 2,
+        clip_grad_value=None,
         sign_noise_annealing_steps: int = 0,
         sign_noise_initial_eps: float = 0.2,
+        full_spin_loss_weight: float = 0.0,
+        full_energy_weight: float = 1.0,
     ):
         self.system = system
         energy, _ = system.get_eigenstates(1)
@@ -89,10 +94,11 @@ class AmplitudeOptimizer:
         self.annealing_steps = annealing_steps
         self.initial_temp = initial_temp
         self.plot_each = plot_each
-        self.clip_grad_norm = clip_grad_norm
-        self.clip_grad_norm_type = clip_grad_norm_type
+        self.clip_grad_value = clip_grad_value
         self.sign_noise_annealing_steps = sign_noise_annealing_steps
         self.sign_noise_initial_eps = sign_noise_initial_eps
+        self.full_spin_loss_weight = full_spin_loss_weight
+        self.full_energy_weight = full_energy_weight
 
         self.full_spin_operator = HeisenbergJ1J2(
             AllToAllLattice(system.lattice),
@@ -110,6 +116,10 @@ class AmplitudeOptimizer:
         self.nbd_matrix_w_signs = None
         self.nbd_states = None
         self.state_indices = None
+        self.nbd_matrix_w_signs_fullspin = None
+        self.nbd_states_fullspin = None
+        self.state_indices_fullspin = None
+
         self.all_probs = None
         self.log_amplitudes = None
         self.true_amplitudes = np.abs(
@@ -134,7 +144,11 @@ class AmplitudeOptimizer:
             return true_relsigns(self.system)(states)
 
     def _compute_log_local_energies(
-        self, flat_params: npt.NDArray | None
+        self,
+        flat_params: npt.NDArray | None,
+        states: torch.Tensor | None = None,
+        log_probs: torch.Tensor | None = None,
+        probs: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Returns:
@@ -143,23 +157,31 @@ class AmplitudeOptimizer:
             log_probs: RESCALED (!!!) log of the probabilities of the sampled states
             probs: the probabilities of the sampled states
         """
+        if states is None:
+            assert log_probs is None and probs is None
+
         if flat_params is not None:
             set_params(self.log_prob_fn, flat_params)
-        with stopwatch("vmc_vs_lbfgs/_compute_local_energies/sample_full"):
-            states, log_probs, _extra = sample_full(
-                self.log_prob_fn,
-                self.system.canonical_basis,
-                SamplingOptions(
-                    number_samples=1,
-                    number_chains=1,
-                    mode="full",
-                    sweep_size=1,
-                    number_discarded=0,
-                ),
-            )
-        log_probs = log_probs.view(-1)
-        states = states.view(-1)
-        probs: torch.Tensor = _extra["weights"].view(-1)
+        if states is None or log_probs is None or probs is None:
+            with stopwatch("vmc_vs_lbfgs/_compute_local_energies/sample_full"):
+                states, log_probs, _extra = sample_full(
+                    self.log_prob_fn,
+                    self.system.canonical_basis,
+                    SamplingOptions(
+                        number_samples=1,
+                        number_chains=1,
+                        mode="full",
+                        sweep_size=1,
+                        number_discarded=0,
+                    ),
+                )
+            log_probs = log_probs.view(-1)
+            states = states.view(-1)
+            probs = _extra["weights"].view(-1)
+
+        assert probs is not None
+        # assert states is not None and log_probs is not None and probs is not None
+        our_hamiltonian = self.system.hamiltonian
 
         with torch.no_grad():
             (
@@ -169,10 +191,12 @@ class AmplitudeOptimizer:
                 _,
                 self.nbd_matrix_w_signs,
             ) = compute_log_local_energies(
-                self.system.hamiltonian,
+                our_hamiltonian,
                 states.detach().numpy(),
                 relsigns_fn=self.relsigns_fn,
-                log_prob_fn=lambda s: self.log_prob_fn(torch.from_numpy(s.astype(np.int64)))
+                log_prob_fn=lambda s: self.log_prob_fn(
+                    torch.from_numpy(s.astype(np.int64))
+                )
                 .view(-1)
                 .detach()
                 .numpy(),
@@ -181,17 +205,86 @@ class AmplitudeOptimizer:
                 override_state_indices=self.state_indices,
             )
             log_E_loc = torch.from_numpy(log_E_loc).to(torch.complex64)
+
         return log_E_loc, states, log_probs, probs
 
-    def objective(self, flat_params: np.ndarray | None) -> tuple[float, npt.NDArray]:
+    def _compute_local_fullspin(
+        self,
+        flat_params: npt.NDArray | None,
+        states: torch.Tensor | None = None,
+        log_probs: torch.Tensor | None = None,
+        probs: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Returns:
+            log_fullspin_loc: log of the local full spins
+            states: the states that were sampled
+            log_probs: RESCALED (!!!) log of the probabilities of the sampled states
+            probs: the probabilities of the sampled states
+        """
+        if states is None:
+            assert log_probs is None and probs is None
+
+        if flat_params is not None:
+            set_params(self.log_prob_fn, flat_params)
+        if states is None or log_probs is None or probs is None:
+            with stopwatch("vmc_vs_lbfgs/_compute_local_energies/sample_full"):
+                states, log_probs, _extra = sample_full(
+                    self.log_prob_fn,
+                    self.system.canonical_basis,
+                    SamplingOptions(
+                        number_samples=1,
+                        number_chains=1,
+                        mode="full",
+                        sweep_size=1,
+                        number_discarded=0,
+                    ),
+                )
+            log_probs = log_probs.view(-1)
+            states = states.view(-1)
+            probs = _extra["weights"].view(-1)
+
+        assert probs is not None
+        # assert states is not None and log_probs is not None and probs is not None
+        our_hamiltonian = self.full_spin_operator
+
+        with torch.no_grad():
+            (
+                log_fullspin_loc,
+                self.nbd_states_fullspin,
+                self.state_indices_fullspin,
+                _,
+                self.nbd_matrix_w_signs_fullspin,
+            ) = compute_log_local_energies(
+                our_hamiltonian,
+                states.detach().numpy(),
+                relsigns_fn=self.relsigns_fn,
+                log_prob_fn=lambda s: self.log_prob_fn(
+                    torch.from_numpy(s.astype(np.int64))
+                )
+                .view(-1)
+                .detach()
+                .numpy(),
+                override_nbd_states=self.nbd_states_fullspin,
+                override_nbd_matrix_w_signs=self.nbd_matrix_w_signs_fullspin,
+                override_state_indices=self.state_indices_fullspin,
+            )
+            log_fullspin_loc = torch.from_numpy(log_fullspin_loc).to(torch.complex64)
+
+        return log_fullspin_loc, states, log_probs, probs
+
+    def objective(
+        self, flat_params: np.ndarray | None = None
+    ) -> tuple[float, npt.NDArray]:
         log_E_loc, states, log_probs, all_probs = self._compute_log_local_energies(
             flat_params.astype(np.float32) if flat_params is not None else None
         )
         self.all_probs = all_probs.detach().numpy()
         self.log_amplitudes = log_probs * 0.5
-
+        logger.info(f"{log_E_loc.real.min()=}, {log_E_loc.real.max()=}")
         full_energy = (torch.exp(log_E_loc).to(torch.float32) @ all_probs).item().real
-        logger.info(full_energy)
+        logger.info(f"{full_energy=}")
+
         self.full_energy = full_energy
 
         predicted_wavefunction = np.sign(
@@ -202,12 +295,47 @@ class AmplitudeOptimizer:
         )
 
         weights = all_probs
-        with stopwatch("vmc_vs_lbfgs/gradient/grad"):
-            with torch.no_grad():
-                weighted_E_loc = torch.exp(log_E_loc + np.log(weights)).real
-                grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
+        if self.full_energy_weight > 0:
+            with stopwatch("vmc_vs_lbfgs/gradient/grad"):
+                with torch.no_grad():
+                    weighted_E_loc = torch.exp(log_E_loc + np.log(weights)).real
+                    grad = (
+                        4
+                        * self.full_energy_weight
+                        * (weighted_E_loc - weighted_E_loc.sum() * weights)
+                    )
 
-                self.grad_norm = torch.linalg.norm(grad)
+                    self.grad_norm = torch.linalg.norm(grad)
+                    logger.info(f"{grad[:10]=}")
+                    logger.info(f"{log_E_loc[:10]=}")
+        else:
+            grad = torch.zeros_like(log_E_loc, dtype=torch.float32)
+            self.grad_norm = 0
+
+        if self.full_spin_loss_weight > 0:
+            with torch.no_grad():
+                log_spin_loc, _, _, _ = self._compute_local_fullspin(
+                    flat_params.astype(np.float32) if flat_params is not None else None,
+                    states=states,
+                    log_probs=log_probs,
+                    probs=all_probs,
+                )
+                logger.info(f"{log_spin_loc[:10]=}")
+                weighted_spin_loc = torch.exp(log_spin_loc + np.log(weights)).real
+                full_spin_grad = (
+                    self.full_spin_loss_weight
+                    * 4
+                    * (weighted_spin_loc - weighted_spin_loc.sum() * weights)
+                )
+                if self.full_energy_weight > 0:
+                    self.energy_full_spin_grad_overlap = (
+                        (full_spin_grad @ grad)
+                        / self.grad_norm
+                        / torch.linalg.norm(full_spin_grad)
+                    )
+                logger.info(f"{full_spin_grad[:10]=}")
+                grad += full_spin_grad
+
         self.log_prob_fn.zero_grad(set_to_none=True)
         forward_fn = self.log_prob_fn
         for states_chunk, grad_chunk in split_into_batches(
@@ -224,19 +352,24 @@ class AmplitudeOptimizer:
                 entropy = -torch.sum(probs * torch.log(probs))
                 entropy_loss = -temp * entropy
                 entropy_loss.backward()
-        if self.clip_grad_norm is not None:
-            torch.nn.utils.clip_grad_norm_(
+        if self.clip_grad_value is not None:
+            torch.nn.utils.clip_grad_value_(
                 self.log_prob_fn.parameters(),
-                self.clip_grad_norm,
-                norm_type=self.clip_grad_norm_type,
+                self.clip_grad_value,
             )
         with stopwatch("vmc_vs_lbfgs/gradient/extract_grad"):
             # extract gradient from output
-            full_grad = torch.cat([p.grad.view(-1) for p in self.log_prob_fn.parameters()])
+            full_grad = torch.cat(
+                [p.grad.view(-1) for p in self.log_prob_fn.parameters()]
+            )
             self.full_grad_L2_norm = torch.linalg.norm(full_grad)
             self.full_grad_Linf_norm = torch.max(torch.abs(full_grad))
 
-        return full_energy, full_grad.detach().numpy().astype(np.float64)
+        return (
+            self.full_energy_weight * full_energy
+            + self.full_spin_loss_weight * self.full_spin,
+            full_grad.detach().numpy().astype(np.float64),
+        )
 
     def extract_overlap(self) -> float:
         if self.all_probs is None:
@@ -263,7 +396,9 @@ class AmplitudeOptimizer:
             self.iteration,
         )
 
-        self.tb_writer.add_scalar("optimize/overlap", self.extract_overlap(), self.iteration)
+        self.tb_writer.add_scalar(
+            "optimize/overlap", self.extract_overlap(), self.iteration
+        )
         self.tb_writer.add_scalar("optimize/grad_norm", self.grad_norm, self.iteration)
         self.tb_writer.add_scalar(
             "optimize/full_grad_L2_norm", self.full_grad_L2_norm, self.iteration
@@ -272,6 +407,12 @@ class AmplitudeOptimizer:
             "optimize/full_grad_Linf_norm", self.full_grad_Linf_norm, self.iteration
         )
         self.tb_writer.add_scalar("optimize/full_spin", self.full_spin, self.iteration)
+        if self.full_energy_weight > 0 and self.full_spin_loss_weight > 0:
+            self.tb_writer.add_scalar(
+                "optimize/energy_full_spin_grad_overlap",
+                self.energy_full_spin_grad_overlap,
+                self.iteration,
+            )
 
         self.iteration += 1
 
@@ -279,7 +420,9 @@ class AmplitudeOptimizer:
             fig = plt.figure()
             sorted_predictions = self.log_amplitudes[(-self.log_amplitudes).argsort()]
             plt.plot(
-                sorted_predictions - sorted_predictions[0] + self.log_sorted_true_amplitudes[0],
+                sorted_predictions
+                - sorted_predictions[0]
+                + self.log_sorted_true_amplitudes[0],
                 label="predicted log amplitudes",
             )
             plt.plot(

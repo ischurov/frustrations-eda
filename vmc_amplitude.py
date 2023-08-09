@@ -9,6 +9,11 @@ from scipy.sparse import csr_matrix, coo_matrix, diags
 from scipy.sparse.csgraph import connected_components
 from my_stopwatch import stopwatch
 from scipy.special import logsumexp
+from loguru import logger
+import torch.nn as nn
+import torch
+from torch import Tensor
+from misc_utils import make_unpacked_configurations
 
 
 def apply_off_diag_to_basis_states(
@@ -27,7 +32,9 @@ def apply_off_diag_to_basis_states(
 
     offsets_arr = ls._chpl_external_array_as_ndarray(offsets, np.int64)
     betas_arr = ls._chpl_external_array_as_ndarray(betas, np.uint64)[: offsets_arr[-1]]
-    coeffs_arr = ls._chpl_external_array_as_ndarray(coeffs, np.complex128)[: offsets_arr[-1]]
+    coeffs_arr = ls._chpl_external_array_as_ndarray(coeffs, np.complex128)[
+        : offsets_arr[-1]
+    ]
     return betas_arr, coeffs_arr, offsets_arr
 
 
@@ -97,7 +104,10 @@ def find_nbd_reference(
     row_indices = np.array(row_indices)
 
     return (
-        csr_matrix((coeffs_data, nbd_indices, row_indices), shape=(len(states), len(nbd_states))),
+        csr_matrix(
+            (coeffs_data, nbd_indices, row_indices),
+            shape=(len(states), len(nbd_states)),
+        ),
         nbd_states,
     )
 
@@ -134,7 +144,9 @@ def find_nbd(
             hamiltonian, states
         )
     with stopwatch("vmc_amplitude/find_nbd/nbd_states"):
-        nbd_states = np.unique(np.concatenate([nbd_states_data, states])).astype(np.uint64)
+        nbd_states = np.unique(np.concatenate([nbd_states_data, states])).astype(
+            np.uint64
+        )
         # TODO: optimize this
     with stopwatch("vmc_amplitude/find_nbd/nbd_indices"):
         nbd_indices = np.searchsorted(nbd_states, nbd_states_data)
@@ -142,7 +154,8 @@ def find_nbd(
 
     with stopwatch("vmc_amplitude/find_nbd/matrix_without_diag"):
         matrix_without_diag = csr_matrix(
-            (coeffs_data, nbd_indices, offsets_data), shape=(len(states), len(nbd_states))
+            (coeffs_data, nbd_indices, offsets_data),
+            shape=(len(states), len(nbd_states)),
         )
 
     with stopwatch("vmc_amplitude/find_nbd/apply_diag"):
@@ -196,7 +209,8 @@ def nbd_matrix_to_graph(
     # Add the two COO matrices and convert to a CSR matrix for efficient arithmetic operations.
     with stopwatch("vmc_amplitude/nbd_matrix_to_graph/symmetric_matrix"):
         symmetric_matrix = csr_matrix(
-            (data, (full_row_indices, full_col_indices)), shape=(len(nbd_states), len(nbd_states))
+            (data, (full_row_indices, full_col_indices)),
+            shape=(len(nbd_states), len(nbd_states)),
         )
 
     # with stopwatch("vmc_amplitude/DEBUG/nbd_matrix_to_graph/half-symmetric-matrix1"):
@@ -220,12 +234,16 @@ def nbd_matrix_to_graph(
 
 def true_relsigns(system: SpinSystem) -> Callable[[npt.NDArray], npt.NDArray]:
     def relings(cluster: npt.NDArray) -> npt.NDArray:
-        return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice([-1, 1])
+        return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
+            [-1, 1]
+        )
 
     return relings
 
 
-def almost_true_relsigns(system: SpinSystem, eps: float) -> Callable[[npt.NDArray], npt.NDArray]:
+def almost_true_relsigns(
+    system: SpinSystem, eps: float
+) -> Callable[[npt.NDArray], npt.NDArray]:
     def relings(cluster: npt.NDArray) -> npt.NDArray:
         return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
             [1, -1], p=[1 - eps, eps], size=len(cluster)
@@ -324,7 +342,9 @@ def compute_log_local_energies(
                 "override_nbd_matrix or override_nbd_matrix_w_signs "
                 "must be provided."
             )
-        nbd_matrix_w_signs = transfer_signs_to_H(states, nbd_matrix, nbd_states, relsigns_fn)
+        nbd_matrix_w_signs = transfer_signs_to_H(
+            states, nbd_matrix, nbd_states, relsigns_fn
+        )
     else:
         nbd_matrix_w_signs = override_nbd_matrix_w_signs
 
@@ -332,8 +352,8 @@ def compute_log_local_energies(
         log_abs_psi_nbd = log_prob_fn(nbd_states) * 0.5
         log_abs_psi_states = log_abs_psi_nbd[state_indices]
         abs_psi_nbd = safe_exp_numpy(log_abs_psi_nbd)
-    # print(f"{log_abs_psi_nbd.min()=}, {log_abs_psi_nbd.max()=}")
-    # print(f"{abs_psi_nbd.min()=}, {abs_psi_nbd.max()=}")
+    logger.info(f"{log_abs_psi_nbd.min()=}, {log_abs_psi_nbd.max()=}")
+    logger.info(f"{abs_psi_nbd.min()=}, {abs_psi_nbd.max()=}")
     with stopwatch("vmc_amplitude/compute_local_energies/local_energies"):
         log_local_energies = (
             np.log((nbd_matrix_w_signs @ abs_psi_nbd).astype(np.complex128))
@@ -351,8 +371,46 @@ def compute_local_energies_reference(
     log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
 ) -> npt.NDArray[np.float64]:
     nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
-    nbd_matrix_w_signs = transfer_signs_to_H(states, nbd_matrix, nbd_states, relsigns_fn)
+    nbd_matrix_w_signs = transfer_signs_to_H(
+        states, nbd_matrix, nbd_states, relsigns_fn
+    )
     abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
     states_indices = np.searchsorted(nbd_states, states)
     abs_psi_states = abs_psi_nbd[states_indices]
     return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
+
+
+class LogProbDenseNetPairwiseXor(nn.Module):
+    def __init__(
+        self,
+        system: SpinSystem,
+        n_hidden: int = 100,
+        hidden_layers=1,
+        scaling=1.0,
+        xor_pairs=(np.array([]), np.array([])),
+    ):
+        super().__init__()
+        self.system = system
+        self.n_hidden = n_hidden
+        self.hidden_layers = hidden_layers
+        layers = [
+            nn.Linear(system.number_spins + len(xor_pairs[0]), n_hidden),
+            nn.ReLU(),
+        ]
+        for _ in range(hidden_layers - 1):
+            layers.append(nn.Linear(n_hidden, n_hidden))
+            layers.append(nn.ReLU())
+
+        layers.append(nn.Linear(n_hidden, 1))
+        self.net = nn.Sequential(*layers)
+        self.scaling = scaling
+        self.xor_pairs = xor_pairs
+
+    def forward(self, x: Tensor) -> Tensor:
+        configs = 1 - 2 * make_unpacked_configurations(
+            x, self.system.number_spins
+        ).astype(np.float32)
+        products = configs[:, self.xor_pairs[0]] * configs[:, self.xor_pairs[1]]
+
+        configs = np.concatenate((configs, products), axis=1)
+        return self.scaling * self.net(torch.from_numpy(configs))
