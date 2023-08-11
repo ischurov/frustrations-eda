@@ -159,6 +159,7 @@ def main(task_id: int):
                     ),
                 )
                 states = states.view(-1)
+                
                 weights = _extra["weights"].view(-1)
                 all_probs = weights
             else:

@@ -40,7 +40,9 @@ class GConvLattice(nn.Module):
         """
         This is reference implementation, kept for testing purposes.
         """
-        output = torch.zeros((batch.size()[0], self.out_channels, len(self.group_elements)))
+        output = torch.zeros(
+            (batch.size()[0], self.out_channels, len(self.group_elements))
+        )
         filter_extended = torch.zeros((self.out_channels, self.number_spins))
         filter_extended[:, self.filter_idxs] = self.filter
 
@@ -54,11 +56,13 @@ class GConvLattice(nn.Module):
 
         filter_extended[:, self.filter_idxs] = self.filter
 
-        permuted_filters = filter_extended[:, self.inv_group_elements_tensor.view(-1)].view(
-            self.out_channels, len(self.group_elements), self.number_spins
-        )
+        permuted_filters = filter_extended[
+            :, self.inv_group_elements_tensor.view(-1)
+        ].view(self.out_channels, len(self.group_elements), self.number_spins)
 
         output = torch.einsum("bs,ogs->bog", batch, permuted_filters)
+        # b: batch, s: spin, o: output channel, g: group element
+
         return output
 
 
@@ -96,7 +100,9 @@ class GConvG(nn.Module):
             [(~self_action(g, group_elements)).array_form for g in self.group_elements],
             dtype=torch.long,
         )
-        self.filter = nn.Parameter(torch.empty(out_channels, in_channels, self.filter_size))
+        self.filter = nn.Parameter(
+            torch.empty(out_channels, in_channels, self.filter_size)
+        )
         torch.nn.init.xavier_uniform_(self.filter)
         self.filter.requires_grad = True
 
@@ -105,7 +111,9 @@ class GConvG(nn.Module):
         This is reference implementation, kept for testing purposes.
         """
 
-        output = torch.zeros((batch.size()[0], self.out_channels, len(self.group_elements)))
+        output = torch.zeros(
+            (batch.size()[0], self.out_channels, len(self.group_elements))
+        )
         filter_extended = torch.zeros(
             (self.out_channels, self.in_channels, len(self.group_elements))
         )
@@ -115,19 +123,25 @@ class GConvG(nn.Module):
             permuted_filter = filter_extended[
                 :, :, self_action(~action, self.group_elements).array_form
             ]
-            output[:, :, action_index] = torch.einsum("big,oig->bo", batch, permuted_filter)
+            output[:, :, action_index] = torch.einsum(
+                "big,oig->bo", batch, permuted_filter
+            )
             # b: batch, i: in_channels, g: group_elements, o: out_channels
 
         return output
 
     def forward(self, batch: torch.Tensor):
-        output = torch.zeros((batch.size()[0], self.out_channels, len(self.group_elements)))
+        output = torch.zeros(
+            (batch.size()[0], self.out_channels, len(self.group_elements))
+        )
         filter_extended = torch.zeros(
             (self.out_channels, self.in_channels, len(self.group_elements))
         )
         filter_extended[:, :, self.filter_idxs] = self.filter
 
-        permuted_filters = filter_extended[:, :, self.inv_group_elements_tensor.view(-1)].view(
+        permuted_filters = filter_extended[
+            :, :, self.inv_group_elements_tensor.view(-1)
+        ].view(
             self.out_channels,
             self.in_channels,
             len(self.group_elements),
@@ -170,7 +184,8 @@ class SplitGroupConvNet2(nn.Module):
 
         generators = [tx, ty] + additional_generators
         group_elements: list[Permutation] = sorted(
-            list(PermutationGroup(*generators).elements), key=lambda g: tuple(g.array_form)
+            list(PermutationGroup(*generators).elements),
+            key=lambda g: tuple(g.array_form),
         )
 
         filter_idxs_1 = sorted(
@@ -185,12 +200,16 @@ class SplitGroupConvNet2(nn.Module):
         self.group_elements = group_elements
 
         self.layer1 = GConvLattice(
-            group_elements=group_elements, filter_idxs=filter_idxs_1, out_channels=channels1
+            group_elements=group_elements,
+            filter_idxs=filter_idxs_1,
+            out_channels=channels1,
         )
 
         filter_idxs_2 = [
             group_elements.index(
-                mult_comb([tx, ty] + additional_generators, [x_deg, y_deg] + additional_deg)
+                mult_comb(
+                    [tx, ty] + additional_generators, [x_deg, y_deg] + additional_deg
+                )
             )
             for x_deg, y_deg, *additional_deg in itertools.product(
                 range(filter2_width),
@@ -238,7 +257,8 @@ class SplitGroupConvNet(nn.Module):
 
         generators = [tx, ty] + additional_generators
         group_elements: list[Permutation] = sorted(
-            list(PermutationGroup(*generators).elements), key=lambda g: tuple(g.array_form)
+            list(PermutationGroup(*generators).elements),
+            key=lambda g: tuple(g.array_form),
         )
 
         filter_idxs_1 = sorted(
@@ -253,13 +273,18 @@ class SplitGroupConvNet(nn.Module):
         self.group_elements = group_elements
 
         self.layer1 = GConvLattice(
-            group_elements=group_elements, filter_idxs=filter_idxs_1, out_channels=channels[0]
+            group_elements=group_elements,
+            filter_idxs=filter_idxs_1,
+            out_channels=channels[0],
         )
 
         filter_idxs = [
             [
                 group_elements.index(
-                    mult_comb([tx, ty] + additional_generators, [x_deg, y_deg] + additional_deg)
+                    mult_comb(
+                        [tx, ty] + additional_generators,
+                        [x_deg, y_deg] + additional_deg,
+                    )
                 )
                 for x_deg, y_deg, *additional_deg in itertools.product(
                     range(filter_width),
@@ -302,13 +327,40 @@ class SplitGroupResConvNet(nn.Module):
         ty: Permutation,
         filter1_sites: list[int] | torch.Tensor,
         additional_generators: list[Permutation] | None = None,
-        filter_size_head=(1, 1),
-        filter_size=(2, 2),
+        extend_filter1: tuple[int, int] = (1, 1),
+        filter_size: tuple[int, int] = (2, 2),
         channels=4,
         blocks=2,
     ):
         """
         We expect that the group is generated by tx, ty and additional_generators.
+
+        Parameters
+        ----------
+
+        tx: Permutation
+            The translation in x direction
+
+        ty: Permutation
+            The translation in y direction
+
+        filter1_sites: list[int] | torch.Tensor
+            The sites of the first filter
+
+        additional_generators: list[Permutation] | None
+            Additional generators of the group
+
+        extend_filter1: tuple[int, int]
+            The first filter is extended by this factor by application of respective translations
+
+        filter_size: tuple[int, int]
+            The filter size of the other layers
+
+        channels: int
+            The number of channels
+
+        blocks: int
+            The number of ResNet blocks
         """
         if additional_generators is None:
             additional_generators = []
@@ -317,28 +369,34 @@ class SplitGroupResConvNet(nn.Module):
 
         generators = [tx, ty] + additional_generators
         group_elements: list[Permutation] = sorted(
-            list(PermutationGroup(*generators).elements), key=lambda g: tuple(g.array_form)
+            list(PermutationGroup(*generators).elements),
+            key=lambda g: tuple(g.array_form),
         )
 
         filter_idxs_1 = sorted(
             set(
                 int((tx**a * ty**b)(site))
                 for site in filter1_sites
-                for a in range(filter_size_head[0])
-                for b in range(filter_size_head[1])
+                for a in range(extend_filter1[0])
+                for b in range(extend_filter1[1])
             )
         )
 
         self.group_elements = group_elements
 
         self.layer1 = GConvLattice(
-            group_elements=group_elements, filter_idxs=filter_idxs_1, out_channels=channels
+            group_elements=group_elements,
+            filter_idxs=filter_idxs_1,
+            out_channels=channels,
         )
 
-        filter_idxs = [
+        self.filter_idxs = [
             [
                 group_elements.index(
-                    mult_comb([tx, ty] + additional_generators, [x_deg, y_deg] + additional_deg)
+                    mult_comb(
+                        [tx, ty] + additional_generators,
+                        [x_deg, y_deg] + additional_deg,
+                    )
                 )
                 for x_deg, y_deg, *additional_deg in itertools.product(
                     range(filter_size[0]),
@@ -353,11 +411,11 @@ class SplitGroupResConvNet(nn.Module):
             [
                 GConvG(
                     group_elements=group_elements,
-                    filter_idxs=filter_idxs[i],
+                    filter_idxs=self.filter_idxs[i],
                     in_channels=channels,
                     out_channels=channels,
                 )
-                for i in range(len(filter_idxs))
+                for i in range(len(self.filter_idxs))
             ]
         )
 
