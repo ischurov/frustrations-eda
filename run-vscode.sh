@@ -21,4 +21,4 @@ done
 
 # Display job output
 watch "tail $outfile"
-s
+
