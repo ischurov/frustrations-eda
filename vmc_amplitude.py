@@ -53,7 +53,9 @@ def apply_diag_to_basis_states(
 
 
 def find_nbd_reference(
-    hamiltonian: ls.Operator, states: npt.NDArray[np.uint64]
+    hamiltonian: ls.Operator,
+    states: npt.NDArray[np.uint64],
+    energy_baseline: float = 0.0,
 ) -> tuple[csr_matrix, npt.NDArray[np.uint64]]:
     """
     Constructs a sparse matrix that is a slice of the Hamiltonian matrix.
@@ -67,6 +69,9 @@ def find_nbd_reference(
     states : npt.NDArray[np.uint64]
         The states whose neighbors to include in the matrix.
 
+    energy_baseline : float
+        The energy to subtract from the Hamiltonian before constructing the matrix.
+
     Returns
     -------
     M : csr_matrix
@@ -77,7 +82,7 @@ def find_nbd_reference(
 
         The following holds:
 
-        ``M[i, j] = <states[i] | H | nbd_states[j]>``
+        ``M[i, j] = <states[i] | (H - energy_baseline) | nbd_states[j]>``
     """
     coeff_rows = []
     nbd_states_rows = []
@@ -89,7 +94,9 @@ def find_nbd_reference(
         )
 
         # process self
-        cur_coeffs.append(hamiltonian.apply_diag_to_basis_state(state))
+        cur_coeffs.append(
+            hamiltonian.apply_diag_to_basis_state(state) - energy_baseline
+        )
         cur_nbd_states.append(state)
 
         # make rows
@@ -113,7 +120,9 @@ def find_nbd_reference(
 
 
 def find_nbd(
-    hamiltonian: ls.Operator, states: npt.NDArray[np.uint64]
+    hamiltonian: ls.Operator,
+    states: npt.NDArray[np.uint64],
+    energy_baseline: float = 0.0,
 ) -> tuple[csr_matrix, npt.NDArray[np.uint64]]:
     """
     Constructs a sparse matrix that is a slice of the Hamiltonian matrix.
@@ -127,6 +136,9 @@ def find_nbd(
     states : npt.NDArray[np.uint64]
         The states whose neighbors to include in the matrix.
 
+    energy_baseline : float
+        The energy to subtract from the Hamiltonian before constructing the matrix.
+
     Returns
     -------
     M : csr_matrix
@@ -137,7 +149,7 @@ def find_nbd(
 
         The following holds:
 
-        ``M[i, j] = <states[i] | H | nbd_states[j]>``
+        ``M[i, j] = <states[i] | (H - energy_baseline) | nbd_states[j]>``
     """
     with stopwatch("vmc_amplitude/find_nbd/apply_off_diag"):
         nbd_states_data, coeffs_data, offsets_data = apply_off_diag_to_basis_states(
@@ -160,7 +172,7 @@ def find_nbd(
 
     with stopwatch("vmc_amplitude/find_nbd/apply_diag"):
         # Add diagonal elements
-        diag_coeffs = apply_diag_to_basis_states(hamiltonian, states)
+        diag_coeffs = apply_diag_to_basis_states(hamiltonian, states) - energy_baseline
     with stopwatch("vmc_amplitude/find_nbd/diag_indices"):
         diag_indices = np.searchsorted(nbd_states, states)
     with stopwatch("vmc_amplitude/find_nbd/matrix_with_diag"):
@@ -378,6 +390,33 @@ def compute_local_energies_reference(
     states_indices = np.searchsorted(nbd_states, states)
     abs_psi_states = abs_psi_nbd[states_indices]
     return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
+
+
+class LogProbDenseNet(nn.Module):
+    def __init__(
+        self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1, scaling=1.0
+    ):
+        super().__init__()
+        self.system = system
+        self.n_hidden = n_hidden
+        self.hidden_layers = hidden_layers
+        layers = [nn.Linear(system.number_spins, n_hidden), nn.ReLU()]
+        for _ in range(hidden_layers - 1):
+            layers.append(nn.Linear(n_hidden, n_hidden))
+            layers.append(nn.ReLU())
+
+        layers.append(nn.Linear(n_hidden, 1))
+        self.net = nn.Sequential(*layers)
+        self.scaling = scaling
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.scaling * self.net(
+            torch.from_numpy(
+                make_unpacked_configurations(x, self.system.number_spins).astype(
+                    np.float32
+                )
+            )
+        )
 
 
 class LogProbDenseNetPairwiseXor(nn.Module):

@@ -7,7 +7,7 @@
 #SBATCH -p tcm
 #SBATCH --exclusive
 #SBATCH --array=0-20%2
-#SBATCH --exclude=cn90,cn91,cn41,cn42,cn39,cn24,cn19
+#SBATCH --exclude=cn90,cn91,cn41,cn42,cn24,cn19
 
 export PATH="/home/ischurov/.local/bin:$PATH"
 cd /home/ischurov/tcm10/frustrations-eda

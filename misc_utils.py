@@ -217,7 +217,7 @@ class Compose:
         return "∘".join(f.__name__ for f in self.funcs[::-1])
 
 
-@torch.no_grad()
+# @torch.no_grad()
 def torch_overlap(x, y):
     return torch.dot(x, y) / (torch.norm(x) * torch.norm(y))
 

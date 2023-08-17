@@ -1,4 +1,9 @@
-from fourier_xor_shuffle_2023_07_24 import train, replace_xors_with_random, shuffle_xors, identity
+from fourier_xor_shuffle_2023_07_24 import (
+    train,
+    replace_xors_with_random,
+    shuffle_xors,
+    identity,
+)
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -47,8 +52,10 @@ def main(task_id: int | None = None, splits=10):
     #     return
     run = task_id
 
-    for (lattice, J2), alpha in product(system_specs, [0.001, 1., 2.]):
-        system = HeisenbergJ1J2(lattice, J1=1, J2=J2, ground_state_cache_dir=Path("groundstates"))
+    for (lattice, J2), alpha in product(system_specs, [0.001, 1.0]):
+        system = HeisenbergJ1J2(
+            lattice, J1=1, J2=J2, ground_state_cache_dir=Path("groundstates")
+        )
         system.get_eigenstates(1)
         n_spins = system.number_spins
 
@@ -61,7 +68,7 @@ def main(task_id: int | None = None, splits=10):
 
             transformed_series = series.truncate(keep_largest_n(keep_terms))
 
-            task_name = f"{system.get_cache_id()}_{split}_{run}"
+            task_name = f"{system.get_cache_id()}_{split}_{run}_{alpha}"
 
             writer = SummaryWriter(
                 log_dir=(
@@ -70,7 +77,8 @@ def main(task_id: int | None = None, splits=10):
                 )
             )
             probs = (
-                np.abs(system.get_ground_state_in_canonical_basis().astype(np.float64)) ** alpha
+                np.abs(system.get_ground_state_in_canonical_basis().astype(np.float64))
+                ** alpha
             )
             probs /= probs.sum()
             all_states = system.canonical_basis.states
@@ -84,9 +92,12 @@ def main(task_id: int | None = None, splits=10):
             dataset = make_dataset(transformed_series, sample_states, n_spins)
 
             train_dataset, test_dataset = random_split(
-                dataset, [eps_train / (eps_train + eps_test), eps_test / (eps_train + eps_test)]
+                dataset,
+                [eps_train / (eps_train + eps_test), eps_test / (eps_train + eps_test)],
             )
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            train_loader = DataLoader(
+                train_dataset, batch_size=batch_size, shuffle=True
+            )
 
             net = MLPBinaryClassifier(n_spins, n_hidden)
             criterion = nn.CrossEntropyLoss()

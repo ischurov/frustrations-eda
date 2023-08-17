@@ -41,36 +41,10 @@ from scipy.optimize import minimize
 from vmc_vs_lbfgs import AmplitudeOptimizer
 import fire
 from my_stopwatch import stopwatch
+from vmc_amplitude import LogProbDenseNet
 
 logger.remove()
 logger.add(sys.stderr, level="INFO")
-
-
-class LogProbDenseNet(nn.Module):
-    def __init__(
-        self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1, scaling=1.0
-    ):
-        super().__init__()
-        self.system = system
-        self.n_hidden = n_hidden
-        self.hidden_layers = hidden_layers
-        layers = [nn.Linear(system.number_spins, n_hidden), nn.ReLU()]
-        for _ in range(hidden_layers - 1):
-            layers.append(nn.Linear(n_hidden, n_hidden))
-            layers.append(nn.ReLU())
-
-        layers.append(nn.Linear(n_hidden, 1))
-        self.net = nn.Sequential(*layers)
-        self.scaling = scaling
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.scaling * self.net(
-            torch.from_numpy(
-                make_unpacked_configurations(x, self.system.number_spins).astype(
-                    np.float32
-                )
-            )
-        )
 
 
 def main(task_id: int):
