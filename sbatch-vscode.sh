@@ -13,4 +13,4 @@ set -x
 export PATH="/home/ischurov/.local/bin:$PATH"
 cd /home/ischurov/tcm10/frustrations-eda
 
-nix develop .#default --command code tunnel
+nix develop .#default --command code tunnel --accept-server-license-terms 
