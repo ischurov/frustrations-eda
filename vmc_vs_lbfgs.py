@@ -1,53 +1,52 @@
-from spin_lattices import (
-    KagomeLattice,
-    SpinLattice,
-    ChainLattice,
-    SquareLattice,
-    TriangleLattice,
-    AllToAllLattice,
-)
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+import io
+import sys
+import time
+from collections import defaultdict, namedtuple
+from contextlib import redirect_stderr
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Tuple, Union
+
+import lattice_symmetries as ls
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from typing import Callable
-import torch
 import numpy.typing as npt
-import lattice_symmetries as ls
-from typing import Any, Optional, Union, Dict, Tuple
-from loguru import logger
-from collections import namedtuple
-from torch import Tensor
+import torch
 import torch.nn as nn
-from misc_utils import make_unpacked_configurations
-import io
-from contextlib import redirect_stderr
+from IPython.display import display
+from loguru import logger
+from scipy.optimize import minimize
+from scipy.sparse import coo_matrix, csr_matrix, diags
+from scipy.sparse.csgraph import connected_components
+from torch import Tensor
+from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
+
+from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from misc_utils import make_unpacked_configurations
+from my_stopwatch import stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
-    split_into_batches,
+    forward_with_batches,
     safe_exp,
     sample_exactly,
     sample_full,
-    forward_with_batches,
+    split_into_batches,
 )
-from scipy.sparse import csr_matrix, coo_matrix, diags
-from scipy.sparse.csgraph import connected_components
-import sys
-
-from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
-import time
-from scipy.optimize import minimize
+from spin_lattices import (
+    AllToAllLattice,
+    ChainLattice,
+    KagomeLattice,
+    SpinLattice,
+    SquareLattice,
+    TriangleLattice,
+)
 from vmc_amplitude import (
-    compute_log_local_energies,
     almost_true_relsigns,
+    compute_log_local_energies,
     true_relsigns,
 )
-from collections import defaultdict
-from my_stopwatch import stopwatch
-import matplotlib.pyplot as plt
-from IPython.display import display
 
 
 def set_params(net: nn.Module, params: npt.NDArray):
@@ -186,17 +185,12 @@ class AmplitudeOptimizer:
         with torch.no_grad():
             (
                 log_E_loc,
-                self.nbd_states,
-                self.state_indices,
-                _,
-                self.nbd_matrix_w_signs,
+                extras,
             ) = compute_log_local_energies(
                 our_hamiltonian,
                 states.detach().numpy(),
                 relsigns_fn=self.relsigns_fn,
-                log_prob_fn=lambda s: self.log_prob_fn(
-                    torch.from_numpy(s.astype(np.int64))
-                )
+                log_prob_fn=lambda s: self.log_prob_fn(torch.from_numpy(s.astype(np.int64)))
                 .view(-1)
                 .detach()
                 .numpy(),
@@ -204,6 +198,10 @@ class AmplitudeOptimizer:
                 override_nbd_matrix_w_signs=self.nbd_matrix_w_signs,
                 override_state_indices=self.state_indices,
             )
+            self.nbd_states = extras.nbd_states
+            self.state_indices = extras.state_indices
+            self.nbd_matrix_w_signs = extras.nbd_matrix_w_signs
+
             log_E_loc = torch.from_numpy(log_E_loc).to(torch.complex64)
 
         return log_E_loc, states, log_probs, probs
@@ -252,6 +250,7 @@ class AmplitudeOptimizer:
             (
                 log_fullspin_loc,
                 self.nbd_states_fullspin,
+                _,
                 self.state_indices_fullspin,
                 _,
                 self.nbd_matrix_w_signs_fullspin,
@@ -259,9 +258,7 @@ class AmplitudeOptimizer:
                 our_hamiltonian,
                 states.detach().numpy(),
                 relsigns_fn=self.relsigns_fn,
-                log_prob_fn=lambda s: self.log_prob_fn(
-                    torch.from_numpy(s.astype(np.int64))
-                )
+                log_prob_fn=lambda s: self.log_prob_fn(torch.from_numpy(s.astype(np.int64)))
                 .view(-1)
                 .detach()
                 .numpy(),
@@ -273,9 +270,7 @@ class AmplitudeOptimizer:
 
         return log_fullspin_loc, states, log_probs, probs
 
-    def objective(
-        self, flat_params: np.ndarray | None = None
-    ) -> tuple[float, npt.NDArray]:
+    def objective(self, flat_params: np.ndarray | None = None) -> tuple[float, npt.NDArray]:
         log_E_loc, states, log_probs, all_probs = self._compute_log_local_energies(
             flat_params.astype(np.float32) if flat_params is not None else None
         )
@@ -359,15 +354,12 @@ class AmplitudeOptimizer:
             )
         with stopwatch("vmc_vs_lbfgs/gradient/extract_grad"):
             # extract gradient from output
-            full_grad = torch.cat(
-                [p.grad.view(-1) for p in self.log_prob_fn.parameters()]
-            )
+            full_grad = torch.cat([p.grad.view(-1) for p in self.log_prob_fn.parameters()])
             self.full_grad_L2_norm = torch.linalg.norm(full_grad)
             self.full_grad_Linf_norm = torch.max(torch.abs(full_grad))
 
         return (
-            self.full_energy_weight * full_energy
-            + self.full_spin_loss_weight * self.full_spin,
+            self.full_energy_weight * full_energy + self.full_spin_loss_weight * self.full_spin,
             full_grad.detach().numpy().astype(np.float64),
         )
 
@@ -396,9 +388,7 @@ class AmplitudeOptimizer:
             self.iteration,
         )
 
-        self.tb_writer.add_scalar(
-            "optimize/overlap", self.extract_overlap(), self.iteration
-        )
+        self.tb_writer.add_scalar("optimize/overlap", self.extract_overlap(), self.iteration)
         self.tb_writer.add_scalar("optimize/grad_norm", self.grad_norm, self.iteration)
         self.tb_writer.add_scalar(
             "optimize/full_grad_L2_norm", self.full_grad_L2_norm, self.iteration
@@ -420,9 +410,7 @@ class AmplitudeOptimizer:
             fig = plt.figure()
             sorted_predictions = self.log_amplitudes[(-self.log_amplitudes).argsort()]
             plt.plot(
-                sorted_predictions
-                - sorted_predictions[0]
-                + self.log_sorted_true_amplitudes[0],
+                sorted_predictions - sorted_predictions[0] + self.log_sorted_true_amplitudes[0],
                 label="predicted log amplitudes",
             )
             plt.plot(

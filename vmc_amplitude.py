@@ -1,19 +1,20 @@
-from heisenberg_hamiltonians import SpinSystem
-
-import numpy as np
+from dataclasses import dataclass
 from typing import Callable
-import numpy.typing as npt
-import lattice_symmetries as ls
 
-from scipy.sparse import csr_matrix, coo_matrix, diags
-from scipy.sparse.csgraph import connected_components
-from my_stopwatch import stopwatch
-from scipy.special import logsumexp
-from loguru import logger
-import torch.nn as nn
+import lattice_symmetries as ls
+import numpy as np
+import numpy.typing as npt
 import torch
+import torch.nn as nn
+from loguru import logger
+from scipy.sparse import coo_matrix, csr_matrix, diags
+from scipy.sparse.csgraph import connected_components
+from scipy.special import logsumexp
 from torch import Tensor
+
+from heisenberg_hamiltonians import SpinSystem
 from misc_utils import make_unpacked_configurations
+from my_stopwatch import stopwatch
 
 
 def apply_off_diag_to_basis_states(
@@ -32,9 +33,7 @@ def apply_off_diag_to_basis_states(
 
     offsets_arr = ls._chpl_external_array_as_ndarray(offsets, np.int64)
     betas_arr = ls._chpl_external_array_as_ndarray(betas, np.uint64)[: offsets_arr[-1]]
-    coeffs_arr = ls._chpl_external_array_as_ndarray(coeffs, np.complex128)[
-        : offsets_arr[-1]
-    ]
+    coeffs_arr = ls._chpl_external_array_as_ndarray(coeffs, np.complex128)[: offsets_arr[-1]]
     return betas_arr, coeffs_arr, offsets_arr
 
 
@@ -94,9 +93,7 @@ def find_nbd_reference(
         )
 
         # process self
-        cur_coeffs.append(
-            hamiltonian.apply_diag_to_basis_state(state) - energy_baseline
-        )
+        cur_coeffs.append(hamiltonian.apply_diag_to_basis_state(state) - energy_baseline)
         cur_nbd_states.append(state)
 
         # make rows
@@ -156,9 +153,7 @@ def find_nbd(
             hamiltonian, states
         )
     with stopwatch("vmc_amplitude/find_nbd/nbd_states"):
-        nbd_states = np.unique(np.concatenate([nbd_states_data, states])).astype(
-            np.uint64
-        )
+        nbd_states = np.unique(np.concatenate([nbd_states_data, states])).astype(np.uint64)
         # TODO: optimize this
     with stopwatch("vmc_amplitude/find_nbd/nbd_indices"):
         nbd_indices = np.searchsorted(nbd_states, nbd_states_data)
@@ -246,16 +241,12 @@ def nbd_matrix_to_graph(
 
 def true_relsigns(system: SpinSystem) -> Callable[[npt.NDArray], npt.NDArray]:
     def relings(cluster: npt.NDArray) -> npt.NDArray:
-        return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
-            [-1, 1]
-        )
+        return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice([-1, 1])
 
     return relings
 
 
-def almost_true_relsigns(
-    system: SpinSystem, eps: float
-) -> Callable[[npt.NDArray], npt.NDArray]:
+def almost_true_relsigns(system: SpinSystem, eps: float) -> Callable[[npt.NDArray], npt.NDArray]:
     def relings(cluster: npt.NDArray) -> npt.NDArray:
         return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
             [1, -1], p=[1 - eps, eps], size=len(cluster)
@@ -269,7 +260,7 @@ def transfer_signs_to_H(
     M: csr_matrix,
     nbd_states: npt.NDArray,
     relsign_fn: Callable[[npt.NDArray], npt.NDArray],
-):
+) -> csr_matrix:
     """
     Moves the signs from the relative signs to the Hamiltonian matrix.
     """
@@ -307,35 +298,46 @@ def safe_exp_numpy(x: npt.NDArray, normalise: bool = False) -> npt.NDArray:
     return x
 
 
+@dataclass
+class LocalEnergiesExtras:
+    nbd_states: npt.NDArray[np.uint64]
+    log_abs_psi_states: npt.NDArray[np.float64]
+    log_abs_psi_nbd: npt.NDArray[np.float64]
+    abs_psi_nbd: npt.NDArray[np.float64]
+    H_abs_psi: npt.NDArray[np.float64]
+    state_indices: npt.NDArray[np.int64]
+    nbd_matrix: csr_matrix | None
+    nbd_matrix_w_signs: csr_matrix
+
+
 def compute_log_local_energies(
     hamiltonian: ls.Operator,
     states: npt.NDArray[np.uint64],
     relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
     log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
+    energy_baseline: float = 0.0,
     override_nbd_states: npt.NDArray[np.uint64] | None = None,
     override_state_indices: npt.NDArray[np.int64] | None = None,
     override_nbd_matrix: csr_matrix | None = None,
     override_nbd_matrix_w_signs: csr_matrix | None = None,
-) -> tuple[
-    npt.NDArray[np.complex128],  # logarithms local_energies
-    npt.NDArray[np.uint64],  # nbd_states
-    npt.NDArray[np.int64],  # state_indices
-    csr_matrix | None,  # nbd_matrix
-    csr_matrix,  # nbd_matrix_w_signs
-]:
+) -> tuple[npt.NDArray[np.complex128], LocalEnergiesExtras,]:
     """
     Computes the logarithms of local energies of the given states.
 
+    energy_baseline is a value subtracted from the Hamiltonian.
+
     Returns:
         log_local_energies: The logarithms (possibly complex) of local energies of the states.
-        nbd_states: The states that are used to compute the local energies.
-        state_indices: The indices of the states in nbd_states.
-        nbd_matrix: The matrix that is used to compute the local energies.
-        nbd_matrix_w_signs: The matrix that is used to compute the local energies,
-            with the signs of the states transferred to the matrix.
+        extras: A dictionary of extra values that were computed during the computation:
+            nbd_states: The states that are used to compute the local energies.
+            log_abs_psi_states: The logarithms of the absolute values of the wave functions of the states.
+            state_indices: The indices of the states in nbd_states.
+            nbd_matrix: The matrix that is used to compute the local energies.
+            nbd_matrix_w_signs: The matrix that is used to compute the local energies,
+                with the signs of the states transferred to the matrix.
     """
     if override_nbd_states is None:
-        nbd_matrix, nbd_states = find_nbd(hamiltonian, states)
+        nbd_matrix, nbd_states = find_nbd(hamiltonian, states, energy_baseline=energy_baseline)
     else:
         nbd_states = override_nbd_states
         nbd_matrix = None
@@ -354,9 +356,7 @@ def compute_log_local_energies(
                 "override_nbd_matrix or override_nbd_matrix_w_signs "
                 "must be provided."
             )
-        nbd_matrix_w_signs = transfer_signs_to_H(
-            states, nbd_matrix, nbd_states, relsigns_fn
-        )
+        nbd_matrix_w_signs = transfer_signs_to_H(states, nbd_matrix, nbd_states, relsigns_fn)
     else:
         nbd_matrix_w_signs = override_nbd_matrix_w_signs
 
@@ -367,13 +367,26 @@ def compute_log_local_energies(
     logger.info(f"{log_abs_psi_nbd.min()=}, {log_abs_psi_nbd.max()=}")
     logger.info(f"{abs_psi_nbd.min()=}, {abs_psi_nbd.max()=}")
     with stopwatch("vmc_amplitude/compute_local_energies/local_energies"):
+        H_abs_psi = nbd_matrix_w_signs @ abs_psi_nbd
         log_local_energies = (
-            np.log((nbd_matrix_w_signs @ abs_psi_nbd).astype(np.complex128))
+            np.log((H_abs_psi).astype(np.complex128))
             - (log_abs_psi_states)
             + log_abs_psi_nbd.max()
             # safe_exp subtracted log_abs_psi_states.max(), we have to compensate
         ).astype(np.complex128)
-    return log_local_energies, nbd_states, state_indices, nbd_matrix, nbd_matrix_w_signs
+    return (
+        log_local_energies,
+        LocalEnergiesExtras(
+            nbd_states=nbd_states,
+            log_abs_psi_states=log_abs_psi_states,
+            log_abs_psi_nbd=log_abs_psi_nbd,
+            abs_psi_nbd=abs_psi_nbd,
+            H_abs_psi=H_abs_psi,
+            state_indices=state_indices,
+            nbd_matrix=nbd_matrix,
+            nbd_matrix_w_signs=nbd_matrix_w_signs,
+        ),
+    )
 
 
 def compute_local_energies_reference(
@@ -383,9 +396,7 @@ def compute_local_energies_reference(
     log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
 ) -> npt.NDArray[np.float64]:
     nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
-    nbd_matrix_w_signs = transfer_signs_to_H(
-        states, nbd_matrix, nbd_states, relsigns_fn
-    )
+    nbd_matrix_w_signs = transfer_signs_to_H(states, nbd_matrix, nbd_states, relsigns_fn)
     abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
     states_indices = np.searchsorted(nbd_states, states)
     abs_psi_states = abs_psi_nbd[states_indices]
@@ -393,9 +404,7 @@ def compute_local_energies_reference(
 
 
 class LogProbDenseNet(nn.Module):
-    def __init__(
-        self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1, scaling=1.0
-    ):
+    def __init__(self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1, scaling=1.0):
         super().__init__()
         self.system = system
         self.n_hidden = n_hidden
@@ -412,9 +421,7 @@ class LogProbDenseNet(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return self.scaling * self.net(
             torch.from_numpy(
-                make_unpacked_configurations(x, self.system.number_spins).astype(
-                    np.float32
-                )
+                make_unpacked_configurations(x, self.system.number_spins).astype(np.float32)
             )
         )
 
@@ -446,9 +453,9 @@ class LogProbDenseNetPairwiseXor(nn.Module):
         self.xor_pairs = xor_pairs
 
     def forward(self, x: Tensor) -> Tensor:
-        configs = 1 - 2 * make_unpacked_configurations(
-            x, self.system.number_spins
-        ).astype(np.float32)
+        configs = 1 - 2 * make_unpacked_configurations(x, self.system.number_spins).astype(
+            np.float32
+        )
         products = configs[:, self.xor_pairs[0]] * configs[:, self.xor_pairs[1]]
 
         configs = np.concatenate((configs, products), axis=1)
