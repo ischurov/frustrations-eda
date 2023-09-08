@@ -9,8 +9,8 @@ from igraph import Graph
 from sympy.combinatorics import Permutation, PermutationGroup
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import ChainLattice, FactorLattice, KagomeLattice, SpinLattice
 from misc_utils import one
+from spin_lattices import ChainLattice, FactorLattice, KagomeLattice, SpinLattice
 
 lat = KagomeLattice(3, 4, isotropic=True)
 assert lat.number_spins == 36
@@ -24,4 +24,4 @@ system = HeisenbergJ1J2(
     skip_symmetries_whitelist=True,
 )
 
-system.get_eigenstates(1)
+print(system.get_eigenstates(1))
