@@ -12,12 +12,13 @@ from scipy.sparse.csgraph import connected_components
 from scipy.special import logsumexp
 from torch import Tensor
 
+from gcnn_naive import SplitGroupResConvNet
 from heisenberg_hamiltonians import SpinSystem
 from misc_utils import make_unpacked_configurations
 from my_stopwatch import stopwatch
 
 
-def apply_off_diag_to_basis_states(
+def apply_off_diag_to_basis_states_reference(
     op: ls.Operator, alphas: npt.NDArray[np.uint64]
 ) -> tuple[npt.NDArray[np.uint64], npt.NDArray[np.complex128], npt.NDArray[np.int64]]:
     alphas = np.asarray(alphas, order="C", dtype=np.uint64)
@@ -37,7 +38,7 @@ def apply_off_diag_to_basis_states(
     return betas_arr, coeffs_arr, offsets_arr
 
 
-def apply_diag_to_basis_states(
+def apply_diag_to_basis_states_reference(
     op: ls.Operator, alphas: npt.NDArray[np.uint64]
 ) -> npt.NDArray[np.float64]:
     alphas = np.asarray(alphas, order="C", dtype=np.uint64)
@@ -149,8 +150,8 @@ def find_nbd(
         ``M[i, j] = <states[i] | (H - energy_baseline) | nbd_states[j]>``
     """
     with stopwatch("vmc_amplitude/find_nbd/apply_off_diag"):
-        nbd_states_data, coeffs_data, offsets_data = apply_off_diag_to_basis_states(
-            hamiltonian, states
+        nbd_states_data, coeffs_data, offsets_data = hamiltonian.apply_off_diag_to_basis_state(
+            states
         )
     with stopwatch("vmc_amplitude/find_nbd/nbd_states"):
         nbd_states = np.unique(np.concatenate([nbd_states_data, states])).astype(np.uint64)
@@ -167,14 +168,19 @@ def find_nbd(
 
     with stopwatch("vmc_amplitude/find_nbd/apply_diag"):
         # Add diagonal elements
-        diag_coeffs = apply_diag_to_basis_states(hamiltonian, states) - energy_baseline
+        diag_coeffs = hamiltonian.apply_diag_to_basis_state(states) - energy_baseline
     with stopwatch("vmc_amplitude/find_nbd/diag_indices"):
         diag_indices = np.searchsorted(nbd_states, states)
     with stopwatch("vmc_amplitude/find_nbd/matrix_with_diag"):
-        matrix_with_diag = matrix_without_diag + csr_matrix(
-            (diag_coeffs, diag_indices, np.arange(len(states) + 1)),
-            shape=(len(states), len(nbd_states)),
+        matrix_with_diag = (
+            matrix_without_diag
+            + csr_matrix(
+                (diag_coeffs, diag_indices, np.arange(len(states) + 1)),
+                shape=(len(states), len(nbd_states)),
+            ).tocsr()
         )
+
+    matrix_with_diag.sum_duplicates()
 
     return matrix_with_diag, nbd_states
 
@@ -460,3 +466,36 @@ class LogProbDenseNetPairwiseXor(nn.Module):
 
         configs = np.concatenate((configs, products), axis=1)
         return self.scaling * self.net(torch.from_numpy(configs))
+
+
+class LogProbFn(nn.Module):
+    """
+    Wraps nn.Module to make .forward accept
+    tensor of configurations represented as integers
+    """
+
+    def __init__(self, system: SpinSystem, net: nn.Module):
+        super().__init__()
+        self.system = system
+        self.net = net
+
+    def forward(self, x: Tensor) -> Tensor:
+        return self.net(
+            torch.from_numpy(
+                make_unpacked_configurations(x, self.system.number_spins).astype(np.float32)
+            )
+        )
+
+
+def get_csr_hamiltonian(system: SpinSystem):
+    states, coeffs, row_idxs = system.hamiltonian.apply_off_diag_to_basis_state(
+        system.basis.states
+    )
+
+    columns = system.basis.index(states)
+    off_diagonal_matrix = csr_matrix(
+        (coeffs, columns, row_idxs),
+        shape=(system.basis.states.shape[0], system.basis.states.shape[0]),
+    )
+    diagonal = diags(system.hamiltonian.apply_diag_to_basis_state(system.basis.states))
+    return (off_diagonal_matrix + diagonal).real

@@ -14,8 +14,8 @@ import seaborn as sns
 from loguru import logger
 from sympy.combinatorics import Permutation
 
-from parity import parity, popcount
 from misc_utils import batched_state_info_df, make_unpacked_configurations
+from parity import parity, popcount
 
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 

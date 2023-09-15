@@ -1,4 +1,4 @@
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from math import ceil, sqrt
 from pathlib import Path
 
@@ -78,9 +78,9 @@ def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
 
 
 def make_packed_configurations(states: npt.ArrayLike, number_spins: int):
-    return (
-        np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")
-    ).sum(axis=1)
+    return (np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")).sum(
+        axis=1
+    )
 
 
 def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
@@ -153,15 +153,20 @@ def hadamard_transform(x: npt.NDArray[np.float64], verbose: bool = False):
 # END BASED
 
 
-def read_jsonl_to_df(file: str | Path):
-    with jsonlines.open(file) as reader:
-        return pd.DataFrame(reader)
+def read_jsonl_to_df(file: str | Path | Iterable[str | Path]):
+    if isinstance(file, (str, Path)):
+        file = [file]
+    dataframes = []
+    for f in file:
+        with jsonlines.open(f) as reader:
+            dataframes.append(pd.DataFrame(reader))
+    return pd.concat(dataframes).reset_index(drop=True)
 
 
 def read_json_dir_to_df(dir: str | Path):
-    return pd.concat(
-        read_jsonl_to_df(file) for file in Path(dir).glob("*.json")
-    ).reset_index(drop=True)
+    return pd.concat(read_jsonl_to_df(file) for file in Path(dir).glob("*.json")).reset_index(
+        drop=True
+    )
 
 
 def get_abslargest_terms(
@@ -197,9 +202,7 @@ def groupby_shuffle(values, groups):
     # construct the shuffled values array
     shuffled_values = np.empty_like(values)
     for group in zip(unique_groups):
-        shuffled_values[groups == group] = np.random.permutation(
-            values[groups == group]
-        )
+        shuffled_values[groups == group] = np.random.permutation(values[groups == group])
 
     return shuffled_values
 
@@ -232,3 +235,17 @@ def differentiable_safe_exp(x: torch.Tensor, normalise: bool = True) -> torch.Te
     if normalise:
         x = x / torch.sum(x)
     return x
+
+
+def column_to(type_: type, cols: str | list[str]) -> Callable[[pd.DataFrame], pd.DataFrame]:
+    def wrapper(df):
+        df = df.copy()
+        if isinstance(cols, str):
+            cols_ = [cols]
+        else:
+            cols_ = cols
+        for col in cols_:
+            df[col] = df[col].astype(type_)
+        return df
+
+    return wrapper

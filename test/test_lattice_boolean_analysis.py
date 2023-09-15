@@ -20,8 +20,8 @@ from lattice_boolean_analysis import (
     keep_everything,
     keep_largest_n,
 )
-from spin_lattices import KagomeLattice, SquareLattice
 from misc_utils import make_unpacked_configurations
+from spin_lattices import KagomeLattice, SquareLattice
 
 
 class TestLatticeBooleanAnalysis(TestCase):

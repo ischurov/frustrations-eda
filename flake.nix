@@ -9,7 +9,7 @@
   inputs = rec {
     nixpkgs.follows = "lattice-symmetries/nixpkgs";
     flake-utils.follows = "lattice-symmetries/flake-utils";
-    lattice-symmetries.url = "github:twesterhout/lattice-symmetries";
+    lattice-symmetries.url = "github:twesterhout/lattice-symmetries/nikita";
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
@@ -36,6 +36,7 @@
         more-itertools
         numpy
         pandas
+        plotnine
         pytest
         pyyaml
         scikit-learn
