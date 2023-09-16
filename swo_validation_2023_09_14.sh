@@ -6,7 +6,7 @@
 #SBATCH -p tcm
 #SBATCH --exclusive
 #SBATCH --mem=0
-#SBATCH --array=10-13
+#SBATCH --array=27
 
 export PATH="/home/ischurov/.local/bin:$PATH"
 cd /home/ischurov/tcm10/frustrations-eda

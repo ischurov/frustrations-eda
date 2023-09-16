@@ -23,6 +23,19 @@ self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
 output_dir.mkdir(exist_ok=True)
 
+default_config = {
+    "n_samples": 5000,
+    "energy_baseline": 10.0,
+    "lattice_name": "kagome27",
+    "epochs": 100,
+    "reset_network": False,
+    "net": "LogProbDenseNet",
+    "use_symmetries": True,
+    "power_iterations": 50,
+    "early_stop": False,
+    "resample_every": 1,
+}
+
 
 def true_amplitudes(system: SpinSystem, states):
     _, eigenstates = system.get_eigenstates(1)
@@ -32,28 +45,142 @@ def true_amplitudes(system: SpinSystem, states):
 
 
 def main(task_id: int):
-    # fmt: off
-    configs = [
-        (5000, 10.0, "kagome36", 100, False, "LogProbDenseNet", True),          # 0
-        (5000, 250.0, "kagome36", 100, False, "LogProbDenseNet", True),         # 1
-        (5000, 10.0, "kagome27", 100, False, "LogProbDenseNet", True),          # 2
-        (5000, 250.0, "kagome27", 100, False, "LogProbDenseNet", True),         # 3
-        (5000, 10.0, "kagome27", 100, False, "SplitGroupResConvNet", True),     # 4
-        (5000, 250.0, "kagome27", 100, False, "SplitGroupResConvNet", True),    # 5
-        (5000, 10.0, "kagome27", 10, False, "SplitGroupResConvNet", True),      # 6
-        (5000, 250.0, "kagome27", 10, False, "SplitGroupResConvNet", True),     # 7
-        (5000, 10.0, "kagome2x4", 100, False, "LogProbDenseNet", True),         # 8
-        (5000, 250.0, "kagome2x4", 100, False, "LogProbDenseNet", True),        # 9
-        (5000, 10.0, "kagome27", 10, False, "SplitGroupResConvNet", False),     # 10
-        (5000, 250.0, "kagome27", 10, False, "SplitGroupResConvNet", False),    # 11
-        (5000, 10.0, "kagome27", 10, False, "LogProbDenseNet", False),          # 12
-        (5000, 250.0, "kagome27", 10, False, "LogProbDenseNet", False),         # 13
-    ]
-    # fmt: on
+    # Define specific configurations
+    configs = {
+        0: {"lattice_name": "kagome36"},
+        1: {"energy_baseline": 250.0, "lattice_name": "kagome36"},
+        2: {},
+        3: {"energy_baseline": 250.0},
+        4: {"net": "SplitGroupResConvNet"},
+        5: {"energy_baseline": 250.0, "net": "SplitGroupResConvNet"},
+        6: {"epochs": 10, "net": "SplitGroupResConvNet"},
+        7: {"energy_baseline": 250.0, "epochs": 10, "net": "SplitGroupResConvNet"},
+        8: {"lattice_name": "kagome2x4"},
+        9: {"energy_baseline": 250.0, "lattice_name": "kagome2x4"},
+        10: {"epochs": 10, "net": "SplitGroupResConvNet", "use_symmetries": False},
+        11: {
+            "energy_baseline": 250.0,
+            "epochs": 10,
+            "net": "SplitGroupResConvNet",
+            "use_symmetries": False,
+        },
+        12: {"epochs": 10, "use_symmetries": False},
+        13: {"energy_baseline": 250.0, "epochs": 10, "use_symmetries": False},
+        14: {"lattice_name": "kagome2x4", "epochs": 10, "use_symmetries": False},
+        15: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome2x4",
+            "epochs": 10,
+            "use_symmetries": False,
+        },
+        16: {"lattice_name": "kagome2x5", "epochs": 10, "use_symmetries": False},
+        17: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome2x5",
+            "epochs": 10,
+            "use_symmetries": False,
+        },
+        18: {"lattice_name": "kagome2x4", "use_symmetries": False},
+        19: {"energy_baseline": 250.0, "lattice_name": "kagome2x4", "use_symmetries": False},
+        20: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome36",
+            "epochs": 10,
+            "power_iterations": 500,
+        },
+        21: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome36",
+            "epochs": 1,
+            "power_iterations": 500,
+        },
+        22: {
+            "energy_baseline": 1000.0,
+            "lattice_name": "kagome36",
+            "epochs": 10,
+            "power_iterations": 500,
+        },
+        23: {
+            "energy_baseline": 1000.0,
+            "lattice_name": "kagome36",
+            "epochs": 1000,
+            "early_stop": True,
+            "power_iterations": 500,
+        },
+        24: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome36",
+            "epochs": 1000,
+            "early_stop": True,
+            "power_iterations": 500,
+        },
+        25: {
+            "energy_baseline": 1000.0,
+            "lattice_name": "kagome36",
+            "epochs": 10,
+            "power_iterations": 500,
+            "n_samples": 25000,
+        },
+        26: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome36",
+            "epochs": 10,
+            "power_iterations": 500,
+            "n_samples": 25000,
+        },
+        27: {
+            "energy_baseline": 250.0,
+            "lattice_name": "kagome36",
+            "epochs": 10,
+            "power_iterations": 500,
+            "n_samples": 5000,
+            "resample_every": 10,
+        },
+    }
 
-    n_samples, energy_baseline, lattice_name, epochs, reset_network, net, use_symmetries = configs[
-        task_id % len(configs)
-    ]
+    # Get specific configuration by task_id
+    config = default_config | configs[task_id % len(configs)]
+
+    # Access parameters
+    n_samples = config["n_samples"]
+    energy_baseline = config["energy_baseline"]
+    lattice_name = config["lattice_name"]
+    epochs = config["epochs"]
+    reset_network = config["reset_network"]
+    net = config["net"]
+    use_symmetries = config["use_symmetries"]
+    power_iterations = config["power_iterations"]
+    early_stop = config["early_stop"]
+    resample_every = config["resample_every"]
+
+    # # fmt: off
+    # configs = [
+    #     (5000, 10.0, "kagome36", 100, False, "LogProbDenseNet", True),          # 0
+    #     (5000, 250.0, "kagome36", 100, False, "LogProbDenseNet", True),         # 1
+    #     (5000, 10.0, "kagome27", 100, False, "LogProbDenseNet", True),          # 2
+    #     (5000, 250.0, "kagome27", 100, False, "LogProbDenseNet", True),         # 3
+    #     (5000, 10.0, "kagome27", 100, False, "SplitGroupResConvNet", True),     # 4
+    #     (5000, 250.0, "kagome27", 100, False, "SplitGroupResConvNet", True),    # 5
+    #     (5000, 10.0, "kagome27", 10, False, "SplitGroupResConvNet", True),      # 6
+    #     (5000, 250.0, "kagome27", 10, False, "SplitGroupResConvNet", True),     # 7
+    #     (5000, 10.0, "kagome2x4", 100, False, "LogProbDenseNet", True),         # 8
+    #     (5000, 250.0, "kagome2x4", 100, False, "LogProbDenseNet", True),        # 9
+    #     (5000, 10.0, "kagome27", 10, False, "SplitGroupResConvNet", False),     # 10
+    #     (5000, 250.0, "kagome27", 10, False, "SplitGroupResConvNet", False),    # 11
+    #     (5000, 10.0, "kagome27", 10, False, "LogProbDenseNet", False),          # 12
+    #     (5000, 250.0, "kagome27", 10, False, "LogProbDenseNet", False),         # 13
+    #     (5000, 10.0, "kagome2x4", 10, False, "LogProbDenseNet", False),         # 14
+    #     (5000, 250.0, "kagome2x4", 10, False, "LogProbDenseNet", False),        # 15
+    #     (5000, 10.0, "kagome2x5", 10, False, "LogProbDenseNet", False),         # 16
+    #     (5000, 250.0, "kagome2x5", 10, False, "LogProbDenseNet", False),        # 17
+    #     (5000, 10.0, "kagome2x4", 100, False, "LogProbDenseNet", False),        # 18
+    #     (5000, 250.0, "kagome2x4", 100, False, "LogProbDenseNet", False),       # 19
+    # ]
+    # # fmt: on
+
+    # n_samples, energy_baseline, lattice_name, epochs, reset_network, net, use_symmetries = configs[
+    #     task_id % len(configs)
+    # ]
 
     if lattice_name == "kagome36":
         lattice, generators = get_kagome36()
@@ -63,6 +190,8 @@ def main(task_id: int):
         filter1_sites = [14, 15, 16, 17, 8, 6, 13, 24, 18, 9, 7, 5]
     elif lattice_name == "kagome2x4":
         lattice = KagomeLattice(2, 4)
+    elif lattice_name == "kagome2x5":
+        lattice = KagomeLattice(2, 5)
     else:
         raise ValueError(f"Unknown lattice {lattice_name}")
     run = task_id // len(configs)
@@ -75,22 +204,16 @@ def main(task_id: int):
         mode = "power"
 
     test_samples = 50000
-    power_iterations = 50
+
     lr = 1e-3
     n_hidden = 512
     batch_size = 64
 
-    params_dict = {
+    params_dict = config | {
         "run": run,
         "mode": mode,
-        "n_samples": n_samples,
         "lattice": lattice.get_cache_id(),
-        "energy_baseline": energy_baseline,
         "n_spins": lattice.number_spins,
-        "epochs": epochs,
-        "reset_network": reset_network,
-        "net": net,
-        "use_symmetries": use_symmetries,
     }
 
     # lattice = KagomeLattice(2, 3)
@@ -156,38 +279,36 @@ def main(task_id: int):
     log_prob_fn = net_factory()
     optimizer = torch.optim.Adam(log_prob_fn.parameters(), lr=lr)
     criterion = torch.nn.MSELoss()
+    states_test_uniform = torch.from_numpy(
+        np.random.choice(system.basis.states, test_samples, replace=True).astype(np.int64)
+    ).long()
 
     for iteration in range(power_iterations):
-        if params_dict["reset_network"]:
+        if reset_network:
+            logger.info("Resetting network")
             log_prob_fn = net_factory()
             optimizer = torch.optim.Adam(log_prob_fn.parameters(), lr=lr)
 
         logger.info(f"Running iteration {iteration}")
-        logger.info(f"Sampling")
-        all_states, _ = sample_exactly(
-            log_prob_fn,
-            system.basis,
-            SamplingOptions(
-                number_samples=n_samples + test_samples,
-                number_chains=1,
-                mode="exact",
-                sweep_size=1,
-                number_discarded=0,
-            ),
-            return_all_probs=False,
-        )
-        logger.info("Sampling successful")
-        all_states = all_states.view(-1)
-        states = all_states[:n_samples]
-        states_validation = all_states[n_samples:]
+        if iteration % resample_every == 0:
+            logger.info(f"Sampling")
+            all_states, _ = sample_exactly(
+                log_prob_fn,
+                system.basis,
+                SamplingOptions(
+                    number_samples=n_samples + test_samples,
+                    number_chains=1,
+                    mode="exact",
+                    sweep_size=1,
+                    number_discarded=0,
+                ),
+                return_all_probs=False,
+            )
+            logger.info("Sampling successful")
+            all_states = all_states.view(-1)
+            states = all_states[:n_samples]
+            states_validation = all_states[n_samples:]
 
-        remaining_states = np.delete(
-            system.basis.states,
-            system.basis.index(all_states.detach().numpy()),
-        )
-        states_test_uniform = torch.from_numpy(
-            np.random.choice(remaining_states, test_samples, replace=True).astype(np.int64)
-        ).long()
         # #            all_states = np.concatenate([states.detach().numpy(), states_test.detach().numpy()])
         # logger.info("Test states sampled")
         if mode == "power":
@@ -255,6 +376,8 @@ def main(task_id: int):
         #     torch.exp(target_test.view(-1) * 0.5), true_amplitudes[system.basis.index(states_test)]
         # )
         logger.info("Starting training")
+        loss_validation = None
+        epoch = -1
         for epoch in range(epochs):
             logger.info(f"Running epoch {epoch}")
             running_loss = 0.0
@@ -286,6 +409,7 @@ def main(task_id: int):
                 # Collect loss
                 running_loss += loss.item()
             logger.info(f"Loss: {running_loss / len(dataloader)}")
+            previous_loss_validation = loss_validation
             loss_validation = criterion(
                 log_prob_fn(states_validation), target_validation.view(-1, 1)
             ).item()
@@ -302,6 +426,14 @@ def main(task_id: int):
                     | params_dict
                 )
 
+            if (
+                early_stop
+                and previous_loss_validation is not None
+                and loss_validation > previous_loss_validation
+            ):
+                logger.info("Early stopping")
+                break
+
         # new_ground_state_overlap_full = overlap(
         #     torch.exp(log_prob_fn(system.basis.states).view(-1) * 0.5),
         #     true_amplitudes(system, system.basis.states),
@@ -316,7 +448,7 @@ def main(task_id: int):
 
         new_ground_state_overlap_test = overlap(
             torch.exp(log_prob_fn(states_test_uniform).view(-1) * 0.5),
-            true_amplitudes(system, states_validation),
+            true_amplitudes(system, states_test_uniform),
         )
 
         with jsonlines.open(output_dir / str(task_id) / "overlaps.jsonl", mode="a") as writer:
@@ -332,6 +464,7 @@ def main(task_id: int):
                     # "new_ground_state_overlap_train": new_ground_state_overlap_train.item(),
                     "new_ground_state_overlap_test": new_ground_state_overlap_test.item(),
                     "alpha": alpha.real if alpha is not None else None,
+                    "epoch": epoch,
                 }
                 | params_dict
             )
