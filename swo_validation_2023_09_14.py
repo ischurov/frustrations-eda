@@ -2,6 +2,7 @@ from itertools import product
 from pathlib import Path
 
 import fire
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from jsonlines import jsonlines
@@ -34,6 +35,124 @@ default_config = {
     "power_iterations": 50,
     "early_stop": False,
     "resample_every": 1,
+    "snapshot_each": None,
+}
+
+configs = {
+    0: {"lattice_name": "kagome36"},
+    1: {"energy_baseline": 250.0, "lattice_name": "kagome36"},
+    2: {},
+    3: {"energy_baseline": 250.0},
+    4: {"net": "SplitGroupResConvNet"},
+    5: {"energy_baseline": 250.0, "net": "SplitGroupResConvNet"},
+    6: {"epochs": 10, "net": "SplitGroupResConvNet"},
+    7: {"energy_baseline": 250.0, "epochs": 10, "net": "SplitGroupResConvNet"},
+    8: {"lattice_name": "kagome2x4"},
+    9: {"energy_baseline": 250.0, "lattice_name": "kagome2x4"},
+    10: {"epochs": 10, "net": "SplitGroupResConvNet", "use_symmetries": False},
+    11: {
+        "energy_baseline": 250.0,
+        "epochs": 10,
+        "net": "SplitGroupResConvNet",
+        "use_symmetries": False,
+    },
+    12: {"epochs": 10, "use_symmetries": False},
+    13: {"energy_baseline": 250.0, "epochs": 10, "use_symmetries": False},
+    14: {"lattice_name": "kagome2x4", "epochs": 10, "use_symmetries": False},
+    15: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome2x4",
+        "epochs": 10,
+        "use_symmetries": False,
+    },
+    16: {"lattice_name": "kagome2x5", "epochs": 10, "use_symmetries": False},
+    17: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome2x5",
+        "epochs": 10,
+        "use_symmetries": False,
+    },
+    18: {"lattice_name": "kagome2x4", "use_symmetries": False},
+    19: {"energy_baseline": 250.0, "lattice_name": "kagome2x4", "use_symmetries": False},
+    20: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "snapshot_each": 1,
+    },
+    21: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 1,
+        "power_iterations": 500,
+        "snapshot_each": 1,
+    },
+    22: {
+        "energy_baseline": 1000.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "snapshot_each": 1,
+    },
+    23: {
+        "energy_baseline": 1000.0,
+        "lattice_name": "kagome36",
+        "epochs": 1000,
+        "early_stop": True,
+        "power_iterations": 500,
+        "snapshot_each": 1,
+    },
+    24: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 1000,
+        "early_stop": True,
+        "power_iterations": 500,
+        "snapshot_each": 1,
+    },
+    25: {
+        "energy_baseline": 1000.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 25000,
+        "snapshot_each": 1,
+    },
+    26: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 25000,
+    },
+    27: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 5000,
+        "resample_every": 10,
+    },
+    28: {  # copy of 20
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+    },
+    29: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 50,
+        "power_iterations": 500,
+    },
+    30: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome27",
+        "epochs": 10,
+        "power_iterations": 50,
+        "snapshot_each": 1,
+    },
 }
 
 
@@ -45,99 +164,6 @@ def true_amplitudes(system: SpinSystem, states):
 
 
 def main(task_id: int):
-    # Define specific configurations
-    configs = {
-        0: {"lattice_name": "kagome36"},
-        1: {"energy_baseline": 250.0, "lattice_name": "kagome36"},
-        2: {},
-        3: {"energy_baseline": 250.0},
-        4: {"net": "SplitGroupResConvNet"},
-        5: {"energy_baseline": 250.0, "net": "SplitGroupResConvNet"},
-        6: {"epochs": 10, "net": "SplitGroupResConvNet"},
-        7: {"energy_baseline": 250.0, "epochs": 10, "net": "SplitGroupResConvNet"},
-        8: {"lattice_name": "kagome2x4"},
-        9: {"energy_baseline": 250.0, "lattice_name": "kagome2x4"},
-        10: {"epochs": 10, "net": "SplitGroupResConvNet", "use_symmetries": False},
-        11: {
-            "energy_baseline": 250.0,
-            "epochs": 10,
-            "net": "SplitGroupResConvNet",
-            "use_symmetries": False,
-        },
-        12: {"epochs": 10, "use_symmetries": False},
-        13: {"energy_baseline": 250.0, "epochs": 10, "use_symmetries": False},
-        14: {"lattice_name": "kagome2x4", "epochs": 10, "use_symmetries": False},
-        15: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome2x4",
-            "epochs": 10,
-            "use_symmetries": False,
-        },
-        16: {"lattice_name": "kagome2x5", "epochs": 10, "use_symmetries": False},
-        17: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome2x5",
-            "epochs": 10,
-            "use_symmetries": False,
-        },
-        18: {"lattice_name": "kagome2x4", "use_symmetries": False},
-        19: {"energy_baseline": 250.0, "lattice_name": "kagome2x4", "use_symmetries": False},
-        20: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome36",
-            "epochs": 10,
-            "power_iterations": 500,
-        },
-        21: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome36",
-            "epochs": 1,
-            "power_iterations": 500,
-        },
-        22: {
-            "energy_baseline": 1000.0,
-            "lattice_name": "kagome36",
-            "epochs": 10,
-            "power_iterations": 500,
-        },
-        23: {
-            "energy_baseline": 1000.0,
-            "lattice_name": "kagome36",
-            "epochs": 1000,
-            "early_stop": True,
-            "power_iterations": 500,
-        },
-        24: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome36",
-            "epochs": 1000,
-            "early_stop": True,
-            "power_iterations": 500,
-        },
-        25: {
-            "energy_baseline": 1000.0,
-            "lattice_name": "kagome36",
-            "epochs": 10,
-            "power_iterations": 500,
-            "n_samples": 25000,
-        },
-        26: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome36",
-            "epochs": 10,
-            "power_iterations": 500,
-            "n_samples": 25000,
-        },
-        27: {
-            "energy_baseline": 250.0,
-            "lattice_name": "kagome36",
-            "epochs": 10,
-            "power_iterations": 500,
-            "n_samples": 5000,
-            "resample_every": 10,
-        },
-    }
-
     # Get specific configuration by task_id
     config = default_config | configs[task_id % len(configs)]
 
@@ -152,6 +178,7 @@ def main(task_id: int):
     power_iterations = config["power_iterations"]
     early_stop = config["early_stop"]
     resample_every = config["resample_every"]
+    snapshot_each = config["snapshot_each"]
 
     # # fmt: off
     # configs = [
@@ -214,6 +241,7 @@ def main(task_id: int):
         "mode": mode,
         "lattice": lattice.get_cache_id(),
         "n_spins": lattice.number_spins,
+        "task_id": task_id,
     }
 
     # lattice = KagomeLattice(2, 3)
@@ -276,12 +304,18 @@ def main(task_id: int):
     relsigns_fn = almost_true_relsigns(system, eps=0.0)
 
     logger.info(f"Running {mode=} with run {run}")
+
     log_prob_fn = net_factory()
+    previous_log_prob_fn = net_factory()
+
     optimizer = torch.optim.Adam(log_prob_fn.parameters(), lr=lr)
     criterion = torch.nn.MSELoss()
     states_test_uniform = torch.from_numpy(
         np.random.choice(system.basis.states, test_samples, replace=True).astype(np.int64)
     ).long()
+
+    true_amplitudes_test = true_amplitudes(system, states_test_uniform)
+    true_amplitudes_test /= torch.sqrt(torch.sum(true_amplitudes_test**2))
 
     for iteration in range(power_iterations):
         if reset_network:
@@ -292,7 +326,7 @@ def main(task_id: int):
         logger.info(f"Running iteration {iteration}")
         if iteration % resample_every == 0:
             logger.info(f"Sampling")
-            all_states, _ = sample_exactly(
+            all_states, _, all_probs = sample_exactly(
                 log_prob_fn,
                 system.basis,
                 SamplingOptions(
@@ -302,7 +336,7 @@ def main(task_id: int):
                     sweep_size=1,
                     number_discarded=0,
                 ),
-                return_all_probs=False,
+                return_all_probs=True,
             )
             logger.info("Sampling successful")
             all_states = all_states.view(-1)
@@ -313,7 +347,7 @@ def main(task_id: int):
         # logger.info("Test states sampled")
         if mode == "power":
             logger.info("Generating new train set with power method")
-            all_target = generate_training_set(
+            all_target, local_energies, new_psi = generate_training_set(
                 hamiltonian=system.hamiltonian,
                 states=all_states.detach().numpy(),
                 log_prob_fn=lambda s: log_prob_fn(s).detach().numpy().reshape(-1),
@@ -322,15 +356,6 @@ def main(task_id: int):
             )
             logger.info("Done")
             alpha = None
-        elif mode == "lanczos":
-            logger.info("Generating new train set with Lanczos")
-            all_target, alpha = generate_training_set_lanczos(
-                hamiltonian=system.hamiltonian,
-                states=all_states.detach().numpy(),
-                log_prob_fn=lambda s: log_prob_fn(s).detach().numpy().reshape(-1),
-                relsigns_fn=relsigns_fn,
-            )
-            logger.info(f"Done, alpha={alpha}")
         else:
             raise ValueError(f"Unknown mode {mode}")
         logger.info("Making TensorDataset")
@@ -381,6 +406,9 @@ def main(task_id: int):
         for epoch in range(epochs):
             logger.info(f"Running epoch {epoch}")
             running_loss = 0.0
+
+            previous_log_prob_fn.load_state_dict(log_prob_fn.state_dict())
+
             for action_index, data in enumerate(dataloader, 0):
                 # Get the inputs and move them to the specified device
                 inputs, log_probs = data
@@ -432,6 +460,8 @@ def main(task_id: int):
                 and loss_validation > previous_loss_validation
             ):
                 logger.info("Early stopping")
+                # Roll back to previous model
+                log_prob_fn.load_state_dict(previous_log_prob_fn.state_dict())
                 break
 
         # new_ground_state_overlap_full = overlap(
@@ -445,11 +475,44 @@ def main(task_id: int):
         #     torch.exp(log_prob_fn(states).view(-1) * 0.5),
         #     true_amplitudes(system, states),
         # )
+        predicted_amplitudes_test = torch.exp(log_prob_fn(states_test_uniform).view(-1) * 0.5)
+        predicted_amplitudes_test /= torch.sqrt(torch.sum(predicted_amplitudes_test**2))
 
         new_ground_state_overlap_test = overlap(
-            torch.exp(log_prob_fn(states_test_uniform).view(-1) * 0.5),
-            true_amplitudes(system, states_test_uniform),
+            predicted_amplitudes_test,
+            true_amplitudes_test,
         )
+
+        previous_predicted_amplitudes_test = np.sqrt(
+            all_probs[system.basis.index(states_test_uniform)]
+        )
+
+        fig, ax = plt.subplots(figsize=(7, 7))
+        ax.scatter(true_amplitudes_test, previous_predicted_amplitudes_test, s=0.1)
+        ax.plot([0, 1], [0, 1], ls="--", color="C1")
+        # make picture log-log
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlim(1e-9, 1)
+        ax.set_ylim(1e-9, 1)
+        ax.set_xlabel("True amplitude")
+        ax.set_ylabel("Predicted amplitude")
+
+        fig.savefig(str(output_dir / str(task_id) / f"amplitudes_{iteration:04d}.png"))
+        plt.close(fig)
+
+        ipr = (
+            torch.sum(predicted_amplitudes_test**4)
+            / torch.sum(predicted_amplitudes_test**2) ** 2
+        ).item()
+
+        if local_energies is not None:
+            energy_data = {
+                "energy": float(np.mean(local_energies).real),
+                "loc_energy_std": float(np.std(local_energies).real),
+            }
+        else:
+            energy_data = {}
 
         with jsonlines.open(output_dir / str(task_id) / "overlaps.jsonl", mode="a") as writer:
             writer.write(
@@ -465,8 +528,17 @@ def main(task_id: int):
                     "new_ground_state_overlap_test": new_ground_state_overlap_test.item(),
                     "alpha": alpha.real if alpha is not None else None,
                     "epoch": epoch,
+                    "ipr": float(ipr),
                 }
                 | params_dict
+                | energy_data
+            )
+
+        if snapshot_each is not None and iteration % snapshot_each == 0:
+            logger.info("Saving snapshot")
+            torch.save(
+                log_prob_fn.state_dict(),
+                output_dir / str(task_id) / f"log_prob_fn_{iteration}.pt",
             )
 
         # # Add average loss per epoch to TensorBoard

@@ -71,8 +71,7 @@ def generate_training_set(
     log_prob_fn: Callable,
     relsigns_fn: Callable,
     energy_baseline: float,
-    slowdown: float = 0.0,
-):
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Generate a training set for the amplitude optimization problem.
 
@@ -88,14 +87,14 @@ def generate_training_set(
     M_with_signs = -transfer_signs_to_H(states, M, nbd_states, relsigns_fn)
     current_log_probs = log_prob_fn(nbd_states)
     current_amplitudes = safe_exp_numpy(current_log_probs * 0.5)
-    new_amplitudes = np.abs(M_with_signs @ current_amplitudes)
-    if slowdown != 0.0:
-        new_amplitudes = current_amplitudes[
-            np.searchsorted(nbd_states, states)
-        ] * slowdown + new_amplitudes * (1 - slowdown)
-    new_logprobs = np.log(new_amplitudes) * 2
 
-    return new_logprobs
+    new_psi = (M_with_signs @ current_amplitudes).real
+
+    local_energies = new_psi / current_amplitudes[np.searchsorted(nbd_states, states)]
+
+    new_logprobs = np.log(np.abs(new_psi)) * 2
+
+    return new_logprobs, local_energies, new_psi
 
 
 def test_generate_training_set_lanczos():
