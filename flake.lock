@@ -21,11 +21,11 @@
         "systems": "systems"
       },
       "locked": {
-        "lastModified": 1689068808,
-        "narHash": "sha256-6ixXo3wt24N/melDWjq70UuHQLxGV8jZvooRanIHXw0=",
+        "lastModified": 1694529238,
+        "narHash": "sha256-zsNZZGTGnMOf9YpHKJqMSsa0dXbfmxeoJ7xHlrt+xmY=",
         "owner": "numtide",
         "repo": "flake-utils",
-        "rev": "919d646de7be200f3bf08cb76ae1f09402b6f9b4",
+        "rev": "ff7b65b44d01cf9ba6a71320833626af21126384",
         "type": "github"
       },
       "original": {
@@ -34,26 +34,92 @@
         "type": "github"
       }
     },
-    "lattice-symmetries": {
+    "haskell-python-tools": {
       "inputs": {
-        "flake-utils": [
-          "flake-utils"
-        ],
-        "nix-chapel": "nix-chapel",
         "nixpkgs": [
+          "ising-glass-annealer",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1689175450,
-        "narHash": "sha256-AFWbLwDMMcweSnW3PElzL0KufP5HoXxWEWjeb5AufFc=",
+        "lastModified": 1695306564,
+        "narHash": "sha256-C/GbXuGhcWnk8yzWlrLQ0YyAbE5WUYEWiUS2W/a+API=",
         "owner": "twesterhout",
-        "repo": "lattice-symmetries",
-        "rev": "0c2918ad7b739b7370c674720d9f38e97411c0e3",
+        "repo": "haskell-python-tools.nix",
+        "rev": "5a3ec39fb4f3d76d2df5ba48f7351300134ad660",
         "type": "github"
       },
       "original": {
         "owner": "twesterhout",
+        "repo": "haskell-python-tools.nix",
+        "type": "github"
+      }
+    },
+    "haskell-python-tools_2": {
+      "inputs": {
+        "nixpkgs": [
+          "lattice-symmetries",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1695306564,
+        "narHash": "sha256-C/GbXuGhcWnk8yzWlrLQ0YyAbE5WUYEWiUS2W/a+API=",
+        "owner": "twesterhout",
+        "repo": "haskell-python-tools.nix",
+        "rev": "5a3ec39fb4f3d76d2df5ba48f7351300134ad660",
+        "type": "github"
+      },
+      "original": {
+        "owner": "twesterhout",
+        "repo": "haskell-python-tools.nix",
+        "type": "github"
+      }
+    },
+    "ising-glass-annealer": {
+      "inputs": {
+        "flake-utils": [
+          "lattice-symmetries",
+          "flake-utils"
+        ],
+        "haskell-python-tools": "haskell-python-tools",
+        "nixpkgs": [
+          "lattice-symmetries",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1695306602,
+        "narHash": "sha256-q2J54omoD/E2ZvxNllWsFNHuS7QpfSYv8ED+fzNrtGA=",
+        "owner": "twesterhout",
+        "repo": "ising-glass-annealer",
+        "rev": "c193fe1a1f8f1bd5775becf3a0e6c034064d89e7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "twesterhout",
+        "repo": "ising-glass-annealer",
+        "type": "github"
+      }
+    },
+    "lattice-symmetries": {
+      "inputs": {
+        "flake-utils": "flake-utils",
+        "haskell-python-tools": "haskell-python-tools_2",
+        "nix-chapel": "nix-chapel",
+        "nixpkgs": "nixpkgs"
+      },
+      "locked": {
+        "lastModified": 1695307709,
+        "narHash": "sha256-pZZOCJYNmwdl1r7sbzwp+WU7v47gO7IUvVr8jcLX9wI=",
+        "owner": "twesterhout",
+        "repo": "lattice-symmetries",
+        "rev": "7953a10116508b6580be921f61f9e2645b42c30c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "twesterhout",
+        "ref": "nikita",
         "repo": "lattice-symmetries",
         "type": "github"
       }
@@ -70,11 +136,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1689166183,
-        "narHash": "sha256-J5TiA7R9hUo+MwKlBs3D+cm21BZ95N8gXgqlUABSE/A=",
+        "lastModified": 1694430354,
+        "narHash": "sha256-LBsmXbSjprjYSgiFW/OrgVgRY2AfYRpx3HUxsoViIaE=",
         "owner": "twesterhout",
         "repo": "nix-chapel",
-        "rev": "499192fb0e793ca5659280b0c7d6e6280ce98242",
+        "rev": "a63f440540bdc6caeccd264d1d1550fadc0100fd",
         "type": "github"
       },
       "original": {
@@ -85,11 +151,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1689098530,
-        "narHash": "sha256-fxc/9f20wRyo/5ydkmZkX/Sh/ULa7RcT8h+cUv8p/44=",
+        "lastModified": 1695145219,
+        "narHash": "sha256-Eoe9IHbvmo5wEDeJXKFOpKUwxYJIOxKUesounVccNYk=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "f2406198ea0e4e37d4380d0e20336c575b8f8ef9",
+        "rev": "5ba549eafcf3e33405e5f66decd1a72356632b96",
         "type": "github"
       },
       "original": {
@@ -102,9 +168,16 @@
     "root": {
       "inputs": {
         "flake-compat": "flake-compat",
-        "flake-utils": "flake-utils",
+        "flake-utils": [
+          "lattice-symmetries",
+          "flake-utils"
+        ],
+        "ising-glass-annealer": "ising-glass-annealer",
         "lattice-symmetries": "lattice-symmetries",
-        "nixpkgs": "nixpkgs"
+        "nixpkgs": [
+          "lattice-symmetries",
+          "nixpkgs"
+        ]
       }
     },
     "systems": {

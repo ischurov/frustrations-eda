@@ -10,6 +10,11 @@
     nixpkgs.follows = "lattice-symmetries/nixpkgs";
     flake-utils.follows = "lattice-symmetries/flake-utils";
     lattice-symmetries.url = "github:twesterhout/lattice-symmetries/nikita";
+    ising-glass-annealer = {
+      url = "github:twesterhout/ising-glass-annealer";
+      inputs.nixpkgs.follows = "lattice-symmetries/nixpkgs";
+      inputs.flake-utils.follows = "lattice-symmetries/flake-utils";
+    };
     flake-compat = {
       url = "github:edolstra/flake-compat";
       flake = false;
@@ -20,13 +25,14 @@
     let
       pkgs-for = system: import inputs.nixpkgs {
         inherit system;
-        overlays = [ inputs.lattice-symmetries.overlays.default ];
+        overlays = [ inputs.lattice-symmetries.overlays.default inputs.ising-glass-annealer.overlays.default ];
       };
 
       # Our Python dependencies
       my-python-packages = ps: with ps; [
         bitarray
         igraph
+        ising-glass-annealer
         jsonlines
         jupyter
         fire
@@ -64,6 +70,7 @@
       devShells = inputs.flake-utils.lib.eachDefaultSystemMap (system: with (pkgs-for system); {
         default = mkShell {
           nativeBuildInputs = [
+            ffmpeg
             (python3.withPackages my-python-packages)
             # LSP support for Python
             python3Packages.black
