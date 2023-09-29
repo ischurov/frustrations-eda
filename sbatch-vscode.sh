@@ -2,8 +2,8 @@
 
 #SBATCH --job-name="vscode"
 #SBATCH --time=12:00:00     # walltime
-#SBATCH -n 1
-#SBATCH -c 16
+#SBATCH -N1
+#SBATCH --mem 0
 #SBATCH -p tcm
 #SBATCH --exclusive
 #SBATCH --exclude cn[90,92,94]

@@ -17,7 +17,7 @@ from spin_lattices import (
     ParallelogramSpinLattice,
     SpinLattice,
     SquareLattice,
-    TriangleLattice,
+    TriangularLattice,
 )
 
 
@@ -50,9 +50,9 @@ class TestDiagonalization(TestCase):
             SquareLattice(width=2, height=2),
             SquareLattice(width=2, height=4),
             SquareLattice(width=4, height=4),
-            TriangleLattice(width=2, height=2),
-            TriangleLattice(width=2, height=4),
-            TriangleLattice(width=4, height=4),
+            TriangularLattice(width=2, height=2),
+            TriangularLattice(width=2, height=4),
+            TriangularLattice(width=4, height=4),
             ChainLattice(width=4),
             ChainLattice(width=8),
             ChainLattice(width=12),
@@ -247,7 +247,7 @@ class TestDiagonalization(TestCase):
 
         self.assertTrue(
             HeisenbergJ1J2(
-                lattice=TriangleLattice(3, 3), use_symmetries=False, spin_inversion=None
+                lattice=TriangularLattice(3, 3), use_symmetries=False, spin_inversion=None
             ).hamiltonian.expression
             == HeisenbergJ1J2(
                 lattice=OneDiagonalSquareLattice(3, 3), use_symmetries=False, spin_inversion=None
