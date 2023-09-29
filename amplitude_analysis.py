@@ -21,8 +21,12 @@ from lattice_boolean_analysis import (
     SignalKind,
     SignSignalKind,
 )
-from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
-from misc_utils import ensure_newfile, get_abslargest_terms, make_unpacked_configurations
+from misc_utils import (
+    ensure_newfile,
+    get_abslargest_terms,
+    make_unpacked_configurations,
+)
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 
 self_name = Path(__file__).name
 
@@ -49,17 +53,17 @@ logger.add(experiment_dir / "log.log", level="DEBUG", colorize=False)
 
 lattices: list[SpinLattice] = [
     SquareLattice(width=6, height=4),
-    TriangleLattice(width=6, height=4),
+    TriangularLattice(width=6, height=4),
     KagomeLattice(width=2, height=4),
     SquareLattice(width=5, height=5),
-    TriangleLattice(width=5, height=5),
+    TriangularLattice(width=5, height=5),
     KagomeLattice(width=3, height=3),
 ]
 
 signal_kinds = [SignSignalKind(), AmplitudeSignalKind(), AmplitudeMedianBinSignalKind()]
 
 J2s: dict[Type[SpinLattice], list[float]] = {
-    TriangleLattice: [
+    TriangularLattice: [
         0.0,
         0.1,
         0.2,

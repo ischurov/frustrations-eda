@@ -40,7 +40,7 @@ from spin_lattices import (
     KagomeLattice,
     SpinLattice,
     SquareLattice,
-    TriangleLattice,
+    TriangularLattice,
 )
 from vmc_amplitude import (
     almost_true_relsigns,

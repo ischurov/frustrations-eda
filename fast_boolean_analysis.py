@@ -4,15 +4,16 @@ from typing import Literal, overload
 import numpy as np
 import numpy.typing as npt
 import torch
+from loguru import logger
+
 from lattice_boolean_analysis import (
     LatticeBooleanFunction,
     ScorerType,
     SignalKind,
     get_scorer,
 )
-from loguru import logger
-from parity import popcount
 from misc_utils import hadamard_transform_pytorch_inplace
+from parity import popcount
 
 TruncateStrategy = Callable[[npt.NDArray[np.float64]], npt.NDArray[np.bool_]]
 
@@ -291,9 +292,9 @@ def get_ipr(coeffs: npt.NDArray[np.float64], hamming_weighted: bool = False) -> 
 
 
 def fourier_expand(signal: LatticeBooleanFunction) -> FourierSeries:
-    x = signal.canonical_basis.states
+    x = np.arange(2**signal.number_spins, dtype="uint64")
     logger.debug("Finding signal")
-    signal_value = signal.as_long_array(x).copy()
+    signal_value = signal(x)
     logger.debug("Doing ")
     return FourierSeries(
         signal=signal,

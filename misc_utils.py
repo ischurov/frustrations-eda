@@ -249,3 +249,21 @@ def column_to(type_: type, cols: str | list[str]) -> Callable[[pd.DataFrame], pd
         return df
 
     return wrapper
+
+
+def keep_serializable(dct: dict):
+    return {k: v for k, v in dct.items() if isinstance(v, (int, float, str))}
+
+
+def convert_column_to(type_, cols):
+    def wrapper(df):
+        df = df.copy()
+        if isinstance(cols, str):
+            cols_ = [cols]
+        else:
+            cols_ = cols
+        for col in cols_:
+            df[col] = df[col].astype(type_)
+        return df
+
+    return wrapper

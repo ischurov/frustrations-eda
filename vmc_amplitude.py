@@ -395,6 +395,20 @@ def compute_log_local_energies(
     )
 
 
+def compute_local_energies(
+    hamiltonian: ls.Operator,
+    states: npt.NDArray[np.uint64],
+    relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
+    log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
+) -> npt.NDArray[np.float64]:
+    nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
+    nbd_matrix_w_signs = transfer_signs_to_H(states, nbd_matrix, nbd_states, relsigns_fn)
+    abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
+    states_indices = np.searchsorted(nbd_states, states)
+    abs_psi_states = abs_psi_nbd[states_indices]
+    return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
+
+
 def compute_local_energies_reference(
     hamiltonian: ls.Operator,
     states: npt.NDArray[np.uint64],

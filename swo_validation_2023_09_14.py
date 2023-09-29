@@ -36,6 +36,9 @@ default_config = {
     "early_stop": False,
     "resample_every": 1,
     "snapshot_each": None,
+    "n_hidden": 512,
+    "hidden_layers": 1,
+    "sampling_power": 2.0,
 }
 
 configs = {
@@ -153,6 +156,148 @@ configs = {
         "power_iterations": 50,
         "snapshot_each": 1,
     },
+    31: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome2x4",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 10_000,
+        "snapshot_each": 1,
+        "sampling_power": 1.0,
+    },
+    32: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 100_000,
+        "snapshot_each": 1,
+    },
+    33: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 100_000,
+        "snapshot_each": 1,
+        "sampling_power": 1.0,
+    },
+    34: {
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 100_000,
+        "snapshot_each": 1,
+        "sampling_power": 0.5,
+    },
+    35: {  # architecture search
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 5_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+        "hidden_layers": 2,
+    },
+    36: {  # architecture search
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 5_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+        "hidden_layers": 1,
+        "n_hidden": 2048,
+    },
+    37: {  # architecture search
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 5_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+        "hidden_layers": 2,
+        "n_hidden": 128,
+    },
+    38: {  # architecture search
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 25_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+        "hidden_layers": 2,
+    },
+    39: {  # architecture search
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 25_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+        "hidden_layers": 1,
+        "n_hidden": 2048,
+    },
+    40: {  # architecture search
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 25_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+        "hidden_layers": 2,
+        "n_hidden": 128,
+    },
+    41: {  # obtaining data for ising
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome2x3",
+        "epochs": 10,
+        "power_iterations": 50,
+        "snapshot_each": 1,
+        "n_samples": 1000,
+    },
+    42: {  # obtaining data for ising
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome2x3",
+        "epochs": 10,
+        "power_iterations": 50,
+        "snapshot_each": 1,
+        "n_samples": 1000,
+        "use_symmetries": False,
+    },
+    43: {  # obtaining data for ising
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome2x3",
+        "epochs": 10,
+        "power_iterations": 250,
+        "snapshot_each": 1,
+        "n_samples": 1000,
+        "use_symmetries": False,
+    },
+    44: {  # architecture search (baseline 25_000 samples)
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "power_iterations": 500,
+        "n_samples": 25_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+    },
+    45: {  # architecture search (baseline 5_000 samples)
+        "energy_baseline": 250.0,
+        "lattice_name": "kagome36",
+        "epochs": 10,
+        "n_samples": 5_000,
+        "snapshot_each": 1,
+        "sampling_power": 1,
+    },
 }
 
 
@@ -163,22 +308,93 @@ def true_amplitudes(system: SpinSystem, states):
     return torch.from_numpy(np.abs(ground_state[system.basis.index(states)])).float()
 
 
+def get_config(task_id: int):
+    return default_config | configs[task_id % len(configs)]
+
+
+def get_setup(task_id: int):
+    config = get_config(task_id)
+    lattice_name = config["lattice_name"]
+    use_symmetries = config["use_symmetries"]
+    net = config["net"]
+    n_hidden = config["n_hidden"]
+    hidden_layers = config["hidden_layers"]
+
+    generators = None
+    filter1_sites = None
+
+    if lattice_name == "kagome36":
+        lattice, generators = get_kagome36()
+        filter1_sites = [10, 19, 20, 21, 22, 12, 13, 11, 9, 18, 31, 23]
+    elif lattice_name == "kagome27":
+        lattice, generators = get_kagome27()
+        filter1_sites = [14, 15, 16, 17, 8, 6, 13, 24, 18, 9, 7, 5]
+    elif lattice_name == "kagome2x3":
+        lattice = KagomeLattice(2, 3)
+    elif lattice_name == "kagome2x4":
+        lattice = KagomeLattice(2, 4)
+    elif lattice_name == "kagome2x5":
+        lattice = KagomeLattice(2, 5)
+    else:
+        raise ValueError(f"Unknown lattice {lattice_name}")
+
+    system = HeisenbergJ1J2(
+        lattice=lattice,
+        J1=1.0,
+        J2=1.0,
+        use_symmetries=use_symmetries,
+        spin_inversion=None,
+        skip_symmetries_whitelist=True,
+    )
+
+    if net == "LogProbDenseNet":
+        net_factory = lambda n_hidden=n_hidden, hidden_layers=hidden_layers: LogProbDenseNet(
+            system, n_hidden=n_hidden, hidden_layers=hidden_layers
+        )
+    elif net == "SplitGroupResConvNet":
+        additional_generators = ["rotation", "flip"]
+        extend_filter1 = (1, 1)
+        filter_size = (2, 2)
+        channels = 16
+        blocks = 4
+
+        def net_factory() -> nn.Module:
+            model = LogProbFn(
+                system,
+                SplitGroupResConvNet(
+                    tx=generators["tx"],
+                    ty=generators["ty"],
+                    filter1_sites=filter1_sites,
+                    additional_generators=[generators[gen] for gen in additional_generators],
+                    extend_filter1=extend_filter1,
+                    filter_size=filter_size,
+                    channels=channels,
+                    blocks=blocks,
+                ),
+            )
+            return model
+
+    else:
+        raise ValueError(f"Unknown net {net}")
+
+    return lattice, system, net_factory
+
+
 def main(task_id: int):
     # Get specific configuration by task_id
-    config = default_config | configs[task_id % len(configs)]
+    config = get_config(task_id)
 
-    # Access parameters
+    lattice, system, net_factory = get_setup(task_id)
+
     n_samples = config["n_samples"]
     energy_baseline = config["energy_baseline"]
-    lattice_name = config["lattice_name"]
     epochs = config["epochs"]
     reset_network = config["reset_network"]
-    net = config["net"]
-    use_symmetries = config["use_symmetries"]
     power_iterations = config["power_iterations"]
     early_stop = config["early_stop"]
     resample_every = config["resample_every"]
     snapshot_each = config["snapshot_each"]
+    sampling_power = config["sampling_power"]
 
     # # fmt: off
     # configs = [
@@ -209,18 +425,6 @@ def main(task_id: int):
     #     task_id % len(configs)
     # ]
 
-    if lattice_name == "kagome36":
-        lattice, generators = get_kagome36()
-        filter1_sites = [10, 19, 20, 21, 22, 12, 13, 11, 9, 18, 31, 23]
-    elif lattice_name == "kagome27":
-        lattice, generators = get_kagome27()
-        filter1_sites = [14, 15, 16, 17, 8, 6, 13, 24, 18, 9, 7, 5]
-    elif lattice_name == "kagome2x4":
-        lattice = KagomeLattice(2, 4)
-    elif lattice_name == "kagome2x5":
-        lattice = KagomeLattice(2, 5)
-    else:
-        raise ValueError(f"Unknown lattice {lattice_name}")
     run = task_id // len(configs)
 
     (output_dir / str(task_id)).mkdir(exist_ok=True)
@@ -233,7 +437,6 @@ def main(task_id: int):
     test_samples = 50000
 
     lr = 1e-3
-    n_hidden = 512
     batch_size = 64
 
     params_dict = config | {
@@ -260,43 +463,6 @@ def main(task_id: int):
     #     skip_symmetries_whitelist=True,
     # )
 
-    system = HeisenbergJ1J2(
-        lattice=lattice,
-        J1=1.0,
-        J2=1.0,
-        use_symmetries=use_symmetries,
-        spin_inversion=None,
-        skip_symmetries_whitelist=True,
-    )
-
-    if net == "LogProbDenseNet":
-        net_factory = lambda: LogProbDenseNet(system, n_hidden=n_hidden)
-    elif net == "SplitGroupResConvNet":
-        additional_generators = ["rotation", "flip"]
-        extend_filter1 = (1, 1)
-        filter_size = (2, 2)
-        channels = 16
-        blocks = 4
-
-        def net_factory() -> nn.Module:
-            model = LogProbFn(
-                system,
-                SplitGroupResConvNet(
-                    tx=generators["tx"],
-                    ty=generators["ty"],
-                    filter1_sites=filter1_sites,
-                    additional_generators=[generators[gen] for gen in additional_generators],
-                    extend_filter1=extend_filter1,
-                    filter_size=filter_size,
-                    channels=channels,
-                    blocks=blocks,
-                ),
-            )
-            return model
-
-    else:
-        raise ValueError(f"Unknown net {net}")
-
     system.get_eigenstates(1)
 
     stopwatch.reset()
@@ -315,7 +481,7 @@ def main(task_id: int):
     ).long()
 
     true_amplitudes_test = true_amplitudes(system, states_test_uniform)
-    true_amplitudes_test /= torch.sqrt(torch.sum(true_amplitudes_test**2))
+    # true_amplitudes_test /= torch.sqrt(torch.sum(true_amplitudes_test**2))
 
     for iteration in range(power_iterations):
         if reset_network:
@@ -327,7 +493,7 @@ def main(task_id: int):
         if iteration % resample_every == 0:
             logger.info(f"Sampling")
             all_states, _, all_probs = sample_exactly(
-                log_prob_fn,
+                lambda s: log_prob_fn(s) * sampling_power * 0.5,
                 system.basis,
                 SamplingOptions(
                     number_samples=n_samples + test_samples,

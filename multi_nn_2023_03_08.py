@@ -24,10 +24,14 @@ from lattice_boolean_analysis import (
     SignalKind,
     SignSignalKind,
 )
+from misc_utils import (
+    ensure_newfile,
+    get_abslargest_terms,
+    make_unpacked_configurations,
+)
 from pytorchtools import EarlyStopping
-from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 from spin_nn import FC1SpinNN, SpinNN
-from misc_utils import ensure_newfile, get_abslargest_terms, make_unpacked_configurations
 
 self_name = Path(__file__).name
 
@@ -58,10 +62,10 @@ system_terms_dir = mkdir(experiment_dir / "system-terms")
 
 lattices: list[SpinLattice] = [
     SquareLattice(width=6, height=4),
-    TriangleLattice(width=6, height=4),
+    TriangularLattice(width=6, height=4),
     KagomeLattice(width=2, height=4),
     SquareLattice(width=5, height=5),
-    TriangleLattice(width=5, height=5),
+    TriangularLattice(width=5, height=5),
     KagomeLattice(width=3, height=3),
 ]
 
@@ -72,7 +76,7 @@ target_score = 0.8
 
 eps_trains = [1e-3, 1e-2, 1e-1]
 J2s: dict[Type[SpinLattice], list[float]] = {
-    TriangleLattice: [
+    TriangularLattice: [
         0.0,
         0.1,
         0.2,

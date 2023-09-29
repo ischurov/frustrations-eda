@@ -18,13 +18,13 @@ from scipy.optimize import minimize
 from sympy.combinatorics import Permutation
 
 from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from misc_utils import make_unpacked_configurations
 from spin_lattices import (
     KagomeLattice,
     SpinLattice,
     SquareLattice1Diag,
-    TriangleLattice,
+    TriangularLattice,
 )
-from misc_utils import make_unpacked_configurations
 
 
 # FROM: GPT-4
@@ -66,9 +66,7 @@ def tight_binding_init(
 
         nbd = adj
         for t in ts:
-            tight_binding_hamiltonian += t * (
-                (tight_binding_hamiltonian == 0) & (nbd > 0)
-            )
+            tight_binding_hamiltonian += t * ((tight_binding_hamiltonian == 0) & (nbd > 0))
             nbd = nbd @ adj
 
         energies, orbitals = np.linalg.eigh(tight_binding_hamiltonian)
@@ -99,12 +97,8 @@ def tight_binding_init(
                 tr_y = lattice.y_translation
                 orbitals_ty = orbitals * 0.0 + 0.0j
 
-                for e_sector, kx_sector in product(
-                    np.unique(e_round), np.unique(tx_momenta)
-                ):
-                    idxs = np.where((e_round == e_sector) & (tx_momenta == kx_sector))[
-                        0
-                    ]
+                for e_sector, kx_sector in product(np.unique(e_round), np.unique(tx_momenta)):
+                    idxs = np.where((e_round == e_sector) & (tx_momenta == kx_sector))[0]
                     if len(idxs) == 0:
                         continue
                     ty_matrix = orbitals[:, idxs].conj().T @ orbitals[:, idxs][tr_y]
@@ -197,12 +191,8 @@ class SlaterDeterminant(nn.Module):
         rows = configs[:, 0, :]
         columns = configs[:, 1, :]
 
-        row_indices = rows.unsqueeze(-1).expand(
-            rows.shape[0], rows.shape[1], columns.shape[1]
-        )
-        col_indices = columns.unsqueeze(1).expand(
-            rows.shape[0], rows.shape[1], columns.shape[1]
-        )
+        row_indices = rows.unsqueeze(-1).expand(rows.shape[0], rows.shape[1], columns.shape[1])
+        col_indices = columns.unsqueeze(1).expand(rows.shape[0], rows.shape[1], columns.shape[1])
 
         matrices = self.f[row_indices, col_indices]
 
@@ -252,9 +242,7 @@ class SlaterDetStates(nn.Module):
     def forward(self, states: torch.Tensor | npt.NDArray):
         if isinstance(states, np.ndarray):
             states = torch.from_numpy(states.astype(np.int64))
-        indices = self.system.canonical_basis.index(
-            states.detach().numpy().astype(np.uint64)
-        )
+        indices = self.system.canonical_basis.index(states.detach().numpy().astype(np.uint64))
         assert isinstance(indices, np.ndarray)
         indices = torch.from_numpy(indices.astype(np.int64))
         ret = ((self.det.forward(indices))).view(-1, 1)

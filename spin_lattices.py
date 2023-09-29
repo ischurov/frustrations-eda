@@ -767,7 +767,7 @@ class SquareLattice1Diag(ParallelogramSpinLattice):
         )
 
 
-class TriangleLattice(ParallelogramSpinLattice):
+class TriangularLattice(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         r"""
         Generates triangular lattice.

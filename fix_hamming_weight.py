@@ -32,9 +32,9 @@ from lattice_boolean_analysis import (
     SignalKind,
     SignSignalKind,
 )
-from parity import popcount
-from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
 from misc_utils import get_abslargest_terms, read_jsonl_to_df
+from parity import popcount
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 
 ground_state_cache_dir = Path("groundstates")
 
@@ -65,15 +65,15 @@ lattice_opts = [
     LatticeOptions(
         lattice=SquareLattice(width=4, height=6), use_symmetries=True, max_terms=2**15
     ),
-    LatticeOptions(TriangleLattice(width=4, height=4), use_symmetries=True, max_terms=None),
-    LatticeOptions(TriangleLattice(width=4, height=5), use_symmetries=False, max_terms=2**11),
-    LatticeOptions(TriangleLattice(width=4, height=6), use_symmetries=True, max_terms=2**15),
+    LatticeOptions(TriangularLattice(width=4, height=4), use_symmetries=True, max_terms=None),
+    LatticeOptions(TriangularLattice(width=4, height=5), use_symmetries=False, max_terms=2**11),
+    LatticeOptions(TriangularLattice(width=4, height=6), use_symmetries=True, max_terms=2**15),
     LatticeOptions(KagomeLattice(width=2, height=2), use_symmetries=False, max_terms=None),
     LatticeOptions(KagomeLattice(width=2, height=3), use_symmetries=False, max_terms=None),
     LatticeOptions(KagomeLattice(width=2, height=4), use_symmetries=True, max_terms=2**16),
     LatticeOptions(SquareLattice(width=7, height=4), False, max_terms=2 ** (16 + 5 + 2)),
-    LatticeOptions(TriangleLattice(width=7, height=4), False, max_terms=2 ** (16 + 5 + 2)),
-    LatticeOptions(TriangleLattice(width=5, height=6), False, max_terms=2 ** (16 + 5 + 5)),
+    LatticeOptions(TriangularLattice(width=7, height=4), False, max_terms=2 ** (16 + 5 + 2)),
+    LatticeOptions(TriangularLattice(width=5, height=6), False, max_terms=2 ** (16 + 5 + 5)),
     LatticeOptions(KagomeLattice(width=2, height=5), False, max_terms=2 ** (16 + 5 + 5)),
     LatticeOptions(SquareLattice(width=5, height=6), False, max_terms=2 ** (16 + 5 + 5)),
     LatticeOptions(KagomeLattice(width=3, height=3), False, max_terms=2 ** (16 + 5)),

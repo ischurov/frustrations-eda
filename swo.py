@@ -7,6 +7,7 @@ from loguru import logger
 from scipy.sparse import diags
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
+from nqs_playground_helpers import forward_with_batches
 from spin_lattices import KagomeLattice
 from vmc_amplitude import find_nbd, safe_exp_numpy, transfer_signs_to_H, true_relsigns
 
@@ -14,8 +15,9 @@ from vmc_amplitude import find_nbd, safe_exp_numpy, transfer_signs_to_H, true_re
 def generate_training_set_lanczos(
     hamiltonian: ls.Operator,
     states: npt.NDArray[np.uint64],
-    log_prob_fn: Callable,
-    relsigns_fn: Callable,
+    log_prob_fn: Callable[[npt.NDArray], npt.NDArray],
+    relsigns_fn: Callable[[npt.NDArray], npt.NDArray],
+    batch_size=8192,
 ):
     """
     This function follows [1] in implementing two-step Lanczos.
@@ -38,7 +40,9 @@ def generate_training_set_lanczos(
                           [:, nbd_states_indices_in_nbd_states2])
     # fmt: on
 
-    psi_nbd2 = safe_exp_numpy(log_prob_fn(nbd_states2) * 0.5)
+    psi_nbd2 = safe_exp_numpy(
+        forward_with_batches(log_prob_fn, nbd_states2, batch_size=batch_size) * 0.5
+    )
     psi_nbd = psi_nbd2[nbd_states_indices_in_nbd_states2]
     psi_states = psi_nbd[states_indices_in_nbd_states]
 
@@ -71,6 +75,7 @@ def generate_training_set(
     log_prob_fn: Callable,
     relsigns_fn: Callable,
     energy_baseline: float,
+    batch_size: int = 8192,
 ) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
     """
     Generate a training set for the amplitude optimization problem.
@@ -85,7 +90,7 @@ def generate_training_set(
     """
     M, nbd_states = find_nbd(hamiltonian, states, energy_baseline=energy_baseline)
     M_with_signs = -transfer_signs_to_H(states, M, nbd_states, relsigns_fn)
-    current_log_probs = log_prob_fn(nbd_states)
+    current_log_probs = forward_with_batches(log_prob_fn, nbd_states, batch_size=batch_size)
     current_amplitudes = safe_exp_numpy(current_log_probs * 0.5)
 
     new_psi = (M_with_signs @ current_amplitudes).real

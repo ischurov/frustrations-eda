@@ -1,51 +1,51 @@
-from spin_lattices import (
-    KagomeLattice,
-    SpinLattice,
-    ChainLattice,
-    SquareLattice,
-    TriangleLattice,
-)
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+import itertools
+import sys
+import time
+from collections import namedtuple
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Tuple, Union
+
+import fire
+import lattice_symmetries as ls
+import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-from typing import Callable
-import torch
 import numpy.typing as npt
-import lattice_symmetries as ls
-from typing import Any, Optional, Union, Dict, Tuple
-from loguru import logger
-from collections import namedtuple
-from torch import Tensor
+import torch
 import torch.nn as nn
-from misc_utils import make_unpacked_configurations
+from loguru import logger
+from scipy.optimize import minimize
+from scipy.sparse import coo_matrix, csr_matrix, diags
+from scipy.sparse.csgraph import connected_components
+from torch import Tensor
+from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
+from torch.utils.data import DataLoader, TensorDataset
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
+
+from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from kagome_cnn import KagomeCNNRegression
+from misc_utils import make_unpacked_configurations
+from my_stopwatch import stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
-    split_into_batches,
+    forward_with_batches,
     safe_exp,
     sample_exactly,
     sample_full,
-    forward_with_batches,
+    split_into_batches,
 )
-from scipy.sparse import csr_matrix, coo_matrix, diags
-from scipy.sparse.csgraph import connected_components
-import sys
-from kagome_cnn import KagomeCNNRegression
-from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
-import time
-from scipy.optimize import minimize
-from vmc_amplitude import almost_true_relsigns
+from slater_determinant import Initializer, SlaterDeterminant
+from spin_lattices import (
+    ChainLattice,
+    KagomeLattice,
+    SpinLattice,
+    SquareLattice,
+    TriangularLattice,
+)
+from vmc_amplitude import LogProbDenseNetPairwiseXor, almost_true_relsigns
 from vmc_vs_lbfgs import AmplitudeOptimizer
-import fire
-from my_stopwatch import stopwatch
 from vmc_vs_lbfgs_2023_08_02 import LogProbDenseNet
-from slater_determinant import SlaterDeterminant, Initializer
-import matplotlib.pyplot as plt
-from torch.utils.data import TensorDataset, DataLoader
-from vmc_amplitude import LogProbDenseNetPairwiseXor
-import itertools
 
 # from misc_utils import torch_overlap as overlap
 
@@ -83,9 +83,7 @@ def main():
     logger.info(f"System: {system.get_cache_id()}")
 
     energy, _ = system.get_eigenstates(1)
-    pairs = tuple(
-        map(np.array, zip(*itertools.combinations(range(system.number_spins), 2)))
-    )
+    pairs = tuple(map(np.array, zip(*itertools.combinations(range(system.number_spins), 2))))
     log_prob_fn = LogProbDenseNetPairwiseXor(
         system, n_hidden=n_hidden, hidden_layers=1, xor_pairs=pairs
     )

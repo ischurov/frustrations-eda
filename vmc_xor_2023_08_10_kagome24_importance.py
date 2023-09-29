@@ -1,60 +1,60 @@
-from spin_lattices import (
-    KagomeLattice,
-    SpinLattice,
-    ChainLattice,
-    SquareLattice,
-    TriangleLattice,
-)
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+import io
+import itertools
+import sys
+import time
+from collections import namedtuple
+from contextlib import redirect_stderr
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Tuple, Union
+
+import fire
+import lattice_symmetries as ls
 import networkx as nx
 import numpy as np
-from typing import Callable
-import torch
 import numpy.typing as npt
-import lattice_symmetries as ls
-from typing import Any, Optional, Union, Dict, Tuple
-from loguru import logger
-from collections import namedtuple
-from torch import Tensor
+import torch
 import torch.nn as nn
-from misc_utils import make_unpacked_configurations
-from vmc_vs_lbfgs_2023_08_02 import LogProbDenseNet
-import io
-from contextlib import redirect_stderr
+from loguru import logger
+from scipy.sparse import coo_matrix, csr_matrix, diags
+from scipy.sparse.csgraph import connected_components
+from torch import Tensor
+from torch.nn.utils import parameters_to_vector
 from torch.utils.tensorboard import SummaryWriter
-from datetime import datetime
+
+from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from kagome_cnn import KagomeCNNRegression
+from misc_utils import differentiable_safe_exp, make_unpacked_configurations
+from misc_utils import torch_overlap as find_overlap
+from my_stopwatch import Stopwatch, stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
-    split_into_batches,
+    forward_with_batches,
     safe_exp,
     sample_exactly,
     sample_full,
-    forward_with_batches,
+    split_into_batches,
 )
-from scipy.sparse import csr_matrix, coo_matrix, diags
-from scipy.sparse.csgraph import connected_components
-import sys
-from kagome_cnn import KagomeCNNRegression
-from torch.nn.utils import parameters_to_vector
-import time
 from slater_determinant import SlaterDeterminant
+from spin_lattices import (
+    ChainLattice,
+    KagomeLattice,
+    SpinLattice,
+    SquareLattice,
+    TriangularLattice,
+)
 from vmc_amplitude import (
+    LogProbDenseNetPairwiseXor,
+    almost_true_relsigns,
+    apply_diag_to_basis_states,
+    apply_off_diag_to_basis_states,
     compute_log_local_energies,
     find_nbd,
     find_nbd_reference,
-    apply_diag_to_basis_states,
-    apply_off_diag_to_basis_states,
+    safe_exp_numpy,
     true_relsigns,
-    almost_true_relsigns,
 )
-from my_stopwatch import stopwatch, Stopwatch
-from misc_utils import torch_overlap as find_overlap
-from vmc_amplitude import LogProbDenseNetPairwiseXor, safe_exp_numpy
-import itertools
-import fire
-from misc_utils import differentiable_safe_exp
-from pathlib import Path
+from vmc_vs_lbfgs_2023_08_02 import LogProbDenseNet
 
 self_name = Path(__file__).stem
 
@@ -96,9 +96,7 @@ def main(task_id: int):
     else:
         eval_set = system.canonical_basis.states
 
-    pairs = tuple(
-        map(np.array, zip(*itertools.combinations(range(system.number_spins), 2)))
-    )
+    pairs = tuple(map(np.array, zip(*itertools.combinations(range(system.number_spins), 2))))
     # pairs = tuple(map(np.array, zip(*system.lattice.edges_to_kind.keys())))
 
     log_prob_fn = LogProbDenseNetPairwiseXor(
@@ -113,9 +111,7 @@ def main(task_id: int):
 
     # log_prob_fn = KagomeCNNRegression(system.lattice, hidden_channels1=32, hidden_channels2=64)
     # optimizer = torch.optim.SGD(log_prob_fn.parameters(), lr=lr, momentum=momentum)
-    optimizer = torch.optim.Adam(
-        log_prob_fn.parameters(), lr=lr, weight_decay=weight_decay
-    )
+    optimizer = torch.optim.Adam(log_prob_fn.parameters(), lr=lr, weight_decay=weight_decay)
 
     true_amplitudes = torch.from_numpy(
         np.abs(system.get_ground_state_coeffs(eval_set)).astype(np.float32)
@@ -180,9 +176,7 @@ def main(task_id: int):
                     system.hamiltonian,
                     states.detach().numpy(),
                     relsigns_fn=relsigns_fn,
-                    log_prob_fn=lambda s: log_prob_fn(
-                        torch.from_numpy(s.astype(np.int64))
-                    )
+                    log_prob_fn=lambda s: log_prob_fn(torch.from_numpy(s.astype(np.int64)))
                     .view(-1)
                     .detach()
                     .numpy(),
@@ -198,9 +192,9 @@ def main(task_id: int):
             with torch.no_grad():
                 with local_sw("reweighting"):
                     new_log_probs = log_prob_fn(states).view(-1).to(torch.float64)
-                    weights = safe_exp(
-                        initial_log_weights + new_log_probs - initial_log_probs
-                    ).to(torch.float32)
+                    weights = safe_exp(initial_log_weights + new_log_probs - initial_log_probs).to(
+                        torch.float32
+                    )
                 with local_sw("energy grad"):
                     weighted_E_loc = torch.exp(log_E_loc + torch.log(weights)).real
                     grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
@@ -219,9 +213,7 @@ def main(task_id: int):
                     # Calculate full energy
                     # if sampling_mode == "exact":
                     E = torch.exp(log_E_loc).real
-                    E_full = E @ safe_exp(
-                        new_log_probs.to(torch.float32).view(-1), normalise=True
-                    )
+                    E_full = E @ safe_exp(new_log_probs.to(torch.float32).view(-1), normalise=True)
                     writer.add_scalar(
                         "loss/E_full_delta", E_full - torch.tensor(true_energy), step
                     )

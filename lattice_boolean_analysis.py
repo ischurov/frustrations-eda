@@ -28,9 +28,9 @@ from heisenberg_hamiltonians import (
     batched_state_info_df,
     make_unpacked_configurations,
 )
+from misc_utils import hadamard_transform
 from parity import calculate_fourier_transform_matrix, parity, popcount
 from spin_lattices import SpinLattice
-from misc_utils import hadamard_transform
 
 
 def camel_case_to_snake_case(name: str) -> str:
@@ -38,8 +38,7 @@ def camel_case_to_snake_case(name: str) -> str:
 
 
 class SignalKind:
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
         This function defines how to transform data during the training.
         """
@@ -50,43 +49,83 @@ class SignalKind:
         return camel_case_to_snake_case(self.__class__.__name__.removesuffix("SignalKind"))
 
 
+class ComposedSignalKind(SignalKind):
+    def __init__(self, signal_kinds: list[SignalKind]):
+        self.signal_kinds = signal_kinds
+
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        for signal_kind in self.signal_kinds:
+            eigenstate_coeff = signal_kind.transform_data(eigenstate_coeff)
+        return eigenstate_coeff
+
+    @property
+    def name(self) -> str:
+        return "-".join(s.name for s in self.signal_kinds)
+
+
+class KeepOnlyStatesSignalKind(SignalKind):
+    def __init__(self, states: npt.NDArray[np.uint64]):
+        self.states = states
+
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        new_eigenstate_coeff = np.zeros_like(eigenstate_coeff)
+        new_eigenstate_coeff[self.states] = eigenstate_coeff[self.states]
+        return new_eigenstate_coeff
+
+    @property
+    def name(self) -> str:
+        return f"keep-only-states-{'-'.join(map(str, sorted(self.states)))}"
+
+
+class LogAmplitudeSignalKind(SignalKind):
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        return np.log(np.abs(eigenstate_coeff))
+
+
 class ValueSignalKind(SignalKind):
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return eigenstate_coeff
 
 
 class SignSignalKind(SignalKind):
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.sign(eigenstate_coeff)
 
 
 class AmplitudeSignalKind(SignalKind):
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.abs(eigenstate_coeff)
 
 
 class ProbSignalKind(SignalKind):
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return (np.abs(eigenstate_coeff)) ** 2  # type: ignore
         # see https://github.com/numpy/numpy/issues/20099
 
 
 class SignedProbSignalKind(SignalKind):
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         return np.sign(eigenstate_coeff) * (np.abs(eigenstate_coeff)) ** 2  # type: ignore
         # see https://github.com/numpy/numpy/issues/20099
 
 
 class AmplitudeMedianBinSignalKind(SignalKind):
-    @staticmethod
-    def transform_data(eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        mask = eigenstate_coeff != 0
         abs_ = np.abs(eigenstate_coeff)
-        return np.sign(abs_ - np.median(abs_))
+        return np.sign(abs_ - np.median(abs_[mask]))
+
+
+class ProbabilityDistributionMedianBinSignalKind(SignalKind):
+    def transform_data(self, eigenstate_coeff: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        prob = (np.abs(eigenstate_coeff)) ** 2  # type: ignore
+        sorted_idxs = np.argsort(prob)
+        cumsum = np.cumsum(prob[sorted_idxs])
+        median_idx = np.searchsorted(cumsum, cumsum[-1] / 2, side="right")
+        sorted_splitting = np.arange(len(prob)) < median_idx
+        original_splitting = np.zeros_like(sorted_splitting)
+        original_splitting[sorted_idxs] = sorted_splitting
+        return 1 - 2 * original_splitting
 
 
 def place_values_into_array(
@@ -139,7 +178,7 @@ class LBFFromSpinSystem(LatticeBooleanFunction):
         self.canonical_basis = system.canonical_basis
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray:
-        return self.kind.transform_data(self.system.get_ground_state_in_full_basis()[x])
+        return self.kind.transform_data(self.system.get_ground_state_in_full_basis())[x]
 
     def get_probs(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
         return np.abs(self.system.get_ground_state_in_full_basis()[x]) ** 2  # type: ignore
@@ -258,7 +297,14 @@ def sign_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArr
 
 @scorer
 def value_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
-    return (true * predict).sum() / prob.sum()
+    return true @ predict / np.sqrt((true**2).sum() * (predict**2).sum())
+
+
+@scorer
+def exp_value_overlap_scorer(true: npt.NDArray, predict: npt.NDArray, prob: npt.NDArray):
+    true_ = np.exp(true)
+    predict_ = np.exp(predict)
+    return true_ @ predict_ / np.sqrt((true_**2).sum() * (predict_**2).sum())
 
 
 @scorer

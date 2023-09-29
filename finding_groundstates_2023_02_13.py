@@ -4,7 +4,7 @@ import fire
 from loguru import logger
 
 from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
-from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 
 ground_state_cache_dir = Path("groundstates")
 
@@ -13,13 +13,12 @@ lattices = [
     (KagomeLattice(width=2, height=5), False),
     (SquareLattice(width=5, height=6), False),
     (SquareLattice(width=7, height=4), False),
-    (TriangleLattice(width=5, height=6), False),
-    (TriangleLattice(width=7, height=4), False),
+    (TriangularLattice(width=5, height=6), False),
+    (TriangularLattice(width=7, height=4), False),
 ]  # type: list[tuple[SpinLattice, bool]]
 
 
 def main(J2s: list[float]):
-
     logger.add(
         Path(
             "logs/"

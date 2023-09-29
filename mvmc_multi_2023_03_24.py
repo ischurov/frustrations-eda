@@ -10,22 +10,22 @@ import seaborn as sns
 from fast_boolean_analysis import fourier_expand
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from lattice_boolean_analysis import LBFFromEigenstateSeries
+from misc_utils import get_abslargest_terms
 from mvmc_configs import MVMCConfig
 from spin_lattices import (
     ChainLattice,
     KagomeLattice,
     SpinLattice,
     SquareLattice,
-    TriangleLattice,
+    TriangularLattice,
 )
-from misc_utils import get_abslargest_terms
 
 script_name = Path(__file__).stem
 
 outdir = Path("experiments") / script_name.removesuffix(".py")
 outdir.mkdir(exist_ok=True, parents=True)
 
-lattices: list[SpinLattice] = [SquareLattice(6, 4), TriangleLattice(6, 4), KagomeLattice(2, 4)]
+lattices: list[SpinLattice] = [SquareLattice(6, 4), TriangularLattice(6, 4), KagomeLattice(2, 4)]
 J2s = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6]
 mvmc_config = dict(NSROptItrStep=300)
 iterations = 10

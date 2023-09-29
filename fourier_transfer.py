@@ -31,9 +31,9 @@ from lattice_boolean_analysis import (
     SignalKind,
     SignSignalKind,
 )
-from parity import popcount
-from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
 from misc_utils import read_jsonl_to_df
+from parity import popcount
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 
 ground_state_cache_dir = Path("groundstates")
 

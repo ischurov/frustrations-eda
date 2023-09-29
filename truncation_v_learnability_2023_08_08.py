@@ -1,27 +1,29 @@
-from fourier_xor_shuffle_2023_07_24 import (
-    train,
-    replace_xors_with_random,
-    shuffle_xors,
-    identity,
-)
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, random_split
-from torch.utils.tensorboard import SummaryWriter
+import json
+from collections.abc import Callable
 from datetime import datetime
 from itertools import product
 from pathlib import Path
-from loguru import logger
-from nn_xors_2023_07_18 import MLPBinaryClassifier, make_dataset
-from spin_lattices import TriangleLattice, SquareLattice, KagomeLattice
-from heisenberg_hamiltonians import HeisenbergJ1J2
-import numpy as np
-from lattice_boolean_analysis import LBFFromSpinSystem
-from fast_boolean_analysis import FourierSeries, fourier_expand, keep_largest_n
-from collections.abc import Callable
+
 import fire
-import json
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from loguru import logger
+from torch.utils.data import DataLoader, random_split
+from torch.utils.tensorboard import SummaryWriter
+
+from fast_boolean_analysis import FourierSeries, fourier_expand, keep_largest_n
+from fourier_xor_shuffle_2023_07_24 import (
+    identity,
+    replace_xors_with_random,
+    shuffle_xors,
+    train,
+)
+from heisenberg_hamiltonians import HeisenbergJ1J2
+from lattice_boolean_analysis import LBFFromSpinSystem
+from nn_xors_2023_07_18 import MLPBinaryClassifier, make_dataset
+from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -38,7 +40,7 @@ lr = 1e-3
 
 
 system_specs = [
-    (TriangleLattice(6, 4), 1.3),
+    (TriangularLattice(6, 4), 1.3),
     (KagomeLattice(2, 4), 1.0),
 ]
 
@@ -53,9 +55,7 @@ def main(task_id: int | None = None, splits=10):
     run = task_id
 
     for (lattice, J2), alpha in product(system_specs, [0.001, 1.0]):
-        system = HeisenbergJ1J2(
-            lattice, J1=1, J2=J2, ground_state_cache_dir=Path("groundstates")
-        )
+        system = HeisenbergJ1J2(lattice, J1=1, J2=J2, ground_state_cache_dir=Path("groundstates"))
         system.get_eigenstates(1)
         n_spins = system.number_spins
 
@@ -77,8 +77,7 @@ def main(task_id: int | None = None, splits=10):
                 )
             )
             probs = (
-                np.abs(system.get_ground_state_in_canonical_basis().astype(np.float64))
-                ** alpha
+                np.abs(system.get_ground_state_in_canonical_basis().astype(np.float64)) ** alpha
             )
             probs /= probs.sum()
             all_states = system.canonical_basis.states
@@ -95,9 +94,7 @@ def main(task_id: int | None = None, splits=10):
                 dataset,
                 [eps_train / (eps_train + eps_test), eps_test / (eps_train + eps_test)],
             )
-            train_loader = DataLoader(
-                train_dataset, batch_size=batch_size, shuffle=True
-            )
+            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
             net = MLPBinaryClassifier(n_spins, n_hidden)
             criterion = nn.CrossEntropyLoss()

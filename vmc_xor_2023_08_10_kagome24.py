@@ -1,60 +1,30 @@
-from spin_lattices import (
-    KagomeLattice,
-    SpinLattice,
-    ChainLattice,
-    SquareLattice,
-    TriangleLattice,
-)
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
-from pathlib import Path
-import networkx as nx
-import numpy as np
-from typing import Callable
-import torch
-import numpy.typing as npt
-import lattice_symmetries as ls
-from typing import Any, Optional, Union, Dict, Tuple
-from loguru import logger
-from collections import namedtuple
-from torch import Tensor
-import torch.nn as nn
-from misc_utils import make_unpacked_configurations
-from vmc_vs_lbfgs_2023_08_02 import LogProbDenseNet
-import io
-from contextlib import redirect_stderr
-from torch.utils.tensorboard import SummaryWriter
+import itertools
 from datetime import datetime
+from pathlib import Path
+
+import fire
+import numpy as np
+import torch
+from loguru import logger
+from torch.utils.tensorboard import SummaryWriter
+
+from heisenberg_hamiltonians import HeisenbergJ1J2
+from misc_utils import differentiable_safe_exp
+from misc_utils import torch_overlap as find_overlap
+from my_stopwatch import Stopwatch, stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
-    split_into_batches,
     safe_exp,
     sample_exactly,
     sample_full,
-    forward_with_batches,
+    split_into_batches,
 )
-from scipy.sparse import csr_matrix, coo_matrix, diags
-from scipy.sparse.csgraph import connected_components
-import sys
-from kagome_cnn import KagomeCNNRegression
-from torch.nn.utils import parameters_to_vector
-import time
-from slater_determinant import SlaterDeterminant
+from spin_lattices import KagomeLattice
 from vmc_amplitude import (
-    compute_log_local_energies,
-    find_nbd,
-    find_nbd_reference,
-    apply_diag_to_basis_states,
-    apply_off_diag_to_basis_states,
-    true_relsigns,
+    LogProbDenseNetPairwiseXor,
     almost_true_relsigns,
+    compute_log_local_energies,
 )
-from my_stopwatch import stopwatch, Stopwatch
-from misc_utils import torch_overlap as find_overlap
-from vmc_amplitude import LogProbDenseNetPairwiseXor
-import itertools
-import fire
-from misc_utils import differentiable_safe_exp
-from pathlib import Path
 
 self_name = Path(__file__).stem
 
@@ -95,9 +65,7 @@ def main(task_id: int):
     else:
         eval_set = system.canonical_basis.states
 
-    pairs = tuple(
-        map(np.array, zip(*itertools.combinations(range(system.number_spins), 2)))
-    )
+    pairs = tuple(map(np.array, zip(*itertools.combinations(range(system.number_spins), 2))))
     # pairs = tuple(map(np.array, zip(*system.lattice.edges_to_kind.keys())))
 
     log_prob_fn = LogProbDenseNetPairwiseXor(
@@ -112,9 +80,7 @@ def main(task_id: int):
 
     # log_prob_fn = KagomeCNNRegression(system.lattice, hidden_channels1=32, hidden_channels2=64)
     # optimizer = torch.optim.SGD(log_prob_fn.parameters(), lr=lr, momentum=momentum)
-    optimizer = torch.optim.Adam(
-        log_prob_fn.parameters(), lr=lr, weight_decay=weight_decay
-    )
+    optimizer = torch.optim.Adam(log_prob_fn.parameters(), lr=lr, weight_decay=weight_decay)
 
     true_amplitudes = torch.from_numpy(
         np.abs(system.get_ground_state_coeffs(eval_set)).astype(np.float32)
@@ -159,7 +125,7 @@ def main(task_id: int):
                     ),
                 )
                 states = states.view(-1)
-                
+
                 weights = _extra["weights"].view(-1)
                 all_probs = weights
             else:
@@ -206,9 +172,7 @@ def main(task_id: int):
                 # if sampling_mode == "exact":
                 E = torch.exp(log_E_loc).real
                 E_full = E @ safe_exp(log_prob_fn(states).view(-1), normalise=True)
-                writer.add_scalar(
-                    "loss/E_full_delta", E_full - torch.tensor(true_energy), step
-                )
+                writer.add_scalar("loss/E_full_delta", E_full - torch.tensor(true_energy), step)
                 logger.info("E_full_delta = {}", E_full - torch.tensor(true_energy))
 
         with local_sw("forward_and_backward"):

@@ -11,7 +11,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
 from loguru import logger
-
 from torchmetrics.classification import BinaryF1Score
 from tqdm import tqdm
 
@@ -24,10 +23,10 @@ from lattice_boolean_analysis import (
     SignalKind,
     SignSignalKind,
 )
-from pytorchtools import EarlyStopping
-from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangleLattice
-from spin_nn import FC1SpinNN, SpinNN
 from misc_utils import get_abslargest_terms, make_unpacked_configurations
+from pytorchtools import EarlyStopping
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
+from spin_nn import FC1SpinNN, SpinNN
 
 self_name = "multi_nn_2023_03_06.py"
 
@@ -64,7 +63,7 @@ system_terms_dir = mkdir(experiment_dir / "system-terms")
 
 lattices: list[SpinLattice] = [
     SquareLattice(width=6, height=4),
-    TriangleLattice(width=6, height=4),
+    TriangularLattice(width=6, height=4),
     KagomeLattice(width=2, height=4),
 ]
 signal_kinds = [SignSignalKind()]

@@ -1,5 +1,5 @@
 from collections import namedtuple
-from typing import Any, Callable, Dict, Optional, Tuple, Union, overload, Literal
+from typing import Any, Callable, Dict, Literal, Optional, Tuple, Union, overload
 
 import lattice_symmetries as ls
 import numpy as np
@@ -187,26 +187,19 @@ def _determine_batch_size(options: SamplingOptions) -> int:
         batch_size = int(batch_size)
         if batch_size <= 0:
             raise ValueError(
-                "invalid 'batch_size': {}; expected a positive integer".format(
-                    batch_size
-                )
+                "invalid 'batch_size': {}; expected a positive integer".format(batch_size)
             )
     return batch_size
 
 
 def split_into_batches(
-    xs: Tensor
-    | npt.NDArray
-    | tuple[Tensor | npt.NDArray, ...]
-    | list[Tensor | npt.NDArray],
+    xs: Tensor | npt.NDArray | tuple[Tensor | npt.NDArray, ...] | list[Tensor | npt.NDArray],
     batch_size: int,
     device=None,
 ):
     batch_size = int(batch_size)
     if batch_size <= 0:
-        raise ValueError(
-            "invalid batch_size: {}; expected a positive integer".format(batch_size)
-        )
+        raise ValueError("invalid batch_size: {}; expected a positive integer".format(batch_size))
 
     expanded = False
     if isinstance(xs, (np.ndarray, Tensor)):
@@ -238,17 +231,47 @@ def split_into_batches(
         yield chunks
 
 
-def forward_with_batches(f, xs, batch_size: int, device=None) -> Tensor:
+@overload
+def forward_with_batches(
+    f: Callable[[Tensor], Tensor],
+    xs: Tensor,
+    batch_size: int,
+    device=None,
+) -> Tensor:
+    ...
+
+
+@overload
+def forward_with_batches(
+    f: Callable[[npt.NDArray], npt.NDArray],
+    xs: npt.NDArray,
+    batch_size: int,
+    device=None,
+) -> npt.NDArray:
+    ...
+
+
+def forward_with_batches(
+    f: Callable[[Tensor], Tensor] | Callable[[npt.NDArray], npt.NDArray],
+    xs: Tensor | npt.NDArray,
+    batch_size: int,
+    device=None,
+) -> Tensor | npt.NDArray:
     r"""Applies ``f`` to all ``xs`` propagating no more than ``batch_size``
     samples at a time. ``xs`` is split into batches along the first dimension
-    (i.e. dim=0). ``f`` must return a torch.Tensor.
+    (i.e. dim=0). ``f`` must return a torch.Tensor or npt.NDArray.
     """
     if xs.shape[0] == 0:
         raise ValueError("invalid xs: {}; input should not be empty".format(xs))
     out = []
     for chunk in split_into_batches(xs, batch_size, device):
         out.append(f(chunk))
-    return torch.cat(out, dim=0)
+    if isinstance(out[0], Tensor):
+        return torch.cat(out, dim=0)
+    elif isinstance(out[0], np.ndarray):
+        return np.concatenate(out, axis=0)
+    else:
+        raise TypeError("f must return either torch.Tensor or numpy.ndarray")
 
 
 def _check_log_prob_shape(log_prob: Tensor, device: Optional[torch.device]) -> None:
@@ -297,9 +320,7 @@ def sample_full(
         "".format(batch_size)
     )
     # states = pad_states(states)
-    log_prob = forward_with_batches(
-        log_prob_fn, states, batch_size=batch_size, device=device
-    )
+    log_prob = forward_with_batches(log_prob_fn, states, batch_size=batch_size, device=device)
     if log_prob.dim() > 1:
         log_prob.squeeze_(dim=1)
     _check_log_prob_shape(log_prob, device)
@@ -336,9 +357,7 @@ def sample_exactly(
     basis: ls.SpinBasis,
     options: SamplingOptions,
     return_all_probs: bool = False,
-) -> (
-    tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-):
+) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     r"""Sample states by explicitly constructing the discrete probability distribution.
 
     Number of samples is `options.number_chains * options.number_samples`, and

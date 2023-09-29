@@ -1,23 +1,28 @@
-from spin_lattices import TriangleLattice, SquareLattice, KagomeLattice, SpinLattice
-from heisenberg_hamiltonians import HeisenbergJ1J2
-from fast_boolean_analysis import FourierSeries, fourier_expand, keep_largest_n
-from lattice_boolean_analysis import LBFFromSpinSystem
-from pathlib import Path
-import numpy as np
-from nn_xors_2023_07_18 import make_dataset, MLPBinaryClassifier
-from loguru import logger
-import torch
-from torch.utils.data import random_split, DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from datetime import datetime
-from torch import nn
-from misc_utils import make_unpacked_configurations, make_packed_configurations
-from parity import popcount
-import matplotlib.pyplot as plt
 from itertools import product
-import pandas as pd
-from misc_utils import groupby_shuffle
+from pathlib import Path
+
 import jsonlines
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from loguru import logger
+from torch import nn
+from torch.utils.data import DataLoader, random_split
+from torch.utils.tensorboard import SummaryWriter
+
+from fast_boolean_analysis import FourierSeries, fourier_expand, keep_largest_n
+from heisenberg_hamiltonians import HeisenbergJ1J2
+from lattice_boolean_analysis import LBFFromSpinSystem
+from misc_utils import (
+    groupby_shuffle,
+    make_packed_configurations,
+    make_unpacked_configurations,
+)
+from nn_xors_2023_07_18 import MLPBinaryClassifier, make_dataset
+from parity import popcount
+from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -35,8 +40,8 @@ runs = 20
 system_specs = [
     (SquareLattice(6, 4), 0.5),
     (KagomeLattice(2, 4), 1.0),
-    (TriangleLattice(6, 4), 0.9),
-    (TriangleLattice(6, 4), 1.3),
+    (TriangularLattice(6, 4), 0.9),
+    (TriangularLattice(6, 4), 1.3),
 ]
 
 keep_xors_list = [2, 3, 4, 10]

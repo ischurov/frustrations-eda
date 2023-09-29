@@ -17,7 +17,7 @@ from scipy.optimize import dual_annealing
 from sympy.combinatorics import permutations
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
-from spin_lattices import SquareLattice1Diag, TriangleLattice
+from spin_lattices import SquareLattice1Diag, TriangularLattice
 
 self_name = Path(__file__).name
 output_dir = Path("experiments") / self_name.removesuffix(".py")

@@ -207,6 +207,16 @@ class SpinSystem:
         self.ground_state_in_full_basis = coeffs
         return coeffs
 
+    def get_ground_state(self) -> npt.NDArray[np.float64]:
+        """
+        Returns the ground state in the basis of the system.
+        If use_symmetries is True, no conversion is done.
+        """
+        if self.ground_state is None:
+            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
+
+        return self.ground_state
+
     def get_ground_state_in_canonical_basis(self) -> npt.NDArray[np.float64]:
         """
         Returns the ground state in the canonical basis

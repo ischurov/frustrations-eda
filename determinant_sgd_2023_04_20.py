@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from heisenberg_hamiltonians import HeisenbergJ1J2
 from slater_determinant import SlaterDeterminant
-from spin_lattices import KagomeLattice, SquareLattice1Diag, TriangleLattice
+from spin_lattices import KagomeLattice, SquareLattice1Diag, TriangularLattice
 
 
 def sign_overlap(ground_state, predict_signs):
