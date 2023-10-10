@@ -246,19 +246,28 @@ def nbd_matrix_to_graph(
 
 
 def true_relsigns(system: SpinSystem) -> Callable[[npt.NDArray], npt.NDArray]:
-    def relings(cluster: npt.NDArray) -> npt.NDArray:
+    def relsigns(cluster: npt.NDArray) -> npt.NDArray:
         return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice([-1, 1])
 
-    return relings
+    return relsigns
 
 
 def almost_true_relsigns(system: SpinSystem, eps: float) -> Callable[[npt.NDArray], npt.NDArray]:
-    def relings(cluster: npt.NDArray) -> npt.NDArray:
+    def relsigns(cluster: npt.NDArray) -> npt.NDArray:
         return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
             [1, -1], p=[1 - eps, eps], size=len(cluster)
         )
 
-    return relings
+    return relsigns
+
+
+def random_relsigns(system: SpinSystem):
+    signs = np.random.choice([-1, 1], size=(system.basis.number_states))
+
+    def get_signs(s):
+        return signs[system.basis.index(s)]
+
+    return get_signs
 
 
 def transfer_signs_to_H(

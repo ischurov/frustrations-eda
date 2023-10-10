@@ -26,10 +26,10 @@ from lattice_boolean_analysis import (
     SignSignalKind,
     ValueSignalKind,
 )
+from misc_utils import make_unpacked_configurations
 from pytorchtools import EarlyStopping
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice
 from spin_nn import FC1SpinNN, SpinNN
-from misc_utils import make_unpacked_configurations
 
 self_name = os.path.basename(__file__)
 
@@ -173,7 +173,6 @@ def main(J2s: list[float]):
             use_symmetries=True,
             spin_inversion=1,
             ground_state_cache_dir=ground_state_cache_dir,
-            show_progress=True,
         )
 
         system.get_eigenstates(1)

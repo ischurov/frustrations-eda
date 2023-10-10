@@ -187,8 +187,8 @@ def mk_train_test(
     system: SpinSystem,
     n_train: int,
     n_test: int,
-    sampling_power_train: int = 2,
-    sampling_power_test: int = 0,
+    sampling_power_train: float = 2,
+    sampling_power_test: float = 0,
     replace: bool = False,
 ):
     train_states = sample_from_system(

@@ -18,7 +18,12 @@ from my_stopwatch import stopwatch
 from nqs_playground_helpers import SamplingOptions, sample_exactly
 from spin_lattices import KagomeLattice
 from swo import generate_training_set, generate_training_set_lanczos
-from vmc_amplitude import LogProbDenseNet, LogProbFn, almost_true_relsigns
+from vmc_amplitude import (
+    LogProbDenseNet,
+    LogProbFn,
+    almost_true_relsigns,
+    random_relsigns,
+)
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -39,6 +44,9 @@ default_config = {
     "n_hidden": 512,
     "hidden_layers": 1,
     "sampling_power": 2.0,
+    "batch_size": 64,
+    "lr": 1e-3,
+    "sign": "true",
 }
 
 configs = {
@@ -298,6 +306,22 @@ configs = {
         "snapshot_each": 1,
         "sampling_power": 1,
     },
+    46: {
+        "lattice_name": "kagome2x3",
+        "energy_baseline": 250.0,
+        "epochs": 10,
+        "power_iterations": 250,
+        "n_samples": 5000,
+        "sign": "random",
+    },
+    47: {
+        "lattice_name": "kagome2x4",
+        "energy_baseline": 250.0,
+        "epochs": 10,
+        "power_iterations": 250,
+        "n_samples": 5000,
+        "sign": "random",
+    },
 }
 
 
@@ -395,35 +419,8 @@ def main(task_id: int):
     resample_every = config["resample_every"]
     snapshot_each = config["snapshot_each"]
     sampling_power = config["sampling_power"]
-
-    # # fmt: off
-    # configs = [
-    #     (5000, 10.0, "kagome36", 100, False, "LogProbDenseNet", True),          # 0
-    #     (5000, 250.0, "kagome36", 100, False, "LogProbDenseNet", True),         # 1
-    #     (5000, 10.0, "kagome27", 100, False, "LogProbDenseNet", True),          # 2
-    #     (5000, 250.0, "kagome27", 100, False, "LogProbDenseNet", True),         # 3
-    #     (5000, 10.0, "kagome27", 100, False, "SplitGroupResConvNet", True),     # 4
-    #     (5000, 250.0, "kagome27", 100, False, "SplitGroupResConvNet", True),    # 5
-    #     (5000, 10.0, "kagome27", 10, False, "SplitGroupResConvNet", True),      # 6
-    #     (5000, 250.0, "kagome27", 10, False, "SplitGroupResConvNet", True),     # 7
-    #     (5000, 10.0, "kagome2x4", 100, False, "LogProbDenseNet", True),         # 8
-    #     (5000, 250.0, "kagome2x4", 100, False, "LogProbDenseNet", True),        # 9
-    #     (5000, 10.0, "kagome27", 10, False, "SplitGroupResConvNet", False),     # 10
-    #     (5000, 250.0, "kagome27", 10, False, "SplitGroupResConvNet", False),    # 11
-    #     (5000, 10.0, "kagome27", 10, False, "LogProbDenseNet", False),          # 12
-    #     (5000, 250.0, "kagome27", 10, False, "LogProbDenseNet", False),         # 13
-    #     (5000, 10.0, "kagome2x4", 10, False, "LogProbDenseNet", False),         # 14
-    #     (5000, 250.0, "kagome2x4", 10, False, "LogProbDenseNet", False),        # 15
-    #     (5000, 10.0, "kagome2x5", 10, False, "LogProbDenseNet", False),         # 16
-    #     (5000, 250.0, "kagome2x5", 10, False, "LogProbDenseNet", False),        # 17
-    #     (5000, 10.0, "kagome2x4", 100, False, "LogProbDenseNet", False),        # 18
-    #     (5000, 250.0, "kagome2x4", 100, False, "LogProbDenseNet", False),       # 19
-    # ]
-    # # fmt: on
-
-    # n_samples, energy_baseline, lattice_name, epochs, reset_network, net, use_symmetries = configs[
-    #     task_id % len(configs)
-    # ]
+    batch_size = config["batch_size"]
+    lr = config["lr"]
 
     run = task_id // len(configs)
 
@@ -435,9 +432,6 @@ def main(task_id: int):
         mode = "power"
 
     test_samples = 50000
-
-    lr = 1e-3
-    batch_size = 64
 
     params_dict = config | {
         "run": run,
@@ -467,7 +461,12 @@ def main(task_id: int):
 
     stopwatch.reset()
 
-    relsigns_fn = almost_true_relsigns(system, eps=0.0)
+    if config["sign"] == "true":
+        relsigns_fn = almost_true_relsigns(system, eps=0.0)
+    elif config["sign"] == "random":
+        relsigns_fn = random_relsigns(system)
+    else:
+        raise ValueError(f"Unknown sign {config['sign']}")
 
     logger.info(f"Running {mode=} with run {run}")
 

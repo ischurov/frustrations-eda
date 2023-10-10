@@ -41,6 +41,7 @@ configs = {
     9: {"lattice": "kagome2x4", "sampling_power_train": 0.5},
     10: {"lattice": "kagome2x4", "sampling_power_train": 0.01},
     11: {"lattice": "kagome2x4", "sampling_power_train": 4.0},
+    12: {"lattice": "kagome2x4", "sampling_power_train": 6.0},
 }
 
 
@@ -59,7 +60,7 @@ def get_lattice(lattice_name):
         return KagomeLattice(n_rows, n_cols)
     elif lattice_type == "square":
         return SquareLattice(n_rows, n_cols)
-    elif lattice_type == "triangle":
+    elif lattice_type in ("triangle", "triangular"):
         return TriangularLattice(n_rows, n_cols)
     else:
         raise ValueError(f"Unknown lattice name {lattice_name}")

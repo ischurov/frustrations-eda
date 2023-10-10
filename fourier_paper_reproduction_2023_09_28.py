@@ -57,8 +57,27 @@ configs = {
     11: {"lattice": "triangular4x4", "J2s": np.linspace(0, 1.4, 29)},
     12: {"lattice": "triangular5x4", "J2s": np.linspace(0, 1.4, 29)},
     13: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)},
-    14: {"lattice": "triangular7x4", "J2s": np.linspace(0, 1.4, 29)},
+    14: {"lattice": "triangular7x4", "J2s": np.linspace(0, 1.4, 29)},  # long, better use 18
     15: {"lattice": "triangular5x5", "J2s": np.linspace(0, 1.4, 29)},
+    16: {
+        "lattice": "kagome3x3",
+        "scorers": [accuracy],
+        "thresholds": [0.2, 0.8],
+        "signals": [sign_signal, amplitude_median_bin_signal],
+    },
+    17: {
+        "lattice": "square7x4",
+        "scorers": [accuracy],
+        "thresholds": [0.2, 0.8],
+        "signals": [sign_signal, amplitude_median_bin_signal],
+    },
+    18: {
+        "lattice": "triangular7x4",
+        "J2s": np.linspace(0, 1.4, 29),
+        "scorers": [accuracy],
+        "thresholds": [0.2, 0.8],
+        "signals": [sign_signal, amplitude_median_bin_signal],
+    },
 }
 
 
