@@ -7,6 +7,7 @@
 #SBATCH --exclusive
 #SBATCH --mem=0
 #SBATCH --array=0
+#SBATCH --exclude=cn[90,20,25]
 
 export PATH="/home/ischurov/.local/bin:$PATH"
 cd /home/ischurov/tcm10/frustrations-eda

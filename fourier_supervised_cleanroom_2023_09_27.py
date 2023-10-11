@@ -42,6 +42,9 @@ configs = {
     10: {"lattice": "kagome2x4", "sampling_power_train": 0.01},
     11: {"lattice": "kagome2x4", "sampling_power_train": 4.0},
     12: {"lattice": "kagome2x4", "sampling_power_train": 6.0},
+    13: {"lattice": "kagome2x4", "sampling_power_train": 8.0},
+    14: {"lattice": "kagome2x4", "sampling_power_train": 10.0},
+    15: {"lattice": "kagome2x4", "sampling_power_train": 20.0},
 }
 
 

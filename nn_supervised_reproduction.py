@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 
 import fire
@@ -58,6 +59,18 @@ configs = {
         "lattice": "kagome2x4",
         "sampling_power_train": 6,
     },
+    6: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 8,
+    },
+    7: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 10,
+    },
+    8: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 20,
+    },
 }
 
 
@@ -111,14 +124,28 @@ def train(net, dataloader, criterion, optimizer, device):
     return running_loss / len(dataloader)
 
 
+def get_predicted_signs(states: npt.NDArray, sign_net: nn.Module, device: torch.device):
+    outputs = sign_net(states).to(device)
+    return (1 - 2 * torch.argmax(outputs, dim=1)).detach().numpy()
+
+
 def sign_overlap(system: SpinSystem):
     def wrapper(states: npt.NDArray, sign_net: nn.Module, device: torch.device):
         true_signs = np.sign(system.get_ground_state_coeffs(states))
         probs = np.abs(system.get_ground_state_coeffs(states)) ** 2
-        outputs = sign_net(states).to(device)
-        predicted_signs = (1 - 2 * torch.argmax(outputs, dim=1)).detach().numpy()
+        predicted_signs = get_predicted_signs(states, sign_net, device)
 
         return np.sum(true_signs * predicted_signs * probs) / np.sum(probs)
+
+    return wrapper
+
+
+def accuracy(system: SpinSystem):
+    def wrapper(states: npt.NDArray, sign_net: nn.Module, device: torch.device):
+        true_signs = np.sign(system.get_ground_state_coeffs(states))
+        predicted_signs = get_predicted_signs(states, sign_net, device)
+        mask = (true_signs != 0) & (predicted_signs != 0)
+        return np.mean(true_signs[mask] == predicted_signs[mask])
 
     return wrapper
 
@@ -127,6 +154,7 @@ def main(task_id: int):
     config = get_config(task_id)
     lattice = get_lattice(config["lattice"])
     J2s = config["J2s"]
+    start_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     (output_dir / str(task_id)).mkdir(parents=True, exist_ok=True)
 
@@ -138,6 +166,7 @@ def main(task_id: int):
         system.get_eigenstates(1)
         signal_fn = sign_signal(system)
         sign_overlap_fn = sign_overlap(system)
+        accuracy_fn = accuracy(system)
 
         for eps_train in config["eps_train"]:
             logger.debug(f"{eps_train=}. Making train and test states...")
@@ -169,8 +198,10 @@ def main(task_id: int):
             for epoch in range(config["epochs"]):
                 train_loss = train(net, dataloader, criterion, optimizer, device)
                 if epoch % config["write_each_epoch"] == 0:
+                    current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     logger.info(f"Epoch {epoch}, train loss: {train_loss:.4f}")
                     test_overlap = sign_overlap_fn(test_states, net, device)
+                    test_accuracy = accuracy_fn(test_states, net, device)
                     logger.info(f"Overlap: {test_overlap:.4f}")
                     with jsonlines.open(
                         output_dir / str(task_id) / f"results.jsonl", mode="a"
@@ -179,10 +210,13 @@ def main(task_id: int):
                             keep_serializable(config)
                             | {
                                 "test_overlap": test_overlap,
+                                "test_accuracy": test_accuracy,
                                 "train_loss": train_loss,
                                 "epoch": epoch,
                                 "J2": J2,
                                 "eps_train": eps_train,
+                                "start_timestamp": start_timestamp,
+                                "current_timestamp": current_timestamp,
                             }
                         )
 
