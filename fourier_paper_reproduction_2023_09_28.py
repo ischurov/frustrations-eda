@@ -19,6 +19,8 @@ from fourier_supervised_cleanroom import (
     amplitude_prob_median_bin_signal,
     fit_fourier_series,
     ground_state_signal,
+    hadamard_transform,
+    keep_largest_n,
     sign_signal,
 )
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
@@ -57,7 +59,13 @@ configs = {
     11: {"lattice": "triangular4x4", "J2s": np.linspace(0, 1.4, 29)},
     12: {"lattice": "triangular5x4", "J2s": np.linspace(0, 1.4, 29)},
     13: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)},
-    14: {"lattice": "triangular7x4", "J2s": np.linspace(0, 1.4, 29)},  # long, better use 18
+    14: {
+        "lattice": "triangular7x4",
+        "J2s": np.linspace(0, 1.4, 29),
+        "scorers": [accuracy],
+        "thresholds": [0.2, 0.8],
+        "signals": [sign_signal, amplitude_median_bin_signal],
+    },
     15: {"lattice": "triangular5x5", "J2s": np.linspace(0, 1.4, 29)},
     16: {
         "lattice": "kagome3x3",
@@ -67,13 +75,6 @@ configs = {
     },
     17: {
         "lattice": "square7x4",
-        "scorers": [accuracy],
-        "thresholds": [0.2, 0.8],
-        "signals": [sign_signal, amplitude_median_bin_signal],
-    },
-    18: {
-        "lattice": "triangular7x4",
-        "J2s": np.linspace(0, 1.4, 29),
         "scorers": [accuracy],
         "thresholds": [0.2, 0.8],
         "signals": [sign_signal, amplitude_median_bin_signal],
@@ -119,6 +120,9 @@ def main(task_id: int, run_id: int | str | None = None):
         )
 
         terms_score = how_many_terms_to_achieve(series_coeffs, threshold, scorer_fn)
+        achieved_sign_overlap_for_terms_score = sign_overlap(system, signal_fn=signal_fn)(
+            hadamard_transform(keep_largest_n(series_coeffs, terms_score))
+        )
 
         with jsonlines.open(output_dir / str(task_id) / f"results.jsonl", "a") as f:
             f.write(
@@ -133,6 +137,7 @@ def main(task_id: int, run_id: int | str | None = None):
                     "terms_relweight_threshold": how_many_terms_to_achieve_relative_weight(
                         series_coeffs, threshold
                     ),
+                    "achieved_sign_overlap_for_terms_score": achieved_sign_overlap_for_terms_score,
                     "iipr": 1.0 / get_ipr(series_coeffs),
                     "scorer": scorer_factory.__name__,
                     "signal": signal_factory.__name__,
