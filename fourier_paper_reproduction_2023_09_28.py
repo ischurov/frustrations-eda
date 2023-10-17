@@ -17,6 +17,7 @@ from fourier_paper_reproduction import (
 from fourier_supervised_cleanroom import (
     amplitude_median_bin_signal,
     amplitude_prob_median_bin_signal,
+    amplitude_signal,
     fit_fourier_series,
     ground_state_signal,
     hadamard_transform,
@@ -38,6 +39,7 @@ default_config = {
         ground_state_signal,
         amplitude_median_bin_signal,
         amplitude_prob_median_bin_signal,
+        amplitude_signal,
     ],
     "scorers": [sign_overlap, accuracy],
     "thresholds": [0.02, 0.2, 0.5, 0.8, 0.9, 0.95, 0.99],
@@ -79,6 +81,8 @@ configs = {
         "thresholds": [0.2, 0.8],
         "signals": [sign_signal, amplitude_median_bin_signal],
     },
+    18: {"lattice": "kagome3x2"},
+    19: {"lattice": "kagome4x2"},
 }
 
 

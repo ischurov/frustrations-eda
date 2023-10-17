@@ -71,6 +71,18 @@ configs = {
         "lattice": "kagome2x4",
         "sampling_power_train": 20,
     },
+    9: {
+        "lattice": "square5x4",
+        "J2s": np.linspace(0, 1, 21),
+    },
+    10: {
+        "lattice": "square5x5",
+        "J2s": np.linspace(0, 1, 21),
+    },
+    11: {
+        "lattice": "triangular5x5",
+        "J2s": np.linspace(0, 1.4, 29),
+    },
 }
 
 

@@ -20,7 +20,7 @@ from parity import parity, popcount
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
 
-def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
+def scatter_plot(data: pd.DataFrame, x, y, color, alpha=None, ax=None, scatter_kws=None, dim=None):
     if scatter_kws is None:
         scatter_kws = {}
 
@@ -33,12 +33,16 @@ def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
 
     # List of colors in the color palettes
     rgb_values = sns.color_palette("Set2", len(color_labels))
-    # Map continents to the colors
-    assert isinstance(rgb_values, list)
 
+    # Map continents to the colors
     color_map = dict(zip(color_labels, rgb_values))
 
     for key, group in data.groupby(color):
+        if alpha:
+            alphas = group[alpha]
+        else:
+            alphas = 1.0
+
         group.plot(
             ax=ax,
             kind="scatter",
@@ -46,6 +50,7 @@ def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
             y=y,
             label=key,
             color=color_map[key],
+            alpha=alphas,
             **scatter_kws,
         )
 
@@ -440,14 +445,12 @@ class SpinLattice:
         show_numbers=True,
         permutation: None | list[int] | Permutation = None,
         ax=None,
+        swap_axes=False,
     ):
-        """Plots the lattice and optionally visualizes some spin configuration"""
         if spins is None:
             spins = 0
 
-        if isinstance(spins, (int, np.uint64)):  # type: ignore
-            # see https://github.com/numpy/numpy/issues/23007
-
+        if isinstance(spins, (int, np.uint64)):
             spins = np.array(
                 make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)
             )
@@ -455,51 +458,77 @@ class SpinLattice:
             spins = np.eye(self.number_spins, dtype=np.int64)[spins].sum(axis=0)
 
         spins_df = pd.DataFrame(dict(spin=spins))
-        sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
+        sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True).assign(
+            alpha=lambda df: df["is_canonical"].apply(lambda x: 1 if x else 0.3)
+        )
 
         if ax is None:
             _, ax = plt.subplots()
 
+        x, y = "emb_x", "emb_y"
+        if swap_axes:
+            x, y = y, x
+
         scatter_plot(
             sites_df,
-            x="emb_x",
-            y="emb_y",
+            x=x,
+            y=y,
             color="spin" if spins is not None else None,
+            alpha="alpha",
             ax=ax,
             scatter_kws={"s": 100, "zorder": 10},
         )
 
         if show_edges:
             for (start, end), kind in self.edges:
+                x_start, y_start = self.lattice_basis @ start
+                x_end, y_end = self.lattice_basis @ end
+                if swap_axes:
+                    x_start, y_start = y_start, x_start
+                    x_end, y_end = y_end, x_end
+
                 ax.plot(
-                    *zip(self.lattice_basis @ start, self.lattice_basis @ end),
+                    [x_start, x_end],
+                    [y_start, y_end],
                     color="gray",
                     linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1],
                 )
 
         if show_numbers:
             for site, num in self.site_to_num.items():
-                ax.annotate("  " + str(num), self.lattice_basis @ site)
+                x_annotate, y_annotate = self.lattice_basis @ site
+                if swap_axes:
+                    x_annotate, y_annotate = y_annotate, x_annotate
+                ax.annotate("  " + str(num), (x_annotate, y_annotate))
 
         if permutation is not None:
             if isinstance(permutation, Permutation):
                 permutation = permutation.array_form
             for _, row in self.sites_df.iterrows():
-                plt.text(
-                    row["emb_x"] + 0.2,
-                    row["emb_y"] + 0.2,
-                    "(" + str(permutation[row["num"]]) + ")",
-                )
+                x_text = row[x] + 0.2
+                y_text = row[y] + 0.2
+                ax.text(x_text, y_text, "(" + str(permutation[row["num"]]) + ")")
 
         ax.axis("equal")
         return ax
 
-    def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
-        fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
+    def plot_subsets(
+        self,
+        subsets: npt.NDArray[np.uint64],
+        titles: list[str],
+        legend=True,
+        size_scale=3,
+        **kwargs,
+    ):
+        fig, axes = plt.subplots(
+            1, len(subsets), figsize=(len(subsets) * size_scale, size_scale), squeeze=False
+        )
         for ax, subset, title in zip(axes[0], subsets, titles):
-            self.plot(spins=subset, ax=ax)
+            self.plot(spins=subset, ax=ax, **kwargs)
             ax.axis("off")
             ax.set_title(title)
+            if not legend:
+                ax.get_legend().remove()
         return fig
 
 

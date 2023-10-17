@@ -183,6 +183,13 @@ def amplitude_median_bin_signal(system: SpinSystem):
     return wrapper
 
 
+def amplitude_signal(system: SpinSystem):
+    def wrapper(s):
+        return np.abs(system.get_ground_state_coeffs(s)).astype(np.float64)
+
+    return wrapper
+
+
 def mk_train_test(
     system: SpinSystem,
     n_train: int,

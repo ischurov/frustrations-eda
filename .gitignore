@@ -1,4 +1,4 @@
-*.pdf
+fig/expansions/*
 groundstates/
 fourier-bases/
 experiments/

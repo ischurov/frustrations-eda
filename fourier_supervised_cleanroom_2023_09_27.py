@@ -23,7 +23,7 @@ output_dir.mkdir(exist_ok=True)
 
 default_config = {
     "J2s": np.linspace(0, 1, 11),
-    "eps_train": [0.01, 0.001, 0.0001],
+    "eps_train": [0.01, 0.001, 0.0001, 0.00001],
     "n_test": 50000,
     "sampling_power_train": 2.0,
 }
