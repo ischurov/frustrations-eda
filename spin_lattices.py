@@ -753,11 +753,28 @@ class SquareLattice(ParallelogramSpinLattice):
             **kwargs,
         )
 
+        t_frame = self.sites_df.query("is_canonical").set_index("num").reset_index()
+
+        # TODO: refactor as a test
+        assert t_frame["ix"].nunique() == self.width
+        assert t_frame["iy"].nunique() == self.height
+        assert t_frame.duplicated(["ix", "iy"]).sum() == 0
+
+        self.num_tensor_order = np.asarray(
+            t_frame.sort_values(["ix", "iy"], ignore_index=True)["num"].values
+        )
+
+    def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
+        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
+            ..., self.num_tensor_order
+        ].reshape(-1, self.width, self.height, 1)
+
 
 class SquareLattice1Diag(ParallelogramSpinLattice):
     def __init__(self, width=1, height=1, **kwargs):
         r"""
-        Generates square lattice with one J2 diagonal.
+        Generates square lattice with one J2 diagonal. Equivalent to the
+        Triangular lattice.
 
         The fundamental domain:
 

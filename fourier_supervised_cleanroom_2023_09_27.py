@@ -45,11 +45,12 @@ configs = {
     13: {"lattice": "kagome2x4", "sampling_power_train": 8.0},
     14: {"lattice": "kagome2x4", "sampling_power_train": 10.0},
     15: {"lattice": "kagome2x4", "sampling_power_train": 20.0},
+    16: {"lattice": "kagome3x3", "J2s": [1.0]},
 }
 
 
 def get_config(task_id: int):
-    return default_config | configs[task_id % len(configs)]
+    return default_config | configs[task_id]
 
 
 def get_lattice(lattice_name):

@@ -247,12 +247,14 @@ class SpinSystem:
 
         return self.ground_state_in_canonical_basis
 
-    def get_ground_state_coeffs(self, states) -> npt.NDArray[np.float64]:
+    def get_ground_state_coeffs(self, states, apply_symmetries=True) -> npt.NDArray[np.float64]:
         if self.ground_state is None:
-            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
-        corresp_reprs, characters, norms = self.basis.state_info(states)
-        corresp_repr_indices = self.basis.index(corresp_reprs)
-        return np.real_if_close(self.ground_state[corresp_repr_indices] * characters * norms)
+            self.get_eigenstates(1)
+        if apply_symmetries:
+            corresp_reprs, characters, norms = self.basis.state_info(states)
+            corresp_repr_indices = self.basis.index(corresp_reprs)
+            return np.real_if_close(self.ground_state[corresp_repr_indices] * characters * norms)
+        return np.real_if_close(self.ground_state[self.basis.index(states)])
 
     def get_df_ground_state(
         self,

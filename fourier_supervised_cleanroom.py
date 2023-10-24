@@ -106,9 +106,11 @@ def sample_from_system(
     replace: bool = False,
 ):
     if states_to_sample_from is None:
-        states_to_sample_from = system.canonical_basis.states
+        states_to_sample_from = system.basis.states
 
-    amplitudes = np.abs(system.get_ground_state_coeffs(states_to_sample_from))
+    amplitudes = np.abs(
+        system.get_ground_state_coeffs(states_to_sample_from, apply_symmetries=False)
+    )
     probs = amplitudes**sampling_power
     probs /= probs.sum()
     sampled_states = np.random.choice(
@@ -205,7 +207,7 @@ def mk_train_test(
         replace=replace,
     )
     rest_states = np.setdiff1d(
-        system.canonical_basis.states,
+        system.basis.states,
         train_states,
     )
 

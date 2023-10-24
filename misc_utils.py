@@ -251,5 +251,13 @@ def column_to(type_: type, cols: str | list[str]) -> Callable[[pd.DataFrame], pd
     return wrapper
 
 
-def keep_serializable(dct: dict):
-    return {k: v for k, v in dct.items() if isinstance(v, (int, float, str))}
+def keep_serializable(dct: dict, scalar_only: bool = True):
+    keep_types = (int, float, str) if scalar_only else (int, float, str, list)
+    return {k: v for k, v in dct.items() if isinstance(v, keep_types)}
+
+
+def concat_columns(columns):
+    def wrapper(df):
+        return df[columns].apply(lambda x: "_".join(map(str, x)), axis=1)
+
+    return wrapper

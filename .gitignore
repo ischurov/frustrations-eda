@@ -30,3 +30,12 @@ graph (2).py
 graph.py
 *.dat
 signs_cache/*
+*.csv
+*.tsv
+*.pickle*
+*.pdf
+*.txt
+result
+*.json
+flake.lock
+._envrc
