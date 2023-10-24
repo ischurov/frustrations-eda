@@ -1,48 +1,10 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from conv2d_circular import CircularConv2d
 from spin_lattices import KagomeLattice
-import numpy as np
-
-
-def conv2d_circular(input, weight, bias=None, stride=1, padding=0, dilation=1, groups=1):
-    # Apply circular padding
-    if padding > 0:
-        input = F.pad(input, (padding, 0, padding, 0), mode="circular")
-
-    return F.conv2d(input, weight, bias, stride, 0, dilation, groups)
-
-
-class CircularConv2d(nn.Module):
-    def __init__(
-        self,
-        in_channels,
-        out_channels,
-        kernel_size,
-        stride=1,
-        padding=0,
-        dilation=1,
-        groups=1,
-        bias=True,
-    ):
-        super(CircularConv2d, self).__init__()
-        self.conv = nn.Conv2d(
-            in_channels, out_channels, kernel_size, stride, 0, dilation, groups, bias
-        )
-        self.padding = padding
-
-    def forward(self, x):
-        return F.relu(
-            conv2d_circular(
-                x,
-                self.conv.weight,
-                self.conv.bias,
-                self.conv.stride,
-                self.padding,
-                self.conv.dilation,
-                self.conv.groups,
-            )
-        )
 
 
 class KagomeCNNRegression(nn.Module):
