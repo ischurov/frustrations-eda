@@ -39,6 +39,7 @@ default_config = {
     "dilations": None,
     "use_symmetries": False,  # should be True for CNNs and other invariant models
     "skip_symmetries_whitelist": False,
+    "spin_inversion": None,
 }
 
 configs = {
@@ -381,6 +382,7 @@ configs = {
         "J2s": [0.5],
         "architecture": "invariant_cnn",
         "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
         "runs": 10,
         "eps_train": [0.05],
         "epochs": 200,
@@ -392,6 +394,7 @@ configs = {
         "J2s": [0.5],
         "architecture": "invariant_cnn",
         "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
         "dilations": [1, 2, 3],
         "runs": 10,
         "eps_train": [0.05],
@@ -404,12 +407,29 @@ configs = {
         "J2s": [0.5],
         "architecture": "invariant_cnn",
         "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
         "dilations": [3, 2, 1],
         "runs": 10,
         "eps_train": [0.05],
         "epochs": 200,
         "use_symmetries": True,
         "n_test": 5000,
+    },
+    44: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [3, 2, 1],
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "spin_inversion": 1,
+        "n_test": 50000,
+        "skip_symmetries_whitelist": True,
+        "lr": 1e-3,
     },
 }
 
@@ -538,6 +558,7 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
             lattice=get_lattice(config["lattice"]),
             hidden_channels=config["hidden_channels"],
             dilations=config["dilations"],
+            kernel_size=config['kernel_size']
             out_dim=2,
         )
     else:
@@ -602,7 +623,7 @@ def main(task_id: int):
                 J1=1,
                 J2=J2,
                 use_symmetries=config["use_symmetries"],
-                spin_inversion=None,
+                spin_inversion=config["spin_inversion"],
                 skip_symmetries_whitelist=config["skip_symmetries_whitelist"],
             )
             system.get_eigenstates(1)
