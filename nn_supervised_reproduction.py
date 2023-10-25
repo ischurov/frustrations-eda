@@ -558,7 +558,7 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
             lattice=get_lattice(config["lattice"]),
             hidden_channels=config["hidden_channels"],
             dilations=config["dilations"],
-            kernel_size=config['kernel_size']
+            kernel_size=config['kernel_size'],
             out_dim=2,
         )
     else:
