@@ -8,13 +8,19 @@ import numpy.typing as npt
 import torch
 from jsonlines import jsonlines
 from loguru import logger
+from scipy.special import comb
 from torch import Tensor, nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from conv2d_circular import InvariantSpinCNNRegression
 from fourier_supervised_cleanroom import fit_fourier_series, mk_train_test, sign_signal
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from heisenberg_hamiltonians import (
+    HeisenbergJ1J2,
+    SpinSystem,
+    heisenberg_expr,
+    heisenberg_expr_hadamard,
+)
 from misc_utils import keep_serializable, make_unpacked_configurations
 from parity import parity, popcount
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
@@ -40,8 +46,17 @@ default_config = {
     "use_symmetries": False,  # should be True for CNNs and other invariant models
     "skip_symmetries_whitelist": False,
     "spin_inversion": None,
+    "sample_repr_then_apply_random_symmetry": False,
+    "sample_with_replacement": False,
+    "hadamard_basis": False,
+    "n_train_from_full_space": True,
 }
 
+# System without symmetries, any network -> usual sampling
+# System with symmetries, network is not invariant ->
+#   sample representatives, then act with random symmetry from system symmetries
+# System with symmetries, network is invariant w.r.t system's symmetries ->
+#   sample representatives
 configs = {
     0: {
         "lattice": "kagome2x4",
@@ -431,6 +446,215 @@ configs = {
         "skip_symmetries_whitelist": True,
         "lr": 1e-3,
     },
+    45: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "dense",
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 1,
+        "eps_train": [0.01],
+        "epochs": 200,
+        "n_test": 50000,
+        "skip_symmetries_whitelist": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "sample_with_replacement": True,
+    },
+    46: {
+        "lattice": "square4x6",
+        "J2s": [0.5],
+        "architecture": "dense",
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 1,
+        "eps_train": [0.01],
+        "epochs": 200,
+        "n_test": 50000,
+        "skip_symmetries_whitelist": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "sample_with_replacement": True,
+    },
+    47: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "dense",
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 1,
+        "eps_train": [0.01],
+        "epochs": 200,
+        "n_test": 50000,
+        "skip_symmetries_whitelist": True,
+        "sample_repr_then_apply_random_symmetry": False,
+    },
+    48: {
+        "lattice": "triangular4x4",
+        "J2s": [1.3],
+        "architecture": "dense",
+        "eps_train": [0.01],
+        "hadamard_basis": True,
+        "use_symmetries": False,
+        "spin_inversion": None,
+    },
+    49: {
+        "lattice": "triangular4x4",
+        "J2s": [1.3],
+        "architecture": "dense",
+        "eps_train": [0.01],
+        "n_test": 10000,
+        "hadamard_basis": False,
+        "use_symmetries": False,
+        "spin_inversion": None,
+    },
+    50: {
+        "lattice": "triangular6x4",
+        "J2s": [1.3],
+        "architecture": "dense",
+        "eps_train": [0.005, 0.01],
+        "hadamard_basis": True,
+        "use_symmetries": False,
+        "spin_inversion": None,
+    },
+    51: {
+        "lattice": "triangular6x4",
+        "J2s": [1.3],
+        "architecture": "dense",
+        "eps_train": [0.01, 0.05],
+        "n_test": 10000,
+        "hadamard_basis": False,
+        "use_symmetries": False,
+        "spin_inversion": None,
+    },
+    52: {
+        "lattice": "triangular6x4",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [3, 2, 1],
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "n_test": 5000,
+        "skip_symmetries_whitelist": True,
+    },
+    53: {
+        "lattice": "triangular6x4",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "n_test": 5000,
+        "skip_symmetries_whitelist": True,
+    },
+    54: {
+        "lattice": "triangular6x4",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "n_test": 5000,
+        "dilations": [1, 2, 3],
+        "skip_symmetries_whitelist": True,
+    },
+    55: {
+        "lattice": "kagome2x4",
+        "J2s": [1.0],
+        "architecture": "dense",
+        "epochs": 200,
+        "eps_train": [0.01],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+    },
+    56: {
+        "lattice": "kagome2x4",
+        "J2s": [1.0],
+        "architecture": "dense",
+        "epochs": 200,
+        "eps_train": [0.01],
+        "use_symmetries": False,
+        "spin_inversion": None,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": False,
+    },
+    57: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "dense",
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 1,
+        "eps_train": [0.01],
+        "epochs": 200,
+        "n_test": 50000,
+        "skip_symmetries_whitelist": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+    },
+    58: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [3, 2, 1],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+    },
+    59: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [1, 2, 3],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+    },
+    60: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+    },
 }
 
 
@@ -527,7 +751,7 @@ def sample_xors_hamming_weight(hamming_weight: int):
     return wrapper
 
 
-def get_sample_strategy(config: dict[str, Any]):
+def get_sample_xor_strategy(config: dict[str, Any]):
     if config["xor_strategy"] == "uniform":
         return sample_xors_uniform()
     elif config["xor_strategy"] == "fourier_weight":
@@ -544,7 +768,7 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
             system, n_hidden=config["n_hidden"], hidden_layers=config["hidden_layers"]
         )
     elif config["architecture"] == "dense+xor":
-        xor_masks = get_sample_strategy(config)(system, signal, size=config["n_xors"])
+        xor_masks = get_sample_xor_strategy(config)(system, signal, size=config["n_xors"])
         net = SignDenseNetXor(
             system=system,
             n_hidden=config["n_hidden"],
@@ -558,7 +782,7 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
             lattice=get_lattice(config["lattice"]),
             hidden_channels=config["hidden_channels"],
             dilations=config["dilations"],
-            kernel_size=config['kernel_size'],
+            kernel_size=config["kernel_size"],
             out_dim=2,
         )
     else:
@@ -625,6 +849,8 @@ def main(task_id: int):
                 use_symmetries=config["use_symmetries"],
                 spin_inversion=config["spin_inversion"],
                 skip_symmetries_whitelist=config["skip_symmetries_whitelist"],
+                hamming_weight=None if config["hadamard_basis"] else "half",
+                expr_str=heisenberg_expr_hadamard if config["hadamard_basis"] else heisenberg_expr,
             )
             system.get_eigenstates(1)
 
@@ -634,18 +860,31 @@ def main(task_id: int):
 
             for eps_train in config["eps_train"]:
                 logger.debug(f"{eps_train=}. Making train and test states...")
-                n_train = int(system.basis.states.shape[0] * eps_train)
+                if (
+                    config["sample_repr_then_apply_random_symmetry"]
+                    and config["n_train_from_full_space"]
+                ):
+                    full_sample_space_size = comb(system.number_spins, system.number_spins // 2)
+                else:
+                    full_sample_space_size = system.basis.states.shape[0]
+
+                logger.debug(f"{full_sample_space_size=}")
+                n_train = int(full_sample_space_size * eps_train)
+                logger.debug(f"{n_train=}")
                 n_test = config["n_test"]
                 train_states, test_states = mk_train_test(
                     system,
                     n_train=n_train,
                     n_test=n_test,
                     sampling_power_train=config["sampling_power_train"],
+                    apply_random_symmetries=config["sample_repr_then_apply_random_symmetry"],
+                    replace=config["sample_with_replacement"],
                 )
+                logger.debug("Creating network, criterion, optimizer...")
                 net = get_network(config, system, signal=signal_factory)
                 criterion = nn.CrossEntropyLoss()
                 optimizer = torch.optim.Adam(net.parameters(), lr=config["lr"])
-
+                logger.debug("Creating TensorDataset and DataLoader...")
                 # Create a TensorDataset from your inputs X and Y
                 dataset = TensorDataset(
                     torch.from_numpy(train_states.astype(np.int64)),
@@ -660,10 +899,12 @@ def main(task_id: int):
                 net.to(device)
 
                 for epoch in range(config["epochs"]):
+                    logger.debug("Training")
                     train_loss = train(net, dataloader, criterion, optimizer, device)
                     if epoch % config["write_each_epoch"] == 0:
                         current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
-                        logger.info(f"Epoch {epoch}, train loss: {train_loss:.4f}")
+                        logger.info(f"Epoch {epoch}, train loss: {train_loss:.8f}")
+                        logger.info(f"{net(test_states)=}")
                         test_overlap = sign_overlap_fn(test_states, net, device)
                         test_accuracy = accuracy_fn(test_states, net, device)
                         logger.info(f"Overlap: {test_overlap:.4f}")
@@ -683,6 +924,7 @@ def main(task_id: int):
                                     "current_timestamp": current_timestamp,
                                     "run": run,
                                     "task_id": task_id,
+                                    "n_train": n_train,
                                 }
                             )
 
