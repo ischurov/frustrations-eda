@@ -21,20 +21,18 @@ def how_many_terms_to_achieve(
 
     series_coeffs: The series of coefficients of a Fourier series.
     target_score: The score to achieve.
-    scorer: A function that takes a series of predictions (i.e. a Fourier transform of series_coeffs)
+    scorer: A function that takes a Fourier series
         and returns a score.
     """
     max_terms = len(series_coeffs)
     min_terms = 0
-    if (score := scorer(hadamard_transform(series_coeffs))) < target_score:
+    if (score := scorer(series_coeffs)) < target_score:
         logger.debug(f"The series is already below ({score=}) the {target_score=}.")
         return max_terms
 
     while max_terms - min_terms > 1:
         mid_terms = (min_terms + max_terms) // 2
-        if (
-            score := scorer(hadamard_transform(keep_largest_n(series_coeffs, mid_terms)))
-        ) < target_score:
+        if (score := scorer(keep_largest_n(series_coeffs, mid_terms))) < target_score:
             logger.debug(f"Score {score} with {mid_terms} terms is below target score.")
             min_terms = mid_terms
         else:
@@ -71,8 +69,8 @@ def sign_overlap(
     ground_truth = np.sign(signal_fn(states))
     probs = system.get_ground_state_coeffs(states) ** 2
 
-    def wrapper(fourier_predictions: npt.NDArray[np.float64]):
-        predictions = np.sign(fourier_predictions[states])
+    def wrapper(fourier_series: npt.NDArray[np.float64]):
+        predictions = np.sign(hadamard_transform(fourier_series)[states])
         return np.sum(ground_truth * predictions * probs) / np.sum(probs)
 
     return wrapper
@@ -88,8 +86,8 @@ def accuracy(
 
     ground_truth = np.sign(signal_fn(states))
 
-    def wrapper(fourier_predictions: npt.NDArray[np.float64]):
-        predictions = np.sign(fourier_predictions[states])
+    def wrapper(fourier_series: npt.NDArray[np.float64]):
+        predictions = np.sign(hadamard_transform(fourier_series)[states])
         return np.mean(ground_truth == predictions)
 
     return wrapper

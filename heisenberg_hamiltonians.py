@@ -1,4 +1,5 @@
 import pickle
+from hashlib import md5
 from pathlib import Path
 from typing import Optional
 
@@ -10,12 +11,19 @@ import pandas as pd
 import scipy
 import scipy.sparse.linalg
 from loguru import logger
+from typing_extensions import Literal
 
-from misc_utils import batched_state_info_df, make_unpacked_configurations
+from misc_utils import (
+    batched_state_info_df,
+    make_packed_configurations,
+    make_unpacked_configurations,
+)
 from spin_lattices import SpinLattice
 
 
 class SpinSystem:
+    hamming_weight: int
+
     def __init__(
         self,
         lattice: SpinLattice,
@@ -45,7 +53,7 @@ class SpinSystem:
         if not hasattr(self, "_canonical_basis"):
             self._canonical_basis = self.lattice.get_basis(
                 use_symmetries=False,
-                hamming_weight=self.number_spins // 2,
+                hamming_weight=self.hamming_weight,
                 spin_inversion=None,
             )
         return self._canonical_basis
@@ -403,6 +411,23 @@ class SpinSystem:
             .values
         )  # type: ignore
 
+    def make_unpacked_configurations(self, states: npt.NDArray[np.uint64]) -> npt.NDArray:
+        return make_unpacked_configurations(states, self.number_spins)
+
+    def make_packed_configurations(
+        self, unpacked_configurations: npt.NDArray
+    ) -> npt.NDArray[np.uint64]:
+        return make_packed_configurations(unpacked_configurations, self.number_spins)
+
+
+heisenberg_expr = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
+heisenberg_expr_hadamard = "0.5 (σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀)(σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀) + 0.25 (σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀)σᶻ₀ σᶻ₁(σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)"
+
+
+def heisenberg_expr_rot(phi):
+    C = f"({np.sin(phi)} σˣ₀ + {np.cos(phi)} σᶻ₀)({np.sin(phi)} σˣ₁ + {np.cos(phi)} σᶻ₁)"
+    return f"2 {C}(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) {C} + {C} σᶻ₀ σᶻ₁{C}"
+
 
 class HeisenbergJ1J2(SpinSystem):
     symmetries_whitelist = {
@@ -434,7 +459,10 @@ class HeisenbergJ1J2(SpinSystem):
         spin_inversion: int | None = None,
         ground_state_cache_dir: Path | None = Path("groundstates"),
         skip_symmetries_whitelist: bool = False,
+        hamming_weight: int | Literal["half"] | None = "half",
+        expr_str=heisenberg_expr,
     ):
+        self.expr_str = expr_str
         if (
             use_symmetries or spin_inversion is not None
         ) and lattice.get_cache_id() not in self.symmetries_whitelist:
@@ -472,7 +500,10 @@ class HeisenbergJ1J2(SpinSystem):
         number_spins = len(lattice.sites)
 
         logger.debug(f"{number_spins=}")
-        hamming_weight = number_spins // 2  # Hamming weight (i.e. number of spin ups)
+        if hamming_weight == "half":
+            logger.debug("Setting hamming_weight to half")
+            hamming_weight = number_spins // 2  # Hamming weight (i.e. number of spin ups)
+        self.hamming_weight = hamming_weight
 
         # Constructing symmetries
 
@@ -493,7 +524,6 @@ class HeisenbergJ1J2(SpinSystem):
         logger.debug("Hilbert space dimension is {}".format(basis.number_states))
 
         # Constructing the Hamiltonian
-        expr_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
 
         # fmt: off
         expr = (J1 * ls.Expr(expr_str, sites=lattice.kind_to_edges[1]) + 
@@ -517,7 +547,16 @@ class HeisenbergJ1J2(SpinSystem):
         return Path(self.ground_state_cache_dir / f"{self.get_cache_id()}-{k}.pickle")
 
     def get_cache_id(self) -> str:
+        if self.expr_str == heisenberg_expr:
+            expr_id = ""
+        else:
+            expr_id = "-expr-" + md5(self.expr_str.encode("utf8")).hexdigest()[:10]
+
+        if self.hamming_weight == self.number_spins // 2:
+            hamming_weight_id = ""
+        else:
+            hamming_weight_id = f"-hamming_weight-{self.hamming_weight}"
         return (
             f"{self.__class__.__name__}-{self.lattice.get_cache_id()}-"
-            f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}"
+            f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}{hamming_weight_id}{expr_id}"
         )

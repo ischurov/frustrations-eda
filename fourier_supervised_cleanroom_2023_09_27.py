@@ -9,12 +9,13 @@ from loguru import logger
 
 from fourier_supervised_cleanroom import (
     fit_fourier_series,
+    ground_state_signal,
     hadamard_transform,
     keep_largest_n,
     mk_train_test,
     sign_signal,
 )
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from heisenberg_hamiltonians import HeisenbergJ1J2, heisenberg_expr
 from misc_utils import keep_serializable
 from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice
 
@@ -28,6 +29,10 @@ default_config = {
     "n_test": 50000,
     "sampling_power_train": 2.0,
     "runs": 1,
+    "hamming_weight": "half",
+    "expr": heisenberg_expr,
+    "signal_train": "sign",
+    "signal_test": "sign",
 }
 
 configs = {
@@ -47,6 +52,30 @@ configs = {
     13: {"lattice": "kagome2x4", "sampling_power_train": 8.0, "runs": 10},
     14: {"lattice": "kagome2x4", "sampling_power_train": 10.0, "runs": 10},
     15: {"lattice": "kagome2x4", "sampling_power_train": 20.0, "runs": 10},
+    16: {
+        "lattice": "kagome2x4",
+        "J2s": [1.0],
+        "sampling_power_train": 2,
+        "runs": 10,
+        "expr": "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + 2 σᶻ₀ σᶻ₁",
+        "hamming_weight": None,
+    },
+    17: {
+        "lattice": "kagome2x4",
+        "J2s": [1.0],
+        "sampling_power_train": 2,
+        "runs": 10,
+        "expr": "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀)",
+        "hamming_weight": None,
+    },
+    18: {
+        "lattice": "kagome2x4",
+        "J2s": [1.0],
+        "sampling_power_train": 0,
+        "runs": 10,
+        "signal_train": "groundstate",
+        "signal_test": "sign",
+    },
 }
 
 
@@ -71,6 +100,15 @@ def get_lattice(lattice_name):
         raise ValueError(f"Unknown lattice name {lattice_name}")
 
 
+def get_signal(signal_id):
+    if signal_id == "sign":
+        return sign_signal
+    elif signal_id == "groundstate":
+        return ground_state_signal
+    else:
+        raise ValueError(f"Unknown signal_id {signal_id}")
+
+
 def main(task_id: int):
     config = get_config(task_id)
     lattice = get_lattice(config["lattice"])
@@ -81,10 +119,23 @@ def main(task_id: int):
         for J2 in J2s:
             logger.debug(f"Running {task_id=} {J2=}. Creating system...")
             system = HeisenbergJ1J2(
-                lattice=lattice, J1=1, J2=J2, use_symmetries=False, spin_inversion=None
+                lattice=lattice,
+                J1=1,
+                J2=J2,
+                use_symmetries=False,
+                spin_inversion=None,
+                hamming_weight=config["hamming_weight"],
+                expr_str=config["expr"],
             )
             system.get_eigenstates(1)
-            signal_fn = sign_signal(system)
+            # if config["signal_train"] == "groundstate":
+            #     signal_fn = ground_state_signal(system)
+            # elif config["signal_train"] == "sign":
+            #     signal_fn = sign_signal(system)
+            # else:
+            #     raise ValueError(f"Unknown signal_train {config['signal_train']}")
+            signal_train = get_signal(config["signal_train"])(system)
+            signal_test = get_signal(config["signal_test"])(system)
 
             for eps_train in config["eps_train"]:
                 logger.debug(f"{eps_train=}. Making train and test states...")
@@ -99,10 +150,13 @@ def main(task_id: int):
                 logger.debug(f"Fitting Fourier series...")
                 series = fit_fourier_series(
                     train_states,
-                    signal_fn,
+                    signal_train,
                     system.number_spins,
                 )
-                ground_truth = signal_fn(test_states)
+                if config["signal_test"] != "sign":
+                    raise NotImplementedError
+
+                ground_truth = signal_test(test_states)
                 ground_truth_amplitude = np.abs(system.get_ground_state_coeffs(test_states))
                 probs_test = ground_truth_amplitude**2
 
@@ -116,17 +170,17 @@ def main(task_id: int):
                     weight_kept = (series_truncated**2).sum() / (series**2).sum()
                     reconstructed_signal = hadamard_transform(series_truncated, inplace=True)
                     prediction = np.sign(reconstructed_signal[test_states])
-                    prediction_amplitude = np.abs(reconstructed_signal[test_states]) ** (
-                        1 / config["sampling_power_train"]
-                    )
+                    # prediction_amplitude = np.abs(reconstructed_signal[test_states]) ** (
+                    #     1 / config["sampling_power_train"]
+                    # )
                     accuracy = np.mean(prediction == ground_truth)
                     overlap = (prediction * ground_truth * probs_test).sum() / probs_test.sum()
-                    overlap_amplitude = (
-                        prediction_amplitude
-                        @ ground_truth_amplitude
-                        / np.linalg.norm(prediction_amplitude)
-                        / np.linalg.norm(ground_truth_amplitude)
-                    )
+                    # overlap_amplitude = (
+                    #     prediction_amplitude
+                    #     @ ground_truth_amplitude
+                    #     / np.linalg.norm(prediction_amplitude)
+                    #     / np.linalg.norm(ground_truth_amplitude)
+                    # )
                     logger.debug(f"{accuracy=}, {overlap=}, {weight_kept=}")
 
                     if previous_prediction is not None:
@@ -205,7 +259,7 @@ def main(task_id: int):
                                 "overlap_predicted_vs_previous": float(
                                     overlap_predicted_vs_previous
                                 ),
-                                "overlap_amplitude": float(overlap_amplitude),
+                                # "overlap_amplitude": float(overlap_amplitude),
                                 "start_timestamp": start_timestamp,
                                 "current_timestamp": current_timestamp,
                                 "run": run,

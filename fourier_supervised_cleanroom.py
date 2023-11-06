@@ -3,9 +3,27 @@ from typing import Callable
 import numpy as np
 import numpy.typing as npt
 import torch
+from loguru import logger
 
 from heisenberg_hamiltonians import SpinSystem
-from misc_utils import hadamard_transform_pytorch_inplace
+from misc_utils import (
+    hadamard_transform_pytorch_inplace,
+    make_packed_configurations,
+    make_unpacked_configurations,
+)
+
+
+### FROM: GPT-4
+def apply_random_permutations(states: npt.NDArray, permutations: npt.NDArray | list[list[int]]):
+    states_torch = torch.from_numpy(states.astype(np.int64))
+    permutations_torch = torch.tensor(permutations).to(torch.int64)
+    random_indices = torch.randint(0, len(permutations), (len(states),))
+    chosen_permutations = permutations_torch[random_indices]
+    permuted_states = torch.gather(states_torch, 1, chosen_permutations)
+    return permuted_states.numpy()
+
+
+### END FROM
 
 
 def keep_largest_n(coeffs: npt.NDArray, n: int, inplace=False) -> npt.NDArray:
@@ -107,12 +125,13 @@ def sample_from_system(
 ):
     if states_to_sample_from is None:
         states_to_sample_from = system.basis.states
-
+    logger.debug("Finding probs")
     amplitudes = np.abs(
         system.get_ground_state_coeffs(states_to_sample_from, apply_symmetries=False)
     )
     probs = amplitudes**sampling_power
     probs /= probs.sum()
+    logger.debug("Doing np.random.choice")
     sampled_states = np.random.choice(
         states_to_sample_from,
         size=n_samples,
@@ -192,6 +211,22 @@ def amplitude_signal(system: SpinSystem):
     return wrapper
 
 
+def do_apply_random_symmetries(reprs: npt.NDArray[np.uint64], system: SpinSystem):
+    logger.debug("Unpacking")
+    reprs_unpacked = system.make_unpacked_configurations(
+        reprs,
+    )
+    logger.debug("Applying random permutations")
+    states_unpacked = apply_random_permutations(reprs_unpacked, system.lattice.get_automorphisms())
+
+    logger.debug("Packing")
+    states = system.make_packed_configurations(
+        states_unpacked,
+    )
+
+    return states
+
+
 def mk_train_test(
     system: SpinSystem,
     n_train: int,
@@ -199,17 +234,22 @@ def mk_train_test(
     sampling_power_train: float = 2,
     sampling_power_test: float = 0,
     replace: bool = False,
+    apply_random_symmetries: bool = False,
 ):
+    logger.debug("Sampling train")
     train_states = sample_from_system(
         system,
         n_train,
         sampling_power=sampling_power_train,
         replace=replace,
     )
+    logger.debug("Finding rest states")
     rest_states = np.setdiff1d(
         system.basis.states,
         train_states,
     )
+
+    logger.debug("Sampling test")
 
     test_states = sample_from_system(
         system,
@@ -218,6 +258,13 @@ def mk_train_test(
         sampling_power=sampling_power_test,
         replace=replace,
     )
+
+    if apply_random_symmetries:
+        logger.debug("Applying random symmetries to train")
+        train_states = do_apply_random_symmetries(train_states, system)
+
+        logger.debug("Applying random symmetries to test")
+        test_states = do_apply_random_symmetries(test_states, system)
 
     return train_states, test_states
 

@@ -125,7 +125,7 @@ def main(task_id: int, run_id: int | str | None = None):
 
         terms_score = how_many_terms_to_achieve(series_coeffs, threshold, scorer_fn)
         achieved_sign_overlap_for_terms_score = sign_overlap(system, signal_fn=signal_fn)(
-            hadamard_transform(keep_largest_n(series_coeffs, terms_score))
+            keep_largest_n(series_coeffs, terms_score)
         )
 
         with jsonlines.open(output_dir / str(task_id) / f"results.jsonl", "a") as f:

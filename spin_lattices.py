@@ -12,7 +12,7 @@ import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
 from loguru import logger
-from sympy.combinatorics import Permutation
+from sympy.combinatorics import Permutation, PermutationGroup
 
 from misc_utils import batched_state_info_df, make_unpacked_configurations
 from parity import parity, popcount
@@ -544,6 +544,7 @@ class ParallelogramSpinLattice(SpinLattice):
         height=1,
         boundary_conditions: Literal["periodic", "open"] = "periodic",
         enumerate_along: Literal["x", "y"] | None = None,
+        automorphisms: str = "all",
     ):
         """
         Generic class to generate lattices with different kinds of edges (i.e. for J1-J2 systems)
@@ -576,6 +577,8 @@ class ParallelogramSpinLattice(SpinLattice):
         self.boundary_conditions = boundary_conditions
         self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
         self.enumerate_along = enumerate_along
+        self.automorphisms = automorphisms
+
         self.num_tensor_order: npt.NDArray
 
         frame = fundamental_domain_size * (
@@ -622,6 +625,20 @@ class ParallelogramSpinLattice(SpinLattice):
         self.x_translation = self.get_translation("x")
         self.y_translation = self.get_translation("y")
 
+    def get_automorphisms(self) -> list[list[int]]:
+        if self.automorphisms == "all":
+            return super().get_automorphisms()
+        elif self.automorphisms == "translations":
+            return [
+                g.array_form
+                for g in PermutationGroup(
+                    [
+                        Permutation(self.get_translation("x")),
+                        Permutation(self.get_translation("y")),
+                    ]
+                ).elements
+            ]
+
     def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
         raise NotImplementedError
 
@@ -658,7 +675,10 @@ class ParallelogramSpinLattice(SpinLattice):
     def get_cache_id(self) -> str:
         boundary = "" if self.boundary_conditions == "periodic" else self.boundary_conditions
         ordered = f"-enumerate-along-{self.enumerate_along}" if self.enumerate_along else ""
-        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}{ordered}"
+        automorphisms = (
+            f"-automorphisms-{self.automorphisms}" if self.automorphisms != "all" else ""
+        )
+        return f"{self.__class__.__name__}{self.width}x{self.height}{boundary}{ordered}{automorphisms}"
 
     @property
     def sites_df(self) -> pd.DataFrame:
@@ -851,6 +871,22 @@ class TriangularLattice(ParallelogramSpinLattice):
             height=height,
             **kwargs,
         )
+
+        t_frame = self.sites_df.query("is_canonical").set_index("num").reset_index()
+
+        # TODO: refactor as a test
+        assert t_frame["ix"].nunique() == self.width
+        assert t_frame["iy"].nunique() == self.height
+        assert t_frame.duplicated(["ix", "iy"]).sum() == 0
+
+        self.num_tensor_order = np.asarray(
+            t_frame.sort_values(["ix", "iy"], ignore_index=True)["num"].values
+        )
+
+    def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
+        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
+            ..., self.num_tensor_order
+        ].reshape(-1, self.width, self.height, 1)
 
 
 class KagomeLattice(ParallelogramSpinLattice):
