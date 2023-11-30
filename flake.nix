@@ -10,6 +10,7 @@
     nixpkgs.follows = "lattice-symmetries/nixpkgs";
     flake-utils.follows = "lattice-symmetries/flake-utils";
     lattice-symmetries.url = "github:twesterhout/lattice-symmetries/nikita";
+    nix-on-the-cluster.url = "github:twesterhout/nix-on-the-cluster";
     ising-glass-annealer = {
       url = "github:twesterhout/ising-glass-annealer";
       inputs.nixpkgs.follows = "lattice-symmetries/nixpkgs";
@@ -25,7 +26,13 @@
     let
       pkgs-for = system: import inputs.nixpkgs {
         inherit system;
-        overlays = [ inputs.lattice-symmetries.overlays.default inputs.ising-glass-annealer.overlays.default ];
+        config.allowUnfree = true;
+        config.cudaSupport = true;
+        config.nvidia.acceptLicense = true;
+        overlays = [ inputs.lattice-symmetries.overlays.default 
+		     inputs.ising-glass-annealer.overlays.default 
+         inputs.nix-on-the-cluster.overlays.lilo
+		   ];
       };
 
       # Our Python dependencies
@@ -42,7 +49,7 @@
         more-itertools
         numpy
         pandas
-        plotnine
+        # plotnine
         pytest
         pyyaml
         scikit-learn
@@ -50,8 +57,9 @@
         seaborn
         snakeviz
         sympy
-        torch
-        torchmetrics
+        torch-bin
+	# torch
+        (torchmetrics.override { torch=torch-bin; })
         tqdm
         (
           buildPythonPackage rec {
@@ -85,6 +93,7 @@
             export PROMPT_COMMAND=""
             export PS1='🐍 Python ${python3.version} \w $ '
             export LS_PATH=${lattice-symmetries.python}
+            ${pkgs.nvidiaComputeDriversHook}
           '';
         };
       });

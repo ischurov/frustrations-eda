@@ -6,7 +6,7 @@
 #SBATCH --mem 0
 #SBATCH -p tcm
 #SBATCH --exclusive
-#SBATCH --exclude cn[90,92,94]
+#SBATCH --exclude cn[90,92,94,25]
 
 set -x
 

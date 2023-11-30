@@ -109,7 +109,9 @@ class SpinSystem:
             # Diagonalize the Hamiltonian using ARPACK
 
             logger.debug("Calculating eigenvalues / eigenstates")
-            eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(self.hamiltonian, k=k, which="SA")
+            eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(
+                self.hamiltonian, k=k, which="SA"
+            )
             eigenstates = np.asarray(
                 eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1),
                 dtype=np.float64,
@@ -120,7 +122,9 @@ class SpinSystem:
             if self.ground_state_cache_dir is not None:
                 self.ground_state_cache_dir.mkdir(exist_ok=True)
                 if eigenstate_path := self.eigenstate_path(k):
-                    eigenstate_path.write_bytes(pickle.dumps((eigenvalues, eigenstates)))
+                    eigenstate_path.write_bytes(
+                        pickle.dumps((eigenvalues, eigenstates))
+                    )
 
         logger.debug("Ground state energy is {:.10f}".format(eigenvalues[0]))
 
@@ -160,9 +164,13 @@ class SpinSystem:
         if self.eigenstates is None:
             raise ValueError(f"Eigenstate not found; run .get_eigenstates({k}) first")
         elif self.eigenstates.shape[1] <= k:
-            raise ValueError(f"Not enough eigenstates found; run .get_eigenstates({k}) first")
+            raise ValueError(
+                f"Not enough eigenstates found; run .get_eigenstates({k}) first"
+            )
         if expand_basis_columns and not unpack_configurations:
-            raise ValueError("expand_basis_columns=True requires unpack_configurations=True")
+            raise ValueError(
+                "expand_basis_columns=True requires unpack_configurations=True"
+            )
 
         df = pd.DataFrame(
             dict(eigenstate_coeff=self.eigenstates[:, k]),
@@ -176,7 +184,9 @@ class SpinSystem:
             df["amplitude"] = np.abs(df["eigenstate_coeff"])
 
         if unpack_configurations:
-            unpacked_configurations = make_unpacked_configurations(df.index, self.number_spins)
+            unpacked_configurations = make_unpacked_configurations(
+                df.index, self.number_spins
+            )
             if expand_basis_columns:
                 spins_df = pd.DataFrame(
                     unpacked_configurations,
@@ -240,7 +250,9 @@ class SpinSystem:
             return self.ground_state_in_canonical_basis
 
         logger.debug("Finding basis_state_info")
-        corresp_reprs, characters, norms = self.basis.state_info(self.canonical_basis.states)
+        corresp_reprs, characters, norms = self.basis.state_info(
+            self.canonical_basis.states
+        )
 
         logger.debug("Finding corresp_repr_indices")
 
@@ -255,13 +267,17 @@ class SpinSystem:
 
         return self.ground_state_in_canonical_basis
 
-    def get_ground_state_coeffs(self, states, apply_symmetries=True) -> npt.NDArray[np.float64]:
+    def get_ground_state_coeffs(
+        self, states, apply_symmetries=True
+    ) -> npt.NDArray[np.float64]:
         if self.ground_state is None:
             self.get_eigenstates(1)
         if apply_symmetries:
             corresp_reprs, characters, norms = self.basis.state_info(states)
             corresp_repr_indices = self.basis.index(corresp_reprs)
-            return np.real_if_close(self.ground_state[corresp_repr_indices] * characters * norms)
+            return np.real_if_close(
+                self.ground_state[corresp_repr_indices] * characters * norms
+            )
         return np.real_if_close(self.ground_state[self.basis.index(states)])
 
     def get_df_ground_state(
@@ -369,7 +385,9 @@ class SpinSystem:
         """
 
         if n > len(representatives):
-            raise ValueError("n must be smaller than the length of the representatives array")
+            raise ValueError(
+                "n must be smaller than the length of the representatives array"
+            )
 
         if prob is not None and (prob < 0).any():
             raise ValueError("probabilities must be positive")
@@ -377,7 +395,9 @@ class SpinSystem:
         if prob is not None:
             prob = prob / np.sum(prob)
 
-        state_info_df = batched_state_info_df(self.basis, self.canonical_basis.states).merge(
+        state_info_df = batched_state_info_df(
+            self.basis, self.canonical_basis.states
+        ).merge(
             pd.DataFrame(index=representatives),
             left_on="representative",
             right_index=True,
@@ -395,7 +415,9 @@ class SpinSystem:
         state_info_df["prob"] = state_info_df["prob"] / state_info_df["prob"].sum()
 
         repr_prob = state_info_df.groupby("representative")["prob"].sum()
-        selected_repr = np.random.choice(repr_prob.index, size=n, replace=False, p=repr_prob)
+        selected_repr = np.random.choice(
+            repr_prob.index, size=n, replace=False, p=repr_prob
+        )
 
         return (
             state_info_df.merge(
@@ -411,7 +433,9 @@ class SpinSystem:
             .values
         )  # type: ignore
 
-    def make_unpacked_configurations(self, states: npt.NDArray[np.uint64]) -> npt.NDArray:
+    def make_unpacked_configurations(
+        self, states: npt.NDArray[np.uint64]
+    ) -> npt.NDArray:
         return make_unpacked_configurations(states, self.number_spins)
 
     def make_packed_configurations(
@@ -502,7 +526,9 @@ class HeisenbergJ1J2(SpinSystem):
         logger.debug(f"{number_spins=}")
         if hamming_weight == "half":
             logger.debug("Setting hamming_weight to half")
-            hamming_weight = number_spins // 2  # Hamming weight (i.e. number of spin ups)
+            hamming_weight = (
+                number_spins // 2
+            )  # Hamming weight (i.e. number of spin ups)
         self.hamming_weight = hamming_weight
 
         # Constructing symmetries

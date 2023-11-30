@@ -50,6 +50,8 @@ default_config = {
     "sample_with_replacement": False,
     "hadamard_basis": False,
     "n_train_from_full_space": True,
+    "one_dimensonal_output": False,
+    "last_layer_bias": True,
 }
 
 # System without symmetries, any network -> usual sampling
@@ -655,6 +657,378 @@ configs = {
         "sample_repr_then_apply_random_symmetry": True,
         "n_train_from_full_space": False,
     },
+    61: {
+        "lattice": "square6x4",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "n_test": 5000,
+        "one_dimensonal_output": True,
+    },
+    62: {
+        "lattice": "square6x4",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [1, 2, 3],
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "n_test": 5000,
+        "one_dimensonal_output": True,
+    },
+    63: {
+        "lattice": "square6x4",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [3, 2, 1],
+        "runs": 10,
+        "eps_train": [0.05],
+        "epochs": 200,
+        "use_symmetries": True,
+        "n_test": 5000,
+        "one_dimensonal_output": True,
+    },
+    64: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [3, 2, 1],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+    },
+    65: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [1, 2, 3],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+    },
+    66: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+    },
+    67: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [3, 2, 1],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    68: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "dilations": [1, 2, 3],
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    69: {
+        "lattice": "square6x6",
+        "J2s": [0.5],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    70: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "dilations": [1, 2, 3],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    71: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "dilations": [3, 2, 1],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    72: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    73: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.005],
+        "dilations": [1, 2, 3],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    74: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.01],
+        "dilations": [1, 2, 3],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    75: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.001],
+        "dilations": [3, 2, 1],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    76: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.005],
+        "dilations": [3, 2, 1],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    77: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.01],
+        "dilations": [3, 2, 1],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    78: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.001],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    79: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.005],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
+    80: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+    },
 }
 
 
@@ -663,7 +1037,14 @@ def get_config(task_id: int):
 
 
 class SignDenseNet(nn.Module):
-    def __init__(self, system: SpinSystem, n_hidden: int = 100, hidden_layers=1):
+    def __init__(
+        self,
+        system: SpinSystem,
+        n_hidden: int = 100,
+        hidden_layers=1,
+        output_dim=2,
+        last_layer_bias=True,
+    ):
         super().__init__()
         self.system = system
         self.n_hidden = n_hidden
@@ -673,13 +1054,15 @@ class SignDenseNet(nn.Module):
             layers.append(nn.Linear(n_hidden, n_hidden))
             layers.append(nn.ReLU())
 
-        layers.append(nn.Linear(n_hidden, 2))
+        layers.append(nn.Linear(n_hidden, output_dim, bias=last_layer_bias))
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: Tensor) -> Tensor:
         return self.net(
             torch.from_numpy(
-                make_unpacked_configurations(x, self.system.number_spins).astype(np.float32)
+                make_unpacked_configurations(x, self.system.number_spins).astype(
+                    np.float32
+                )
             )
         )
 
@@ -691,6 +1074,8 @@ class SignDenseNetXor(nn.Module):
         n_hidden: int = 100,
         hidden_layers=1,
         xor_masks: npt.NDArray[np.uint64] | None = None,
+        output_dim=2,
+        last_layer_bias=True,
     ):
         super().__init__()
         self.system = system
@@ -700,24 +1085,29 @@ class SignDenseNetXor(nn.Module):
             xor_masks = np.array([], dtype=np.uint64)
         self.xor_masks = xor_masks
 
-        layers = [nn.Linear(system.number_spins + xor_masks.shape[0], n_hidden), nn.ReLU()]
+        layers = [
+            nn.Linear(system.number_spins + xor_masks.shape[0], n_hidden),
+            nn.ReLU(),
+        ]
         for _ in range(hidden_layers - 1):
             layers.append(nn.Linear(n_hidden, n_hidden))
             layers.append(nn.ReLU())
 
-        layers.append(nn.Linear(n_hidden, 2))
+        layers.append(nn.Linear(n_hidden, output_dim, bias=last_layer_bias))
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: Tensor | npt.NDArray) -> Tensor:
-        unpacked_configurations = make_unpacked_configurations(x, self.system.number_spins).astype(
-            np.float32
-        )
+        unpacked_configurations = make_unpacked_configurations(
+            x, self.system.number_spins
+        ).astype(np.float32)
         if isinstance(x, Tensor):
             x = x.detach().numpy()
 
         x = x.astype(np.uint64)
         xor_values = parity(x.reshape(-1, 1) & self.xor_masks).astype(np.float32)
-        return self.net(torch.from_numpy(np.hstack([unpacked_configurations, xor_values])))
+        return self.net(
+            torch.from_numpy(np.hstack([unpacked_configurations, xor_values]))
+        )
 
 
 def sample_xors(probs: npt.NDArray, size=None):
@@ -726,16 +1116,22 @@ def sample_xors(probs: npt.NDArray, size=None):
 
 
 def sample_xors_fourier_weight(power=2):
-    def wrapper(system: SpinSystem, signal, size: int | None = None) -> npt.NDArray[np.uint64]:
+    def wrapper(
+        system: SpinSystem, signal, size: int | None = None
+    ) -> npt.NDArray[np.uint64]:
         signal_fn = signal(system)
-        series = fit_fourier_series(system.canonical_basis.states, signal_fn, system.number_spins)
+        series = fit_fourier_series(
+            system.canonical_basis.states, signal_fn, system.number_spins
+        )
         return sample_xors(np.abs(series) ** power, size=size)
 
     return wrapper
 
 
 def sample_xors_uniform():
-    def wrapper(system: SpinSystem, signal, size: int | None = None) -> npt.NDArray[np.uint64]:
+    def wrapper(
+        system: SpinSystem, signal, size: int | None = None
+    ) -> npt.NDArray[np.uint64]:
         return sample_xors(np.ones(2**system.number_spins), size=size)
 
     return wrapper
@@ -744,7 +1140,8 @@ def sample_xors_uniform():
 def sample_xors_hamming_weight(hamming_weight: int):
     def wrapper(system, signal, size: int | None = None) -> npt.NDArray[np.uint64]:
         return sample_xors(
-            popcount(np.arange(2**system.number_spins, dtype=np.uint64)) == hamming_weight,
+            popcount(np.arange(2**system.number_spins, dtype=np.uint64))
+            == hamming_weight,
             size=size,
         )
 
@@ -763,27 +1160,39 @@ def get_sample_xor_strategy(config: dict[str, Any]):
 
 
 def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module:
+    output_dim = 1 if config["one_dimensonal_output"] else 2
     if config["architecture"] == "dense":
         return SignDenseNet(
-            system, n_hidden=config["n_hidden"], hidden_layers=config["hidden_layers"]
+            system,
+            n_hidden=config["n_hidden"],
+            hidden_layers=config["hidden_layers"],
+            output_dim=output_dim,
+            last_layer_bias=config["last_layer_bias"],
         )
     elif config["architecture"] == "dense+xor":
-        xor_masks = get_sample_xor_strategy(config)(system, signal, size=config["n_xors"])
+        xor_masks = get_sample_xor_strategy(config)(
+            system, signal, size=config["n_xors"]
+        )
         net = SignDenseNetXor(
             system=system,
             n_hidden=config["n_hidden"],
             hidden_layers=config["hidden_layers"],
             xor_masks=xor_masks,
+            output_dim=output_dim,
+            last_layer_bias=config["last_layer_bias"],
         )
         return net
     elif config["architecture"] == "invariant_cnn":
-        assert config["use_symmetries"], "CNNs require symmetries for correct evaluation"
+        assert config[
+            "use_symmetries"
+        ], "CNNs require symmetries for correct evaluation"
         return InvariantSpinCNNRegression(
             lattice=get_lattice(config["lattice"]),
             hidden_channels=config["hidden_channels"],
             dilations=config["dilations"],
             kernel_size=config["kernel_size"],
-            out_dim=2,
+            out_dim=output_dim,
+            last_layer_bias=config["last_layer_bias"],
         )
     else:
         raise ValueError(f"Unknown architecture {config['architecture']}")
@@ -850,7 +1259,9 @@ def main(task_id: int):
                 spin_inversion=config["spin_inversion"],
                 skip_symmetries_whitelist=config["skip_symmetries_whitelist"],
                 hamming_weight=None if config["hadamard_basis"] else "half",
-                expr_str=heisenberg_expr_hadamard if config["hadamard_basis"] else heisenberg_expr,
+                expr_str=heisenberg_expr_hadamard
+                if config["hadamard_basis"]
+                else heisenberg_expr,
             )
             system.get_eigenstates(1)
 
@@ -864,7 +1275,9 @@ def main(task_id: int):
                     config["sample_repr_then_apply_random_symmetry"]
                     and config["n_train_from_full_space"]
                 ):
-                    full_sample_space_size = comb(system.number_spins, system.number_spins // 2)
+                    full_sample_space_size = comb(
+                        system.number_spins, system.number_spins // 2
+                    )
                 else:
                     full_sample_space_size = system.basis.states.shape[0]
 
@@ -877,18 +1290,32 @@ def main(task_id: int):
                     n_train=n_train,
                     n_test=n_test,
                     sampling_power_train=config["sampling_power_train"],
-                    apply_random_symmetries=config["sample_repr_then_apply_random_symmetry"],
+                    apply_random_symmetries=config[
+                        "sample_repr_then_apply_random_symmetry"
+                    ],
                     replace=config["sample_with_replacement"],
+                )
+                np.save(
+                    output_dir
+                    / str(task_id)
+                    / f"test_states_{run}_{J2}_{eps_train}.npy",
+                    test_states,
                 )
                 logger.debug("Creating network, criterion, optimizer...")
                 net = get_network(config, system, signal=signal_factory)
-                criterion = nn.CrossEntropyLoss()
+                if config["one_dimensonal_output"]:
+                    criterion = nn.BCEWithLogitsLoss()
+                else:
+                    criterion = nn.CrossEntropyLoss()
                 optimizer = torch.optim.Adam(net.parameters(), lr=config["lr"])
                 logger.debug("Creating TensorDataset and DataLoader...")
                 # Create a TensorDataset from your inputs X and Y
+                target = torch.from_numpy(signal_fn(train_states) == -1).to(torch.long)
+                if config["one_dimensonal_output"]:
+                    target = target.view(-1, 1).to(torch.float32)
                 dataset = TensorDataset(
                     torch.from_numpy(train_states.astype(np.int64)),
-                    torch.from_numpy(signal_fn(train_states) == -1).to(torch.long),
+                    target,
                 )
 
                 dataloader = DataLoader(
@@ -904,7 +1331,12 @@ def main(task_id: int):
                     if epoch % config["write_each_epoch"] == 0:
                         current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
                         logger.info(f"Epoch {epoch}, train loss: {train_loss:.8f}")
-                        logger.info(f"{net(test_states)=}")
+                        np.save(
+                            output_dir
+                            / str(task_id)
+                            / f"prediction_{run}_{J2}_{eps_train}_{epoch}.npy",
+                            net(test_states).detach().numpy(),
+                        )
                         test_overlap = sign_overlap_fn(test_states, net, device)
                         test_accuracy = accuracy_fn(test_states, net, device)
                         logger.info(f"Overlap: {test_overlap:.4f}")
