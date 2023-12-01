@@ -1060,10 +1060,10 @@ class SignDenseNet(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         return self.net(
             torch.from_numpy(
-                make_unpacked_configurations(x, self.system.number_spins).astype(
-                    np.float32
-                )
-            )
+                make_unpacked_configurations(
+                    x.detach().cpu().numpy(), self.system.number_spins
+                ).astype(np.float32)
+            ).to(x.device)
         )
 
 
@@ -1214,8 +1214,8 @@ def train(net, dataloader, criterion, optimizer, device):
 
 
 def get_predicted_signs(states: npt.NDArray, sign_net: nn.Module, device: torch.device):
-    outputs = sign_net(states).to(device)
-    return (1 - 2 * torch.argmax(outputs, dim=1)).detach().numpy()
+    outputs = sign_net(torch.from_numpy(states.astype(np.int64)).to(device))
+    return (1 - 2 * torch.argmax(outputs, dim=1)).detach().cpu().numpy()
 
 
 def sign_overlap(system: SpinSystem):
@@ -1246,6 +1246,9 @@ def main(task_id: int):
 
     (output_dir / str(task_id)).mkdir(parents=True, exist_ok=True)
     signal_factory = sign_signal
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     for run in range(config["runs"]):
         start_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
 
@@ -1302,7 +1305,10 @@ def main(task_id: int):
                     test_states,
                 )
                 logger.debug("Creating network, criterion, optimizer...")
+
                 net = get_network(config, system, signal=signal_factory)
+                net.to(device)
+
                 if config["one_dimensonal_output"]:
                     criterion = nn.BCEWithLogitsLoss()
                 else:
@@ -1336,7 +1342,14 @@ def main(task_id: int):
                             output_dir
                             / str(task_id)
                             / f"prediction_{run}_{J2}_{eps_train}_{epoch}.npy",
-                            net(test_states).detach().numpy(),
+                            net(
+                                torch.from_numpy(test_states.astype(np.int64)).to(
+                                    device
+                                )
+                            )
+                            .detach()
+                            .cpu()
+                            .numpy(),
                         )
                         test_overlap = sign_overlap_fn(test_states, net, device)
                         test_accuracy = accuracy_fn(test_states, net, device)
