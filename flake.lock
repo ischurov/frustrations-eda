@@ -34,6 +34,24 @@
         "type": "github"
       }
     },
+    "flake-utils_2": {
+      "inputs": {
+        "systems": "systems_2"
+      },
+      "locked": {
+        "lastModified": 1694529238,
+        "narHash": "sha256-zsNZZGTGnMOf9YpHKJqMSsa0dXbfmxeoJ7xHlrt+xmY=",
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "rev": "ff7b65b44d01cf9ba6a71320833626af21126384",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "flake-utils",
+        "type": "github"
+      }
+    },
     "haskell-python-tools": {
       "inputs": {
         "nixpkgs": [
@@ -149,6 +167,25 @@
         "type": "github"
       }
     },
+    "nix-on-the-cluster": {
+      "inputs": {
+        "flake-utils": "flake-utils_2",
+        "nixpkgs": "nixpkgs_2"
+      },
+      "locked": {
+        "lastModified": 1701359894,
+        "narHash": "sha256-Jm9KdZo9eHKdfYK1wLPQXvjdnDNgEvHe7i1qxrwtDUc=",
+        "owner": "twesterhout",
+        "repo": "nix-on-the-cluster",
+        "rev": "3b40280120b6ae45eb1b1a0934ada4bd5796d9c2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "twesterhout",
+        "repo": "nix-on-the-cluster",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1695145219,
@@ -165,6 +202,21 @@
         "type": "github"
       }
     },
+    "nixpkgs_2": {
+      "locked": {
+        "lastModified": 1701358638,
+        "narHash": "sha256-EsLcPm1qGZNc/GoDEut4J9M4dr5g2NGx66h/nvZtg9E=",
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "rev": "8a02d8732482466954b789128aaa061aab118a26",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nixos",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-compat": "flake-compat",
@@ -174,6 +226,7 @@
         ],
         "ising-glass-annealer": "ising-glass-annealer",
         "lattice-symmetries": "lattice-symmetries",
+        "nix-on-the-cluster": "nix-on-the-cluster",
         "nixpkgs": [
           "lattice-symmetries",
           "nixpkgs"
@@ -181,6 +234,21 @@
       }
     },
     "systems": {
+      "locked": {
+        "lastModified": 1681028828,
+        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
+        "owner": "nix-systems",
+        "repo": "default",
+        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nix-systems",
+        "repo": "default",
+        "type": "github"
+      }
+    },
+    "systems_2": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",

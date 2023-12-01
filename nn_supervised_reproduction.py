@@ -1323,6 +1323,7 @@ def main(task_id: int):
                 )
 
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+                logger.debug(f"Torch will use device: {device}")
                 net.to(device)
 
                 for epoch in range(config["epochs"]):
