@@ -81,16 +81,12 @@ class InvariantSpinCNNRegression(nn.Module):
         self.fc = nn.Linear(hidden_channels[-1], out_dim, bias=last_layer_bias)
 
     def forward(self, x: torch.Tensor | npt.NDArray):
-        if isinstance(x, torch.Tensor):
-            x_numpy = x.detach().cpu().numpy()
+        x_tensor = self.lattice.spin_config_to_tensor(x).permute(0, 3, 1, 2)
+        if isinstance(x_tensor, np.ndarray):
+            x_tensor = x_tensor.astype(np.float32)
         else:
-            x_numpy = x
+            x_tensor = x_tensor.float()
 
-        x_tensor = torch.from_numpy(
-            self.lattice.spin_config_to_tensor(x_numpy).astype(np.float32)
-        ).permute(0, 3, 1, 2)
-        if isinstance(x, torch.Tensor):
-            x_tensor = x_tensor.to(x.device)
         x_output = self.layers(x_tensor)
         x_output = x_output.mean(dim=(2, 3))
         x_output = self.fc(x_output)

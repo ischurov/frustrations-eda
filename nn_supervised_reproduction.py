@@ -871,6 +871,7 @@ configs = {
         "n_train_from_full_space": False,
         "last_layer_bias": False,
         "batch_size": 8192,
+        "write_each": 1,
     },
     73: {
         "lattice": "triangular6x6",
@@ -1028,6 +1029,25 @@ configs = {
         "n_train_from_full_space": False,
         "last_layer_bias": False,
         "batch_size": 8192,
+    },
+    81: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 5,
+        "eps_train": [0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 65536,
     },
 }
 
@@ -1198,7 +1218,7 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
         raise ValueError(f"Unknown architecture {config['architecture']}")
 
 
-def train(net, dataloader, criterion, optimizer, device):
+def train(net, dataloader, criterion, optimizer, device, profiler=None):
     net.train()
     running_loss = 0.0
     for i, data in enumerate(dataloader, 0):
@@ -1210,6 +1230,9 @@ def train(net, dataloader, criterion, optimizer, device):
         loss.backward()
         optimizer.step()
         running_loss += loss.item()
+        if profiler is not None:
+            profiler.step()
+
     return running_loss / len(dataloader)
 
 
@@ -1334,10 +1357,26 @@ def main(task_id: int):
 
                 for epoch in range(config["epochs"]):
                     logger.debug("Training")
-                    train_loss = train(net, dataloader, criterion, optimizer, device)
+                    with torch.profiler.profile(
+                        activities=[
+                            torch.profiler.ProfilerActivity.CPU,
+                            torch.profiler.ProfilerActivity.CUDA,
+                        ],
+                        schedule=torch.profiler.schedule(wait=10, warmup=10, active=10),
+                        on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                            dir_name=output_dir / str(task_id) / "logs",
+                        ),
+                        record_shapes=True,
+                        profile_memory=True,  # This will take 1 to 2 minutes. Setting it to False could greatly speedup.
+                        with_stack=True,
+                    ) as p:
+                        train_loss = train(
+                            net, dataloader, criterion, optimizer, device, profiler=p
+                        )
                     if epoch % config["write_each_epoch"] == 0:
                         current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
                         logger.info(f"Epoch {epoch}, train loss: {train_loss:.8f}")
+                        logger.info("Writing test predictions")
                         np.save(
                             output_dir
                             / str(task_id)
@@ -1351,9 +1390,10 @@ def main(task_id: int):
                             .cpu()
                             .numpy(),
                         )
+                        logger.info("Evaluating test overlap and accuracy")
                         test_overlap = sign_overlap_fn(test_states, net, device)
                         test_accuracy = accuracy_fn(test_states, net, device)
-                        logger.info(f"Overlap: {test_overlap:.4f}")
+                        logger.info(f"Overlap: {test_overlap:.4f}. Writing results...")
                         with jsonlines.open(
                             output_dir / str(task_id) / f"results.jsonl", mode="a"
                         ) as writer:
