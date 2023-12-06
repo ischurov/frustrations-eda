@@ -49,6 +49,7 @@
         more-itertools
         numpy
         pandas
+        plotly
         # plotnine
         pytest
         pyyaml
@@ -58,6 +59,8 @@
         snakeviz
         sympy
         torch-bin
+  #      (torch-tb-profiler.override { torch=torch-bin; })
+        tensorboard
 	# torch
         (torchmetrics.override { torch=torch-bin; })
         tqdm
@@ -72,6 +75,17 @@
             doCheck = false;
           }
         )
+        (
+          buildPythonPackage rec {
+            pname = "HolisticTraceAnalysis";
+            version = "0.2.0";
+            src = fetchPypi {
+              inherit pname version;
+              sha256 = "sha256-++/54wua9I1ULgDn/Hwe2Eb943Y3j02zyAm3RT+EtXA=";
+            };
+            doCheck = false;
+          }
+        )
       ];
     in
     {
@@ -82,12 +96,15 @@
             (python3.withPackages my-python-packages)
             # LSP support for Python
             python3Packages.black
+            py-spy
             nodePackages.pyright
             # Nix stuff
             nil
             nixpkgs-fmt
             # direnv
             direnv
+            nvtop
+            nvtop-nvidia
           ];
           shellHook = ''
             export PROMPT_COMMAND=""
