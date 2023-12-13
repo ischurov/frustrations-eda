@@ -27,7 +27,7 @@
       pkgs-for = system: import inputs.nixpkgs {
         inherit system;
         config.allowUnfree = true;
-        config.cudaSupport = true;
+        config.cudaSupport = false;
         config.nvidia.acceptLicense = true;
         overlays = [ inputs.lattice-symmetries.overlays.default 
 		     inputs.ising-glass-annealer.overlays.default 
