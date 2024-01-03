@@ -6,6 +6,8 @@ import torch
 import torch.nn as nn
 
 from spin_lattices import ParallelogramSpinLattice
+from my_stopwatch import stopwatch
+from loguru import logger
 
 
 def circular_pad2d(input: torch.Tensor, pad: int | Sequence[int]):
@@ -81,17 +83,22 @@ class InvariantSpinCNNRegression(nn.Module):
         self.fc = nn.Linear(hidden_channels[-1], out_dim, bias=last_layer_bias)
 
     def forward(self, x: torch.Tensor | npt.NDArray):
-        if isinstance(x, torch.Tensor):
-            x_numpy = x.detach().cpu().numpy()
-        else:
-            x_numpy = x
+        assert x.device.type == "cuda"
 
-        x_tensor = torch.from_numpy(
-            self.lattice.spin_config_to_tensor(x_numpy).astype(np.float32)
-        ).permute(0, 3, 1, 2)
-        if isinstance(x, torch.Tensor):
-            x_tensor = x_tensor.to(x.device)
-        x_output = self.layers(x_tensor)
-        x_output = x_output.mean(dim=(2, 3))
-        x_output = self.fc(x_output)
-        return x_output
+        x_tensor = self.lattice.spin_config_to_tensor(x).permute(0, 3, 1, 2)
+
+        if isinstance(x_tensor, np.ndarray):
+            x_tensor = x_tensor.astype(np.float32)
+        else:
+            x_tensor = x_tensor.float()
+
+        # for i, layer in enumerate(self.layers):
+        #     x_tensor = layer(x_tensor)
+
+        x_tensor = self.layers(x_tensor)
+
+        x_tensor = x_tensor.mean(dim=(2, 3))
+
+        x_tensor = self.fc(x_tensor)
+
+        return x_tensor

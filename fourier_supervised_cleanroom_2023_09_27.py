@@ -21,7 +21,7 @@ from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
-output_dir.mkdir(exist_ok=True)
+output_dir.mkdir(exist_ok=True, parents=True)
 
 default_config = {
     "J2s": np.linspace(0, 1, 11),

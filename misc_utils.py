@@ -9,6 +9,7 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 from loguru import logger
+from functools import singledispatch
 
 ### BASED ON: https://github.com/amitport/hadamard-transform
 ### MIT LICENSE
@@ -66,7 +67,8 @@ def hadamard_transform_pytorch_inplace(x: torch.Tensor, chunks: int = 8):
 ### END BASED
 
 
-def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
+@singledispatch
+def make_unpacked_configurations(states: npt.NDArray, number_spins: int):
     initial_shape = np.shape(states)
     return (
         (
@@ -77,10 +79,21 @@ def make_unpacked_configurations(states: npt.ArrayLike, number_spins: int):
     ).reshape(initial_shape + (number_spins,))
 
 
+@make_unpacked_configurations.register
+def _(states: torch.Tensor, number_spins: int):
+    initial_shape = states.shape
+    states = states.reshape(-1, 1).to(torch.int64)
+
+    range_tensor = torch.arange(number_spins, dtype=torch.int64, device=states.device)
+    unpacked = (states >> range_tensor) & 1
+
+    return unpacked.reshape(initial_shape + (number_spins,))
+
+
 def make_packed_configurations(states: npt.ArrayLike, number_spins: int):
-    return (np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")).sum(
-        axis=1
-    )
+    return (
+        np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")
+    ).sum(axis=1)
 
 
 def batched_state_info_df(basis: ls.SpinBasis, states: npt.NDArray[np.uint64]):
@@ -164,9 +177,9 @@ def read_jsonl_to_df(file: str | Path | Iterable[str | Path]):
 
 
 def read_json_dir_to_df(dir: str | Path):
-    return pd.concat(read_jsonl_to_df(file) for file in Path(dir).glob("*.json")).reset_index(
-        drop=True
-    )
+    return pd.concat(
+        read_jsonl_to_df(file) for file in Path(dir).glob("*.json")
+    ).reset_index(drop=True)
 
 
 def get_abslargest_terms(
@@ -202,7 +215,9 @@ def groupby_shuffle(values, groups):
     # construct the shuffled values array
     shuffled_values = np.empty_like(values)
     for group in zip(unique_groups):
-        shuffled_values[groups == group] = np.random.permutation(values[groups == group])
+        shuffled_values[groups == group] = np.random.permutation(
+            values[groups == group]
+        )
 
     return shuffled_values
 
@@ -237,7 +252,9 @@ def differentiable_safe_exp(x: torch.Tensor, normalise: bool = True) -> torch.Te
     return x
 
 
-def column_to(type_: type, cols: str | list[str]) -> Callable[[pd.DataFrame], pd.DataFrame]:
+def column_to(
+    type_: type, cols: str | list[str]
+) -> Callable[[pd.DataFrame], pd.DataFrame]:
     def wrapper(df):
         df = df.copy()
         if isinstance(cols, str):

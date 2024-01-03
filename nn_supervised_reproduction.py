@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from time import perf_counter
 
 import fire
 import numpy as np
@@ -10,7 +11,6 @@ from jsonlines import jsonlines
 from loguru import logger
 from scipy.special import comb
 from torch import Tensor, nn
-from torch.utils.data import DataLoader, TensorDataset
 
 from conv2d_circular import InvariantSpinCNNRegression
 from fourier_supervised_cleanroom import fit_fourier_series, mk_train_test, sign_signal
@@ -24,6 +24,8 @@ from heisenberg_hamiltonians import (
 from misc_utils import keep_serializable, make_unpacked_configurations
 from parity import parity, popcount
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
+from collections import defaultdict
+from my_stopwatch import stopwatch
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -871,6 +873,7 @@ configs = {
         "n_train_from_full_space": False,
         "last_layer_bias": False,
         "batch_size": 8192,
+        "write_each": 1,
     },
     73: {
         "lattice": "triangular6x6",
@@ -880,7 +883,7 @@ configs = {
         "kernel_size": 3,
         "use_symmetries": True,
         "spin_inversion": None,
-        "runs": 5,
+        "runs": 10,
         "eps_train": [0.005],
         "dilations": [1, 2, 3],
         "skip_symmetries_whitelist": True,
@@ -1028,6 +1031,212 @@ configs = {
         "n_train_from_full_space": False,
         "last_layer_bias": False,
         "batch_size": 8192,
+    },
+    81: {  # same as 72
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+    },
+    82: {  # same as 72
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+    },
+    83: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [1, 2, 3],  # !
+    },
+    84: {  # same as 72
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [3, 2, 1],  # !
+    },
+    85: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,  # !
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+    },
+    86: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [1, 2, 3],  # !
+    },
+    87: {  # same as 72
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [3, 2, 1],  # !
+    },
+    88: {  # same as 72
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32, 32],  # !
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+    },
+    89: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [1, 2, 3, 3],  # !
+    },
+    90: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32, 32],
+        "kernel_size": 3,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [3, 3, 2, 1],  # !
     },
 }
 
@@ -1198,19 +1407,66 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
         raise ValueError(f"Unknown architecture {config['architecture']}")
 
 
-def train(net, dataloader, criterion, optimizer, device):
+class SimpleTimer:
+    def __init__(self):
+        self.timers = defaultdict(lambda: 0.0)
+        self.current_step = None
+
+    def step(self, name: str):
+        if self.current_step is not None:
+            self.timers[self.current_step] += perf_counter() - self.tick
+        self.current_step = name
+        self.tick = perf_counter()
+
+    def stop(self):
+        if self.current_step is not None:
+            self.timers[self.current_step] += perf_counter() - self.tick
+            self.current_step = None
+
+    def __str__(self):
+        max_name_len = max(len(name) for name in self.timers.keys())
+        result = []
+        for name, elapsed in sorted(self.timers.items(), key=lambda x: -x[1]):
+            result.append(f"{name.ljust(max_name_len)} : {elapsed:.6f} seconds")
+        return "Timers\n\n" + "\n".join(result) + "\n----------\n"
+
+
+def train(net: nn.Module, dataloader, criterion, optimizer, device):
     net.train()
-    running_loss = 0.0
+    running_loss = torch.tensor(0.0, device=device)
+    timer = SimpleTimer()
+
     for i, data in enumerate(dataloader, 0):
         inputs, labels = data
-        inputs, labels = inputs.to(device), labels.to(device)
+
+        timer.step("sending data to device")
+        inputs = inputs.to(device)
+        labels = labels.to(device)
+
         optimizer.zero_grad()
+
+        timer.step("forward")
         outputs = net(inputs)
+
+        timer.step("loss")
         loss = criterion(outputs, labels)
+
+        timer.step("backward")
         loss.backward()
+
+        timer.step("step")
         optimizer.step()
-        running_loss += loss.item()
-    return running_loss / len(dataloader)
+
+        timer.step("running_loss")
+        running_loss += loss
+
+        timer.step("dataloader")
+
+    timer.stop()
+
+    logger.debug("Training step breakdown:\n" + str(timer))
+
+    return running_loss.item() / len(dataloader)
 
 
 def get_predicted_signs(states: npt.NDArray, sign_net: nn.Module, device: torch.device):
@@ -1239,6 +1495,87 @@ def accuracy(system: SpinSystem):
     return wrapper
 
 
+class SpinDataset(torch.utils.data.IterableDataset):
+    r"""Dataset wrapping spin configurations and corresponding values.
+
+    :param spins: either a ``numpy.ndarray`` of ``uint64`` or a
+        ``torch.Tensor`` of ``int64`` containing compact spin configurations.
+    :param values: a ``torch.Tensor``.
+    :param batch_size: batch size.
+    :param shuffle: whether to shuffle the samples.
+    :param device: device where the batches will be used.
+    """
+
+    def __init__(self, spins, values, batch_size, shuffle=False, device=None):
+        if isinstance(spins, np.ndarray):
+            if spins.dtype != np.uint64:
+                raise TypeError(
+                    "spins must be a numpy.ndarray of uint64; got numpy.ndarray "
+                    "of {}".format(spins.dtype.name)
+                )
+            # Use int64 because PyTorch doesn't support uint64
+            self.spins = torch.from_numpy(spins.view(np.int64))
+        elif isinstance(spins, torch.Tensor):
+            if spins.dtype != torch.int64:
+                raise TypeError(
+                    "spins must be a torch.Tensor of int64; got torch.Tensor "
+                    "of {}".format(spins.dtype)
+                )
+            self.spins = spins
+        else:
+            raise TypeError(
+                "spins must be either a numpy.ndarray of uint64 or a "
+                "torch.Tensor of int64; got {}".format(type(spins))
+            )
+
+        if isinstance(values, torch.Tensor):
+            self.values = values
+        else:
+            raise TypeError(
+                "values must be either a torch.Tensor; got {}".format(type(spins))
+            )
+
+        if self.spins.size(0) != self.values.size(0):
+            raise ValueError(
+                "spins and values must have the same size along the first "
+                "dimension, but spins.shape={} != values.shape={}"
+                "".format(spins.size(), values.size())
+            )
+
+        if batch_size <= 0:
+            raise ValueError(
+                "invalid batch_size: {}; expected a positive integer"
+                "".format(batch_size)
+            )
+        self.batch_size = batch_size
+
+        if device is None:
+            device = self.values.device
+        elif isinstance(device, str):
+            device = torch.device(device)
+
+        self.device = device
+        self.spins = self.spins.to(self.device)
+        self.values = self.values.to(self.device)
+        self.shuffle = shuffle
+
+    def __len__(self) -> int:
+        return (self.spins.size(0) + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        if self.shuffle:
+            indices = torch.randperm(self.spins.size(0), device=self.device)
+            spins = self.spins[indices]
+            values = self.values[indices]
+        else:
+            spins = self.spins
+            values = self.values
+        return zip(
+            torch.split(self.spins, self.batch_size),
+            torch.split(self.values, self.batch_size),
+        )
+
+
 def main(task_id: int):
     config = get_config(task_id)
     lattice = get_lattice(config["lattice"])
@@ -1248,6 +1585,7 @@ def main(task_id: int):
     signal_factory = sign_signal
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    logger.debug(f"Torch will use device: {device}")
 
     for run in range(config["runs"]):
         start_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
@@ -1319,21 +1657,45 @@ def main(task_id: int):
                 target = torch.from_numpy(signal_fn(train_states) == -1).to(torch.long)
                 if config["one_dimensonal_output"]:
                     target = target.view(-1, 1).to(torch.float32)
-                dataset = TensorDataset(
-                    torch.from_numpy(train_states.astype(np.int64)),
-                    target,
-                )
+                # dataset = TensorDataset(
+                #     torch.from_numpy(train_states.astype(np.int64)).to(device),
+                #     target.to(device),
+                # )
 
-                dataloader = DataLoader(
-                    dataset, batch_size=config["batch_size"], shuffle=config["shuffle"]
+                # dataloader = DataLoader(
+                #     dataset, batch_size=config["batch_size"], shuffle=config["shuffle"]
+                # )
+
+                dataset = SpinDataset(
+                    train_states,
+                    target,
+                    batch_size=config["batch_size"],
+                    shuffle=config["shuffle"],
+                    device=device,
                 )
 
                 for epoch in range(config["epochs"]):
                     logger.debug("Training")
-                    train_loss = train(net, dataloader, criterion, optimizer, device)
+                    # with torch.profiler.profile(
+                    #     activities=[
+                    #         torch.profiler.ProfilerActivity.CPU,
+                    #         torch.profiler.ProfilerActivity.CUDA,
+                    #     ],
+                    #     schedule=torch.profiler.schedule(wait=10, warmup=10, active=10),
+                    #     on_trace_ready=torch.profiler.tensorboard_trace_handler(
+                    #         dir_name=output_dir / str(task_id) / "logs",
+                    #     ),
+                    #     record_shapes=True,
+                    #     profile_memory=True,  # This will take 1 to 2 minutes. Setting it to False could greatly speedup.
+                    #     with_stack=True,
+                    # ) as p:
+                    train_loss = train(
+                        net, dataset, criterion, optimizer, device  # , profiler=p
+                    )
                     if epoch % config["write_each_epoch"] == 0:
                         current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
                         logger.info(f"Epoch {epoch}, train loss: {train_loss:.8f}")
+                        logger.info("Writing test predictions")
                         np.save(
                             output_dir
                             / str(task_id)
@@ -1347,9 +1709,10 @@ def main(task_id: int):
                             .cpu()
                             .numpy(),
                         )
+                        logger.info("Evaluating test overlap and accuracy")
                         test_overlap = sign_overlap_fn(test_states, net, device)
                         test_accuracy = accuracy_fn(test_states, net, device)
-                        logger.info(f"Overlap: {test_overlap:.4f}")
+                        logger.info(f"Overlap: {test_overlap:.4f}. Writing results...")
                         with jsonlines.open(
                             output_dir / str(task_id) / f"results.jsonl", mode="a"
                         ) as writer:
