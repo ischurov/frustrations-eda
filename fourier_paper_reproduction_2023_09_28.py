@@ -7,7 +7,7 @@ import numpy as np
 from loguru import logger
 
 from fourier_paper_reproduction import (
-    accuracy,
+    accuracy as thresholded_accuracy,
     get_ipr,
     how_many_terms_to_achieve,
     how_many_terms_to_achieve_relative_weight,
@@ -15,21 +15,35 @@ from fourier_paper_reproduction import (
     sign_overlap,
 )
 from fourier_supervised_cleanroom import (
-    amplitude_median_bin_signal,
+    amplitude_median_bin_signal as thresholded_amplitude_median_bin_signal,
     amplitude_prob_median_bin_signal,
     amplitude_signal,
     fit_fourier_series,
     ground_state_signal,
     hadamard_transform,
     keep_largest_n,
-    sign_signal,
+    sign_signal as thresholded_sign_signal,
 )
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
 output_dir.mkdir(exist_ok=True)
+
+tol = 1e-14
+
+
+def sign_signal(system: SpinSystem):
+    return thresholded_sign_signal(system, tol=tol)
+
+
+def amplitude_median_bin_signal(system: SpinSystem):
+    return thresholded_amplitude_median_bin_signal(system, tol=tol)
+
+
+def accuracy(system: SpinSystem, signal_fn, states=None):
+    return thresholded_accuracy(system, signal_fn, states=states, tol=tol)
 
 
 default_config = {
@@ -44,6 +58,7 @@ default_config = {
     "scorers": [sign_overlap, accuracy],
     "thresholds": [0.02, 0.2, 0.5, 0.8, 0.9, 0.95, 0.99],
     "run_id": "",
+    "sign_tol": tol,
 }
 
 configs = {
@@ -83,6 +98,9 @@ configs = {
     },
     18: {"lattice": "kagome3x2"},
     19: {"lattice": "kagome4x2"},
+    20: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)[:10]}, # the same as 13
+    21: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)[10:20]}, # the same as 13
+    22: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)[20:]}, # the same as 13
 }
 
 
@@ -113,20 +131,24 @@ def main(task_id: int, run_id: int | str | None = None):
             f"scorer={scorer_factory.__name__}, "
             f"threshold={threshold}"
         )
-        system = HeisenbergJ1J2(lattice, J1=1, J2=J2, use_symmetries=False, spin_inversion=None)
+        system = HeisenbergJ1J2(
+            lattice, J1=1, J2=J2, use_symmetries=False, spin_inversion=None
+        )
         system.get_eigenstates(1)
 
         signal_fn = signal_factory(system)
         scorer_fn = scorer_factory(system, signal_fn=signal_fn)
 
         series_coeffs = fit_fourier_series(
-            system.canonical_basis.states, signal_fn=signal_fn, n_bits=system.number_spins
+            system.canonical_basis.states,
+            signal_fn=signal_fn,
+            n_bits=system.number_spins,
         )
 
         terms_score = how_many_terms_to_achieve(series_coeffs, threshold, scorer_fn)
-        achieved_sign_overlap_for_terms_score = sign_overlap(system, signal_fn=signal_fn)(
-            keep_largest_n(series_coeffs, terms_score)
-        )
+        achieved_sign_overlap_for_terms_score = sign_overlap(
+            system, signal_fn=signal_fn
+        )(keep_largest_n(series_coeffs, terms_score))
 
         with jsonlines.open(output_dir / str(task_id) / f"results.jsonl", "a") as f:
             f.write(

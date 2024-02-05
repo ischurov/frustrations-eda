@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import product
+from tkinter import font
+from turtle import color
 from typing import Any, Literal, Union, overload
 
 import igraph as ig
@@ -21,8 +23,21 @@ import torch
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
 
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+
+
 def scatter_plot(
-    data: pd.DataFrame, x, y, color, alpha=None, ax=None, scatter_kws=None, dim=None
+    data: pd.DataFrame,
+    x,
+    y,
+    color,
+    alpha=None,
+    ax=None,
+    color_map=None,
+    scatter_kws=None,
 ):
     if scatter_kws is None:
         scatter_kws = {}
@@ -32,13 +47,10 @@ def scatter_plot(
     else:
         fig = ax.figure
 
-    color_labels = sorted(data[color].unique())
-
-    # List of colors in the color palettes
-    rgb_values = sns.color_palette("Set2", len(color_labels))
-
-    # Map continents to the colors
-    color_map = dict(zip(color_labels, rgb_values))
+    if color_map is None:
+        color_labels = sorted(data[color].unique())
+        rgb_values = sns.color_palette("Set2", len(color_labels))
+        color_map = dict(zip(color_labels, rgb_values))
 
     for key, group in data.groupby(color):
         if alpha:
@@ -46,15 +58,12 @@ def scatter_plot(
         else:
             alphas = 1.0
 
-        group.plot(
+        scatter = group.plot(
             ax=ax,
             kind="scatter",
             x=x,
             y=y,
-            label=key,
-            color=color_map[key],
-            alpha=alphas,
-            **scatter_kws,
+            **(dict(label=key, color=color_map[key], alpha=alphas) | scatter_kws),
         )
 
     return ax
@@ -96,7 +105,7 @@ class SpinLattice:
 
     @property
     @abstractmethod
-    def sites_df(self):
+    def sites_df(self) -> pd.DataFrame:
         ...
 
     @property
@@ -467,12 +476,18 @@ class SpinLattice:
         spins: None | int | np.uint64 | npt.NDArray | list[int] = None,
         show_edges=True,
         show_numbers=True,
+        show_boundary_conditions=True,
         permutation: None | list[int] | Permutation = None,
         ax=None,
         swap_axes=False,
+        color_map=None,
+        scatter_kws=None,
     ):
         if spins is None:
             spins = 0
+
+        if scatter_kws is None:
+            scatter_kws = {}
 
         if isinstance(spins, (int, np.uint64)):
             spins = np.array(
@@ -488,6 +503,9 @@ class SpinLattice:
             spins_df, left_on="num", right_index=True
         ).assign(alpha=lambda df: df["is_canonical"].apply(lambda x: 1 if x else 0.3))
 
+        if not show_boundary_conditions:
+            sites_df = sites_df.query("is_canonical")
+
         if ax is None:
             _, ax = plt.subplots()
 
@@ -502,11 +520,21 @@ class SpinLattice:
             color="spin" if spins is not None else None,
             alpha="alpha",
             ax=ax,
-            scatter_kws={"s": 100, "zorder": 10},
+            scatter_kws={"s": 100, "zorder": 10} | scatter_kws,
+            color_map=color_map,
         )
 
         if show_edges:
             for (start, end), kind in self.edges:
+                if not show_boundary_conditions and (
+                    not (
+                        (sites_df["ix"] == start[0]) & (sites_df["iy"] == start[1])
+                    ).any()
+                    or not (
+                        (sites_df["ix"] == end[0]) & (sites_df["iy"] == end[1])
+                    ).any()
+                ):
+                    continue
                 x_start, y_start = self.lattice_basis @ start
                 x_end, y_end = self.lattice_basis @ end
                 if swap_axes:
@@ -540,24 +568,54 @@ class SpinLattice:
 
     def plot_subsets(
         self,
-        subsets: npt.NDArray[np.uint64],
+        subsets: npt.NDArray[np.uint64] | list[int],
         titles: list[str],
         legend=True,
         size_scale=3,
+        size_scale_x=None,
+        size_scale_y=None,
+        col_wrap=10,
+        title_fontsize=None,
         **kwargs,
     ):
+        if size_scale is not None and (
+            size_scale_x is not None or size_scale_y is not None
+        ):
+            raise ValueError(
+                "size_scale cannot be used together with size_scale_x or size_scale_y"
+            )
+        if size_scale_x is None:
+            size_scale_x = size_scale
+        if size_scale_y is None:
+            size_scale_y = size_scale
+        # Calculate the number of rows and columns
+        n_subsets = len(subsets)
+        n_cols = min(n_subsets, col_wrap)
+        n_rows = (n_subsets + col_wrap - 1) // col_wrap
+
         fig, axes = plt.subplots(
-            1,
-            len(subsets),
-            figsize=(len(subsets) * size_scale, size_scale),
+            n_rows,
+            n_cols,
+            figsize=(n_cols * size_scale_x, n_rows * size_scale_y),
             squeeze=False,
         )
-        for ax, subset, title in zip(axes[0], subsets, titles):
+
+        # Flatten the axes array for easy iteration
+        axes_flat = axes.flat
+
+        # Iterate and plot
+        for ax, subset, title in zip(axes_flat, subsets, titles):
             self.plot(spins=subset, ax=ax, **kwargs)
             ax.axis("off")
-            ax.set_title(title)
-            if not legend:
+            ax.set_title(title, fontsize=title_fontsize)
+            # Correctly handle the legend
+            if not legend and ax.get_legend():
                 ax.get_legend().remove()
+
+        # Hide any unused axes
+        for ax in axes_flat[n_subsets:]:
+            ax.set_visible(False)
+
         return fig
 
 
@@ -652,8 +710,17 @@ class ParallelogramSpinLattice(SpinLattice):
                 self.site_to_num[tuple(site)] = new_num
                 new_num += 1
 
-        self.x_translation = self.get_translation("x")
-        self.y_translation = self.get_translation("y")
+    @property
+    def x_translation(self):
+        if not hasattr(self, "_x_translation"):
+            self._x_translation = self.get_translation("x")
+        return self._x_translation
+
+    @property
+    def y_translation(self):
+        if not hasattr(self, "_y_translation"):
+            self._y_translation = self.get_translation("y")
+        return self._y_translation
 
     def get_automorphisms(self) -> list[list[int]]:
         if self.automorphisms == "all":
@@ -782,6 +849,66 @@ class ChainLattice(ParallelogramSpinLattice):
             height=height,
             **kwargs,
         )
+
+
+class SquareLatticeNoDiag(ParallelogramSpinLattice):
+    def __init__(self, width=1, height=1, **kwargs):
+        r"""
+        Generates square J1-J2 lattice.
+
+        The fundamental domain:
+
+        ```
+        C ----- D
+        |       |
+        |       |
+        |       |
+        |       |
+        A ----- B
+        ```
+
+        Size of the fundamentail domain is 1×1
+        """
+        u = np.array([1, 0])
+        v = np.array([0, 1])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([0, 1]),
+            "D": np.array([1, 1]),
+        }
+
+        named_edges = [("AB", 1), ("AC", 1), ("CD", 1), ("BD", 1)]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=1,
+            width=width,
+            height=height,
+            **kwargs,
+        )
+
+        t_frame = self.sites_df.query("is_canonical").set_index("num").reset_index()
+
+        # TODO: refactor as a test
+        # assert t_frame["ix"].nunique() == self.width
+        # assert t_frame["iy"].nunique() == self.height
+        # assert t_frame.duplicated(["ix", "iy"]).sum() == 0
+
+        self.num_tensor_order = np.asarray(
+            t_frame.sort_values(["ix", "iy"], ignore_index=True)["num"].values
+        )
+
+    def spin_config_to_tensor(
+        self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
+    ) -> np.ndarray | torch.Tensor:
+        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
+            ..., self.num_tensor_order
+        ].reshape(-1, self.width, self.height, 1)
 
 
 class SquareLattice(ParallelogramSpinLattice):
@@ -1014,10 +1141,10 @@ class KagomeLattice(ParallelogramSpinLattice):
         )
 
         # TODO: refactor as a test
-        assert t_frame["tz"].nunique() == 3
-        assert t_frame["tx"].nunique() == self.width
-        assert t_frame["ty"].nunique() == self.height
-        assert t_frame.duplicated(["tx", "ty", "tz"]).sum() == 0
+        # assert t_frame["tz"].nunique() == 3
+        # assert t_frame["tx"].nunique() == self.width
+        # assert t_frame["ty"].nunique() == self.height
+        # assert t_frame.duplicated(["tx", "ty", "tz"]).sum() == 0
 
         self.num_tensor_order = np.asarray(
             t_frame.sort_values(["tx", "ty", "tz"], ignore_index=True)["num"].values

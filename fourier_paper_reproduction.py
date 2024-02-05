@@ -4,7 +4,11 @@ import numpy as np
 import numpy.typing as npt
 from loguru import logger
 
-from fourier_supervised_cleanroom import hadamard_transform, keep_largest_n
+from fourier_supervised_cleanroom import (
+    hadamard_transform,
+    keep_largest_n,
+    thresholded_sign,
+)
 from heisenberg_hamiltonians import SpinSystem
 
 
@@ -80,6 +84,7 @@ def accuracy(
     system: SpinSystem,
     signal_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
     states: npt.NDArray[np.uint64] | None = None,
+    tol=0.0,
 ):
     if states is None:
         states = system.canonical_basis.states
@@ -87,8 +92,11 @@ def accuracy(
     ground_truth = np.sign(signal_fn(states))
 
     def wrapper(fourier_series: npt.NDArray[np.float64]):
-        predictions = np.sign(hadamard_transform(fourier_series)[states])
-        return np.mean(ground_truth == predictions)
+        predictions = thresholded_sign(
+            hadamard_transform(fourier_series)[states], tol=tol
+        )
+        non_zero_terms = (predictions != 0) & (ground_truth != 0)
+        return np.mean(ground_truth[non_zero_terms] == predictions[non_zero_terms])
 
     return wrapper
 

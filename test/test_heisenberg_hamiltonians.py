@@ -58,6 +58,7 @@ class TestDiagonalization(TestCase):
             ChainLattice(width=12),
             # SquareLattice(width=4, height=6),
             # KagomeLattice(width=2, height=4),
+            # KagomeLattice(width=4, height=2),
             # TriangleLattice(width=4, height=6),
             # the last are known to be working, but takes too long
         ]:
@@ -68,6 +69,8 @@ class TestDiagonalization(TestCase):
                 J2=J2,
                 use_symmetries=True,
                 spin_inversion=1,
+                skip_symmetries_whitelist=True,
+                ground_state_cache_dir=None,
             )
             system.get_eigenstates(1)
 
@@ -77,6 +80,7 @@ class TestDiagonalization(TestCase):
                 J2=J2,
                 use_symmetries=False,
                 spin_inversion=None,
+                ground_state_cache_dir=None,
             )
             system_nosym.get_eigenstates(1)
 
@@ -88,9 +92,11 @@ class TestDiagonalization(TestCase):
                     lsuffix="_x",
                     rsuffix="_y",
                 )
-                .assign(ok=lambda x: np.isclose(x["eigenstate_coeff_x"], x["eigenstate_coeff_y"]))[
-                    "ok"
-                ]
+                .assign(
+                    ok=lambda x: np.isclose(
+                        x["eigenstate_coeff_x"], x["eigenstate_coeff_y"]
+                    )
+                )["ok"]
                 .all()
             )
 
@@ -103,7 +109,8 @@ class TestDiagonalization(TestCase):
             )
             self.assertTrue(
                 (
-                    system.get_df_eigenstate(0, canonical_basis=False).index == system.basis.states
+                    system.get_df_eigenstate(0, canonical_basis=False).index
+                    == system.basis.states
                 ).all()
             )
 
@@ -122,7 +129,9 @@ class TestDiagonalization(TestCase):
             )
             system.get_eigenstates()
             most_probable_config = (
-                system.get_df_ground_state(unpack_configurations=True, canonical_basis=True)
+                system.get_df_ground_state(
+                    unpack_configurations=True, canonical_basis=True
+                )
                 .sort_values("amplitude", ascending=False)
                 .iloc[0]["configuration"]
             )
@@ -247,10 +256,14 @@ class TestDiagonalization(TestCase):
 
         self.assertTrue(
             HeisenbergJ1J2(
-                lattice=TriangularLattice(3, 3), use_symmetries=False, spin_inversion=None
+                lattice=TriangularLattice(3, 3),
+                use_symmetries=False,
+                spin_inversion=None,
             ).hamiltonian.expression
             == HeisenbergJ1J2(
-                lattice=OneDiagonalSquareLattice(3, 3), use_symmetries=False, spin_inversion=None
+                lattice=OneDiagonalSquareLattice(3, 3),
+                use_symmetries=False,
+                spin_inversion=None,
             ).hamiltonian.expression
         )
 

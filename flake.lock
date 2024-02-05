@@ -157,11 +157,11 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1701359894,
-        "narHash": "sha256-Jm9KdZo9eHKdfYK1wLPQXvjdnDNgEvHe7i1qxrwtDUc=",
+        "lastModified": 1706968211,
+        "narHash": "sha256-zO2km4yN+xaXmXFHnvpPSVIrvDDlLDlcQBGgy24c+KQ=",
         "owner": "twesterhout",
         "repo": "nix-on-the-cluster",
-        "rev": "3b40280120b6ae45eb1b1a0934ada4bd5796d9c2",
+        "rev": "ac7422332c58a22ccc70b32946f55c9d106fff18",
         "type": "github"
       },
       "original": {

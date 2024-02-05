@@ -14,7 +14,9 @@ from misc_utils import (
 
 
 ### FROM: GPT-4
-def apply_random_permutations(states: npt.NDArray, permutations: npt.NDArray | list[list[int]]):
+def apply_random_permutations(
+    states: npt.NDArray, permutations: npt.NDArray | list[list[int]]
+):
     states_torch = torch.from_numpy(states.astype(np.int64))
     permutations_torch = torch.tensor(permutations).to(torch.int64)
     random_indices = torch.randint(0, len(permutations), (len(states),))
@@ -185,12 +187,18 @@ def amplitude_prob_median_bin_signal(system: SpinSystem, bit=1):
     bits_initial_order[sorted_idxs] = bits_sorted_order
 
     def wrapper(s):
-        return (1 - 2 * bits_initial_order[system.canonical_basis.index(s)]).astype(np.float64)
+        return (1 - 2 * bits_initial_order[system.canonical_basis.index(s)]).astype(
+            np.float64
+        )
 
     return wrapper
 
 
-def amplitude_median_bin_signal(system: SpinSystem):
+def thresholded_sign(x: npt.NDArray, tol=0.0):
+    return np.where(np.abs(x) < tol, 0, np.sign(x))
+
+
+def amplitude_median_bin_signal(system: SpinSystem, tol=0.0):
     """
     Binarizes amplitude by splitting the amplitudes in half at the median.
     Half of the amplitudes are set to 1 and the other half to -1.
@@ -199,7 +207,9 @@ def amplitude_median_bin_signal(system: SpinSystem):
     median = np.median(np.abs(system.get_ground_state_in_canonical_basis()))
 
     def wrapper(s):
-        return (1 - 2 * (np.abs(system.get_ground_state_coeffs(s)) > median)).astype(np.float64)
+        return thresholded_sign(
+            np.abs(system.get_ground_state_coeffs(s)) - median, tol=tol
+        )
 
     return wrapper
 
@@ -217,7 +227,9 @@ def do_apply_random_symmetries(reprs: npt.NDArray[np.uint64], system: SpinSystem
         reprs,
     )
     logger.debug("Applying random permutations")
-    states_unpacked = apply_random_permutations(reprs_unpacked, system.lattice.get_automorphisms())
+    states_unpacked = apply_random_permutations(
+        reprs_unpacked, system.lattice.get_automorphisms()
+    )
 
     logger.debug("Packing")
     states = system.make_packed_configurations(
@@ -269,9 +281,10 @@ def mk_train_test(
     return train_states, test_states
 
 
-def sign_signal(system: SpinSystem):
+def sign_signal(system: SpinSystem, tol=0.0):
     def wrapper(s):
-        return np.sign(system.get_ground_state_coeffs(s)).astype(np.float64)
+        ground_state = system.get_ground_state_coeffs(s)
+        return thresholded_sign(ground_state, tol=tol)
 
     return wrapper
 
