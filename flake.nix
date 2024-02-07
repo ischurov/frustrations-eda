@@ -31,6 +31,7 @@
                 cudaCapabilities = if final.config.cudaSupport then [ "7.0+PTX" ] else [ ];
               };
             });
+	    torchvision = py-final.torchvision-bin;
             combinadics = py-final.callPackage ./nix/combinadics.nix { };
             HolisticTraceAnalysis = py-final.callPackage ./nix/holistic-trace-analysis.nix { };
           })
@@ -41,7 +42,7 @@
       pkgs-for = system: import inputs.nixpkgs {
         inherit system;
         config.allowUnfree = true;
-        config.cudaSupport = false;
+        config.cudaSupport = true;
         config.nvidia.acceptLicense = true;
         overlays = [
           inputs.lattice-symmetries.overlays.default
