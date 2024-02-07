@@ -10,6 +10,7 @@ from fourier_supervised_cleanroom import (
     thresholded_sign,
 )
 from heisenberg_hamiltonians import SpinSystem
+from spin_lattices import SpinLattice
 
 
 def how_many_terms_to_achieve(
@@ -103,3 +104,24 @@ def accuracy(
 
 def get_ipr(series: npt.NDArray[np.float64]):
     return np.sum(series**4) / np.sum(series**2) ** 2
+
+
+def visualize_coeffs(coeffs, n: int, lat: SpinLattice, up_to_symmetry=False, **kwargs):
+    coeffs = coeffs.copy()
+    coeffs /= np.sqrt((coeffs**2).sum())
+    if up_to_symmetry:
+        fourier_basis_data = lat.get_fourier_basis_data()
+        selected_coeffs = coeffs[fourier_basis_data.reprs]
+    else:
+        selected_coeffs = coeffs
+    sort_order = np.argsort(np.abs(selected_coeffs))[::-1]
+
+    if up_to_symmetry:
+        sorted_subsets = fourier_basis_data.reprs[sort_order][:n]
+    else:
+        sorted_subsets = sort_order[:n].astype(np.uint64)
+
+    sorted_coeffs = selected_coeffs[sort_order][:n]
+    titles = [f"${c:.4f}$" for c in sorted_coeffs]
+    print(sorted_coeffs)
+    return lat.plot_subsets(sorted_subsets, titles, legend=False, **kwargs)

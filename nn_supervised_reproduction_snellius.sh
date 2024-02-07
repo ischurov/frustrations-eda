@@ -7,7 +7,7 @@
 #SBATCH --gpus-per-node=1
 #SBATCH -c 18
 
-export PATH="/home/ischurov/.local/bin:$PATH"
-cd /home/ischurov/tcm10/frustrations-eda
+export PATH="/home/ishchurov/.local/bin:$PATH"
+cd /home/ishchurov/frustrations-eda
 
 nix develop .#default --command python ./nn_supervised_reproduction.py $SLURM_ARRAY_TASK_ID

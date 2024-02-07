@@ -22,6 +22,7 @@ def keep_largest_n(n: int) -> TruncateStrategy:
     def truncate(coeffs: npt.NDArray[np.float64]) -> npt.NDArray[np.bool_]:
         coeffs_abs = np.abs(coeffs)
         out = np.zeros_like(coeffs_abs, dtype=np.bool_)
+
         out[np.argpartition(coeffs_abs, -n)[-n:]] = True
         return out
 
@@ -195,12 +196,16 @@ class FourierSeries:
             The total hamming weight of the terms with the largest coefficients
         """
         popcounts = popcount(
-            np.asarray(np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64")
+            np.asarray(
+                np.argpartition(np.abs(self.coeffs), -terms)[-terms:], dtype="uint64"
+            )
         )
         inv_popcounts = self.signal.number_spins - popcounts
         return int(np.sum(np.minimum(popcounts, inv_popcounts)))
 
-    def ipr(self, hamming_weighted: bool = False, ignore_free_term: bool = False) -> float:
+    def ipr(
+        self, hamming_weighted: bool = False, ignore_free_term: bool = False
+    ) -> float:
         """
         Returns the inverse participation ratio of the Fourier series.
 

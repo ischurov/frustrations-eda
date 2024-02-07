@@ -16,9 +16,14 @@ import seaborn as sns
 from loguru import logger
 from sympy.combinatorics import Permutation, PermutationGroup
 
-from misc_utils import batched_state_info_df, make_unpacked_configurations
+from misc_utils import (
+    batched_state_info_df,
+    make_unpacked_configurations,
+    make_packed_configurations,
+)
 from parity import parity, popcount
 import torch
+from functools import singledispatchmethod
 
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
@@ -143,6 +148,22 @@ class SpinLattice:
     def get_automorphisms(self) -> list[list[int]]:
         g = self.as_igraph()
         return g.get_automorphisms_vf2(edge_color=g.es["kind"])
+
+    def pack_configurations(self, states: npt.NDArray) -> npt.NDArray[np.uint64]:
+        return make_packed_configurations(states, number_spins=self.number_spins)
+
+    @overload
+    def unpack_configurations(self, states: npt.NDArray) -> npt.NDArray:
+        ...
+
+    @overload
+    def unpack_configurations(self, states: torch.Tensor) -> torch.Tensor:
+        ...
+
+    def unpack_configurations(
+        self, states: npt.NDArray | torch.Tensor
+    ) -> npt.NDArray | torch.Tensor:
+        return make_unpacked_configurations(states, number_spins=self.number_spins)
 
     def make_fourier_basis(self):
         if hasattr(self, "fourier_basis"):
@@ -491,9 +512,7 @@ class SpinLattice:
 
         if isinstance(spins, (int, np.uint64)):
             spins = np.array(
-                make_unpacked_configurations(
-                    np.array(spins, dtype="uint64"), self.number_spins
-                )
+                self.unpack_configurations(np.array(spins, dtype="uint64"))
             )
         elif isinstance(spins, list):
             spins = np.eye(self.number_spins, dtype=np.int64)[spins].sum(axis=0)
@@ -906,9 +925,9 @@ class SquareLatticeNoDiag(ParallelogramSpinLattice):
     def spin_config_to_tensor(
         self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
     ) -> np.ndarray | torch.Tensor:
-        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
-            ..., self.num_tensor_order
-        ].reshape(-1, self.width, self.height, 1)
+        return self.unpack_configurations(cfgs)[..., self.num_tensor_order].reshape(
+            -1, self.width, self.height, 1
+        )
 
 
 class SquareLattice(ParallelogramSpinLattice):
@@ -966,9 +985,9 @@ class SquareLattice(ParallelogramSpinLattice):
     def spin_config_to_tensor(
         self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
     ) -> np.ndarray | torch.Tensor:
-        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
-            ..., self.num_tensor_order
-        ].reshape(-1, self.width, self.height, 1)
+        return self.unpack_configurations(cfgs)[..., self.num_tensor_order].reshape(
+            -1, self.width, self.height, 1
+        )
 
 
 class SquareLattice1Diag(ParallelogramSpinLattice):
@@ -1067,9 +1086,9 @@ class TriangularLattice(ParallelogramSpinLattice):
     def spin_config_to_tensor(
         self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
     ) -> np.ndarray | torch.Tensor:
-        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
-            ..., self.num_tensor_order
-        ].reshape(-1, self.width, self.height, 1)
+        return self.unpack_configurations(cfgs)[..., self.num_tensor_order].reshape(
+            -1, self.width, self.height, 1
+        )
 
 
 class KagomeLattice(ParallelogramSpinLattice):
@@ -1156,7 +1175,7 @@ class KagomeLattice(ParallelogramSpinLattice):
     def spin_config_to_tensor(
         self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
     ) -> np.ndarray | torch.Tensor:
-        return make_unpacked_configurations(cfgs, number_spins=self.number_spins)[
+        return self.unpack_configurations(cfgs, number_spins=self.number_spins)[
             ..., self.num_tensor_order
         ].reshape(-1, self.width, self.height, 3)
 

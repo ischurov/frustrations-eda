@@ -128,11 +128,16 @@ def sample_from_system(
     if states_to_sample_from is None:
         states_to_sample_from = system.basis.states
     logger.debug("Finding probs")
-    amplitudes = np.abs(
-        system.get_ground_state_coeffs(states_to_sample_from, apply_symmetries=False)
-    )
-    probs = amplitudes**sampling_power
-    probs /= probs.sum()
+    if sampling_power == 0:
+        probs = np.ones(len(states_to_sample_from)) / len(states_to_sample_from)
+    else:
+        amplitudes = np.abs(
+            system.get_ground_state_coeffs(
+                states_to_sample_from, apply_symmetries=False
+            )
+        )
+        probs = amplitudes**sampling_power
+        probs /= probs.sum()
     logger.debug("Doing np.random.choice")
     sampled_states = np.random.choice(
         states_to_sample_from,
@@ -194,7 +199,7 @@ def amplitude_prob_median_bin_signal(system: SpinSystem, bit=1):
     return wrapper
 
 
-def thresholded_sign(x: npt.NDArray, tol=0.0):
+def thresholded_sign(x: npt.NDArray, tol=0.0) -> npt.NDArray[np.float64]:
     return np.where(np.abs(x) < tol, 0, np.sign(x))
 
 

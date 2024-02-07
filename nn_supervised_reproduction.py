@@ -1469,7 +1469,9 @@ def train(net: nn.Module, dataloader, criterion, optimizer, device):
     return running_loss.item() / len(dataloader)
 
 
-def get_predicted_signs(states: npt.NDArray, sign_net: nn.Module, device: torch.device):
+def get_predicted_signs(
+    states: npt.NDArray, sign_net: nn.Module, device: torch.device
+) -> npt.NDArray[np.float64]:
     outputs = sign_net(torch.from_numpy(states.astype(np.int64)).to(device))
     return (1 - 2 * torch.argmax(outputs, dim=1)).detach().cpu().numpy()
 
@@ -1493,6 +1495,9 @@ def accuracy(system: SpinSystem):
         return np.mean(true_signs[mask] == predicted_signs[mask])
 
     return wrapper
+
+
+# FROM: nqs_playground by Tom Westerhout
 
 
 class SpinDataset(torch.utils.data.IterableDataset):
@@ -1574,6 +1579,9 @@ class SpinDataset(torch.utils.data.IterableDataset):
             torch.split(self.spins, self.batch_size),
             torch.split(self.values, self.batch_size),
         )
+
+
+# END FROM
 
 
 def main(task_id: int):

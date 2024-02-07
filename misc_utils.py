@@ -90,7 +90,9 @@ def _(states: torch.Tensor, number_spins: int):
     return unpacked.reshape(initial_shape + (number_spins,))
 
 
-def make_packed_configurations(states: npt.ArrayLike, number_spins: int):
+def make_packed_configurations(
+    states: npt.ArrayLike, number_spins: int
+) -> npt.NDArray[np.uint64]:
     return (
         np.asarray(states, dtype="uint64") << np.arange(number_spins, dtype="uint64")
     ).sum(axis=1)
