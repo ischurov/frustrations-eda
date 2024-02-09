@@ -1,31 +1,29 @@
-from spin_lattices import SquareLattice, SpinLattice, ParallelogramSpinLattice
+print("Running dilated_nns_xors.py")
+
+from spin_lattices import ParallelogramSpinLattice
 import numpy as np
 import numpy.typing as npt
-from misc_utils import make_packed_configurations, make_unpacked_configurations
-from fourier_supervised_cleanroom import hadamard_transform
-from fourier_paper_reproduction import visualize_coeffs
 from nn_xors_2023_07_18 import FourierSeries
 from nn_supervised_reproduction import train, SpinDataset, get_predicted_signs
-from conv2d_circular import InvariantSpinCNNRegression
-from heisenberg_hamiltonians import SpinSystem, HeisenbergJ1J2
+from conv2d_circular import InvariantSpinCNNRegression, EquivariantConv2d
+from heisenberg_hamiltonians import HeisenbergJ1J2
 from fourier_supervised_cleanroom import mk_train_test, thresholded_sign
 import torch
 from pathlib import Path
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
 from loguru import logger
 from datetime import datetime
-from scipy.special import comb
 from torch import nn
 import fire
 import jsonlines
 from misc_utils import keep_serializable
-from typing import Callable
+from typing import Callable, Any
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
 
 default_config = {
-    "eps_train": [0.05, 0.01, 0.001, 0.0001],
+    "eps_train": [0.1, 0.05],
     "n_test": 5000,
     "hidden_channels": [32, 32, 32],
     "dilations": None,
@@ -47,7 +45,7 @@ configs = {
     0: {
         "lattice": "square6x4",
         "xor_physical_size": 3,
-        "xor_num_ones": 4,
+        "xor_num_ones": 7,
         "xor_num_terms": 3,
     },
     1: {
@@ -73,8 +71,9 @@ configs = {
     6: {
         "lattice": "square5x5",
         "xor_physical_size": 3,
-        "xor_num_ones": 4,
+        "xor_num_ones": 7,
         "xor_num_terms": 3,
+        "runs": 20,
     },
     7: {
         "_inherit": 6,
@@ -108,24 +107,103 @@ configs = {
         "_inherit": 12,
         "dilations": [3, 2, 1],
     },
+    15: {
+        "_inherit": 6,
+        "xor_num_terms": 1,
+    },
+    16: {
+        "_inherit": 15,
+        "dilations": [1, 2, 3],
+    },
+    17: {
+        "_inherit": 15,
+        "dilations": [3, 2, 1],
+    },
+    18: {
+        "_inherit": 15,
+        "xor_physical_size": 4,
+    },
+    19: {
+        "_inherit": 18,
+        "dilations": [1, 2, 3],
+    },
+    20: {
+        "_inherit": 18,
+        "dilations": [3, 2, 1],
+    },
+    21: {
+        "_inherit": 15,
+        "xor_physical_size": 5,
+    },
+    22: {
+        "_inherit": 21,
+        "dilations": [1, 2, 3],
+    },
+    23: {
+        "_inherit": 21,
+        "dilations": [3, 2, 1],
+    },
+    24: {
+        "_inherit": 19,
+        "hidden_channels": [64, 64, 64],
+        "epochs": 500,
+        "runs": 5,
+    },
+    25: {
+        "_inherit": 18,
+        "hidden_channels": [32, 32, 32, 32],
+        "dilations": None,
+        "epochs": 500,
+        "runs": 5,
+    },
+    26: {
+        "_inherit": 25,
+        "dilations": [1, 2, 3, 3],
+    },
+    27: {
+        "_inherit": 25,
+        "dilations": [1, 2, 2, 3],
+    },
 }
 
 
+def count_ones_in_window(matrix: npt.NDArray, window_size: int) -> npt.NDArray:
+    conv2d = EquivariantConv2d(1, 1, window_size, 1)
+    conv2d.conv.weight.data = torch.nn.Parameter(
+        torch.ones_like(conv2d.conv.weight.data), requires_grad=False
+    )
+    conv2d.conv.bias.data = torch.nn.Parameter(
+        torch.zeros_like(conv2d.conv.bias.data), requires_grad=False
+    )
+    input_tensor = torch.from_numpy(matrix.reshape(1, 1, *matrix.shape)).float()
+    return conv2d(input_tensor).detach().numpy().reshape(*matrix.shape)
+
+
 def make_random_xor(
-    lattice: ParallelogramSpinLattice,
-    size: int,
-    num_ones: int,
+    lattice: ParallelogramSpinLattice, size: int, num_ones: int, attempts=1000
 ):
     if num_ones > size**2:
         raise ValueError("num_ones must be less than or equal to size ** 2")
+    if num_ones < 2:
+        raise ValueError("num_ones must be at least 2")
     sequence = np.zeros(size**2)
     sequence[:num_ones] = 1
-    np.random.shuffle(sequence)
+    for _ in range(attempts):
+        np.random.shuffle(sequence)
+        patch = sequence.reshape(size, size)
+        matrix = np.zeros((lattice.width, lattice.height))
+        matrix[:size, :size] = patch
 
-    patch = sequence.reshape(size, size)
+        # make sure that there are no smaller windows
+        # that contain all the ones
+        if count_ones_in_window(matrix, size - 1).max() < num_ones:
+            break
+    else:
+        raise ValueError(
+            "Could not construct the random xor with given size; probably, it's impossible. Try increasing num_ones"
+        )
+    assert count_ones_in_window(matrix, size).max() == num_ones
 
-    matrix = np.zeros((lattice.width, lattice.height))
-    matrix[:size, :size] = patch
     spin_config = np.zeros(lattice.number_spins)
     spin_config[lattice.num_tensor_order] = matrix.reshape(-1)
     return spin_config
@@ -155,7 +233,7 @@ def make_random_fourier_series(
     )
 
 
-def resolve_config_inheritance(task_id: int):
+def resolve_config_inheritance(task_id: int, configs: dict[int, dict[str, Any]]):
     """
     Get the config for the task_id, recursively resolving inheritance if necessary.
     """
@@ -174,7 +252,7 @@ def resolve_config_inheritance(task_id: int):
 
 
 def get_config(task_id: int):
-    return default_config | resolve_config_inheritance(task_id)
+    return default_config | resolve_config_inheritance(task_id, configs=configs)
 
 
 def get_series(config: dict) -> FourierSeries:

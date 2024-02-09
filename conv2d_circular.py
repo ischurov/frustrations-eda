@@ -41,6 +41,25 @@ class CircularPad2d(nn.Module):
         return circular_pad2d(input, self.pad)
 
 
+class EquivariantConv2d(nn.Module):
+    def __init__(
+        self, in_channels: int, out_channels: int, kernel_size: int, dilation: int
+    ):
+        super().__init__()
+        self.pad = CircularPad2d(kernel_size + (kernel_size - 1) * (dilation - 1) - 1)
+        self.conv = nn.Conv2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            dilation=dilation,
+        )
+
+    def forward(self, x):
+        x = self.pad(x)
+        x = self.conv(x)
+        return x
+
+
 class InvariantSpinCNNRegression(nn.Module):
     def __init__(
         self,
@@ -52,37 +71,28 @@ class InvariantSpinCNNRegression(nn.Module):
         last_layer_bias=True,
     ):
         super().__init__()
+
         if dilations is None:
             dilations = [1] * len(hidden_channels)
+
         assert len(hidden_channels) == len(dilations)
-
         self.lattice = lattice
-
-        layers = []
         in_channels = lattice.spin_config_to_tensor(
             np.array([1], dtype=np.uint64)
         ).shape[-1]
 
-        for i, (hidden_ch, dilation) in enumerate(zip(hidden_channels, dilations)):
-            reception_field = kernel_size + (kernel_size - 1) * (dilation - 1)
-            layers.extend(
-                [
-                    CircularPad2d(reception_field - 1),
-                    nn.Conv2d(
-                        in_channels=in_channels,
-                        out_channels=hidden_ch,
-                        kernel_size=kernel_size,
-                        dilation=dilation,
-                    ),
-                    nn.ReLU(),
-                ]
-            )
+        layers = []
+
+        for hidden_ch, dilation in zip(hidden_channels, dilations):
+            conv2d = EquivariantConv2d(in_channels, hidden_ch, kernel_size, dilation)
+            layers.extend([conv2d, nn.ReLU()])
             in_channels = hidden_ch
 
         self.layers = nn.Sequential(*layers)
+
         self.fc = nn.Linear(hidden_channels[-1], out_dim, bias=last_layer_bias)
 
-    def forward(self, x: torch.Tensor | npt.NDArray):
+    def forward(self, x: torch.Tensor):
         assert x.device.type == "cuda"
 
         x_tensor = self.lattice.spin_config_to_tensor(x).permute(0, 3, 1, 2)

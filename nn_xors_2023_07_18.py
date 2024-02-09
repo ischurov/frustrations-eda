@@ -27,15 +27,19 @@ output_dir.mkdir(exist_ok=True)
 logger.add(output_dir / "log_{time}.log")
 
 
-
 class FourierSeries:
     def __init__(self, xors: npt.NDArray[np.uint64], coeffs: npt.NDArray[np.float64]):
+        if len(xors) != len(coeffs):
+            raise ValueError("Length of xors and coeffs must be equal.")
+
         self.xors = xors
         self.coeffs = coeffs
-        assert len(xors) == len(coeffs)
 
     def __call__(self, x: npt.NDArray[np.uint64]) -> npt.NDArray[np.float64]:
-        return calculate_fourier_transform_matrix(x, self.xors).astype(np.float64) @ self.coeffs
+        return (
+            calculate_fourier_transform_matrix(x, self.xors).astype(np.float64)
+            @ self.coeffs
+        )
 
 
 def similar_distance_network(
@@ -47,13 +51,17 @@ def similar_distance_network(
             np.random.choice(all_xors, size=n_possible_new_xors, replace=True)
         )
         distances = popcount(all_xors.reshape(-1, 1) ^ possible_new_xors.reshape(1, -1))
-        good_elements = ((distance_min <= distances) & (distances <= distance_max)).sum(axis=0)
+        good_elements = ((distance_min <= distances) & (distances <= distance_max)).sum(
+            axis=0
+        )
 
         new_xor = possible_new_xors[np.argmax(good_elements)]
         new_xors.append(new_xor)
 
         new_distances = popcount(all_xors ^ new_xor)
-        all_xors = all_xors[(distance_min <= new_distances) & (new_distances <= distance_max)]
+        all_xors = all_xors[
+            (distance_min <= new_distances) & (new_distances <= distance_max)
+        ]
         if len(all_xors) == 0:
             break
     return np.array(new_xors)
@@ -71,9 +79,12 @@ class MLPBinaryClassifier(nn.Module):
         return x
 
 
-def make_dataset(series: Callable, states: npt.NDArray[np.uint64], n_spins) -> TensorDataset:
+def make_dataset(
+    series: Callable, states: npt.NDArray[np.uint64], n_spins
+) -> TensorDataset:
     x = torch.tensor(
-        make_unpacked_configurations(states, n_spins).astype(np.float32), dtype=torch.float32
+        make_unpacked_configurations(states, n_spins).astype(np.float32),
+        dtype=torch.float32,
     )
     y = torch.tensor(series(states) > 0, dtype=torch.long)
     return TensorDataset(x, y)
@@ -157,7 +168,9 @@ def main():
         (8, 8, 12),
     ]:
         for run in range(runs):
-            logger.debug(f"Starting {n_xors=}, {xor_hamming_weight=}, {distance=}, {run=}")
+            logger.debug(
+                f"Starting {n_xors=}, {xor_hamming_weight=}, {distance=}, {run=}"
+            )
 
             writer = SummaryWriter(
                 log_dir=(
@@ -177,7 +190,10 @@ def main():
 
             for _ in range(2):
                 selected_xors = similar_distance_network(
-                    all_xors, distance_min=distance, distance_max=distance + 2, maxitems=n_xors
+                    all_xors,
+                    distance_min=distance,
+                    distance_max=distance + 2,
+                    maxitems=n_xors,
                 )
                 if len(selected_xors) == n_xors:
                     break
@@ -185,13 +201,18 @@ def main():
                 logger.debug(f"Could not find enough xors: {len(selected_xors)}")
                 continue
 
-            series = FourierSeries(selected_xors, 2 * np.random.rand(len(selected_xors)) - 1)
+            series = FourierSeries(
+                selected_xors, 2 * np.random.rand(len(selected_xors)) - 1
+            )
 
             dataset = make_dataset(series, sample_states, n_spins)
             train_dataset, test_dataset = random_split(
-                dataset, [eps_train / (eps_train + eps_test), eps_test / (eps_train + eps_test)]
+                dataset,
+                [eps_train / (eps_train + eps_test), eps_test / (eps_train + eps_test)],
             )
-            train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+            train_loader = DataLoader(
+                train_dataset, batch_size=batch_size, shuffle=True
+            )
 
             net = MLPBinaryClassifier(n_spins, n_hidden)
             criterion = nn.CrossEntropyLoss()

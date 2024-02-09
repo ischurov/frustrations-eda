@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --job-name="dilated_nns_xors"
-#SBATCH --time=11:59:59     # walltime
+#SBATCH --time=00:59:59     # walltime
 #SBATCH -n 1
 #SBATCH -p gpu
 #SBATCH --gpus-per-node=1
@@ -11,5 +11,5 @@ export PATH="/home/ishchurov/.local/bin:$PATH"
 
 cd /home/ishchurov/frustrations-eda
 
-apptainer exec --nv singularity-image-frustrations-eda.img python ./dilated_nns_xors.py $SLURM_ARRAY_TASK_ID
+apptainer exec --nv singularity-image-frustrations-eda.img python ./dilated_nns_nns.py $SLURM_ARRAY_TASK_ID
 
