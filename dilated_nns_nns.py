@@ -57,6 +57,10 @@ configs = {
         "_inherit": 3,
         "dilations": [2, 2, 2],
     },
+    9: {"target_hidden_channels": [64, 64, 64, 64]},
+    10: {"target_hidden_channels": [64, 64, 64, 64], "dilations": [1, 2, 3]},
+    11: {"target_hidden_channels": [64, 64, 64, 64], "dilations": [3, 2, 1]},
+    12: {"_inherit": 9, "eps_train": [2e-5]},
 }
 
 

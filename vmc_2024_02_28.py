@@ -8,7 +8,7 @@ import torch
 from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
 from misc_utils import differentiable_safe_exp
 from misc_utils import torch_overlap as find_overlap
 from my_stopwatch import Stopwatch, stopwatch
@@ -25,56 +25,105 @@ from vmc_amplitude import (
     almost_true_relsigns,
     compute_log_local_energies,
 )
+from dilated_nns_xors import resolve_config_inheritance
+from fourier_supervised_cleanroom_2023_09_27 import get_lattice
+from typing import Any
+import torch
+from torch import nn
+import jsonlines
 
 self_name = Path(__file__).stem
+output_dir = Path("experiments") / self_name
+default_config = {
+    "n_samples": 10000,
+    "lr": 1e-2,
+    "momentum": 0.0,
+    "batch_size": 10000,
+    "sign_noise": 0.0,
+    "weight_decay": 0,
+    "annealing_steps": 0,
+    "initial_temp": 3,
+    "max_iter": 10000,
+    "sampling_mode": "exact",
+    "lattice": "kagome2x4",
+    "J2": 1,
+    "use_symmetries": False,
+    "spin_inversion": None,
+    "eval_set_max_size": 50000,
+}
+
+configs = {
+    0: {
+        "log_prob_fn": "dense_pairwise_xor",
+        "n_hidden": 512,
+        "hidden_layers": 1,
+    },
+    1: {"_inherit": 0, "lr": 1e-3},
+}
+
+
+def get_config(task_id: int):
+    return default_config | resolve_config_inheritance(task_id, configs=configs)
+
+
+def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
+    if config["log_prob_fn"] == "dense_pairwise_xor":
+        pairs = tuple(
+            map(np.array, zip(*itertools.combinations(range(system.number_spins), 2)))
+        )
+        return LogProbDenseNetPairwiseXor(
+            system,
+            n_hidden=config["n_hidden"],
+            hidden_layers=config["hidden_layers"],
+            xor_pairs=pairs,
+        )
+    else:
+        raise ValueError(f"Unknown architecture {config['architecture']}")
 
 
 def main(task_id: int):
     stopwatch.reset()
     local_sw = Stopwatch()
+    config = get_config(task_id)
+    n_samples = config["n_samples"]
+    lr = config["lr"]
+    momentum = config["momentum"]
+    batch_size = config["batch_size"]
+    sign_noise = config["sign_noise"]
+    weight_decay = config["weight_decay"]
+    annealing_steps = config["annealing_steps"]
+    initial_temp = config["initial_temp"]
+    max_iter = config["max_iter"]
+    sampling_mode = config["sampling_mode"]
 
-    # n_samples = 48620
-    n_samples = 10000
-    lr = [1e-2, 1e-3][task_id % 2]
-    momentum = 0.0
-    batch_size = 8092
-    sign_noise = 0.0
-    weight_decay = 0
-    annealing_steps = 0  # 400
-    initial_temp = 3
-    max_iter = 10000
+    temp = None
 
-    sampling_mode = "exact"
+    (output_dir / str(task_id)).mkdir(parents=True, exist_ok=True)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
+    logger.debug(f"Torch will use device: {device}")
     # lattice = TriangleLattice(6, 4)
-    lattice = KagomeLattice(2, 4)
+    lattice = get_lattice(config["lattice"])
     # lattice = ChainLattice(10)
     system = HeisenbergJ1J2(
         lattice=lattice,
         J1=1,
-        J2=1,
+        J2=config["J2"],
         ground_state_cache_dir=Path("groundstates"),
-        use_symmetries=False,
-        spin_inversion=None,
+        use_symmetries=config["use_symmetries"],
+        spin_inversion=config["spin_inversion"],
     )
     true_energy, _ = system.get_eigenstates(1)
     true_energy = true_energy[0]
 
-    if len(system.canonical_basis.states) > 50000:
-        eval_set = np.random.choice(system.canonical_basis.states, 50000, replace=False)
+    if len(system.canonical_basis.states) > config["eval_set_max_size"]:
+        eval_set = np.random.choice(
+            system.canonical_basis.states, config["eval_set_max_size"], replace=False
+        )
     else:
         eval_set = system.canonical_basis.states
 
-    pairs = tuple(
-        map(np.array, zip(*itertools.combinations(range(system.number_spins), 2)))
-    )
-    # pairs = tuple(map(np.array, zip(*system.lattice.edges_to_kind.keys())))
-
-    log_prob_fn = LogProbDenseNetPairwiseXor(
-        system, n_hidden=512, hidden_layers=1, xor_pairs=pairs
-    )
+    log_prob_fn = get_network(config, system)
     log_prob_fn.to(device)
 
     # log_prob_fn = SlaterAbs(
@@ -95,13 +144,8 @@ def main(task_id: int):
     ).to(device)
 
     relsigns_fn = almost_true_relsigns(system, eps=sign_noise)
-
-    writer = SummaryWriter(
-        log_dir=(
-            f"experiments/{datetime.now().strftime('%Y_%m_%d')}_{self_name}/"
-            f"{n_samples=}_{lr=}_{datetime.now().strftime('%H_%M_%S')}"
-        )
-    )
+    start_timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    writer = SummaryWriter(log_dir=(f"{output_dir}/{task_id}/logs/{start_timestamp}"))
 
     for step in range(max_iter):
         with local_sw("sampling"):
@@ -120,7 +164,7 @@ def main(task_id: int):
                     return_all_probs=True,
                 )
                 states, weights = torch.unique(states.view(-1), return_counts=True)
-                weights = weights.float() / torch.sum(weights)
+                weights: torch.Tensor = weights.float() / torch.sum(weights)
 
             elif sampling_mode == "full":
                 states, log_probs, _extra = sample_full(
@@ -136,7 +180,7 @@ def main(task_id: int):
                 )
                 states = states.view(-1)
 
-                weights = _extra["weights"].view(-1)
+                weights: torch.Tensor = _extra["weights"].view(-1)
                 all_probs = weights
             else:
                 raise ValueError(f"Unknown sampling mode: {sampling_mode}")
@@ -178,19 +222,19 @@ def main(task_id: int):
                 # grad = 4 * (E - E @ weights) * weights
 
                 grad = grad.view(-1, 1)
-                grad_norm = torch.linalg.norm(grad)
+                grad_norm: torch.Tensor = torch.linalg.norm(grad)
                 #    logger.info("‖∇E‖₂ = {}", grad_norm)
                 writer.add_scalar("loss/‖∇E‖₂", grad_norm, step)
-                writer.add_scalar("loss/E_variance", grad_norm / n_samples, step)
+                E_variance = grad_norm / n_samples
+                writer.add_scalar("loss/E_variance", E_variance, step)
 
                 # Calculate full energy
                 # if sampling_mode == "exact":
                 E = torch.exp(log_E_loc).real
                 E_full = E @ safe_exp(log_prob_fn(states).view(-1), normalise=True)
-                writer.add_scalar(
-                    "loss/E_full_delta", E_full - torch.tensor(true_energy), step
-                )
-                logger.info("E_full_delta = {}", E_full - torch.tensor(true_energy))
+                E_full_delta = E_full - torch.tensor(true_energy)
+                writer.add_scalar("loss/E_full_delta", E_full_delta, step)
+                logger.info("E_full_delta = {}", E_full_delta)
 
         with local_sw("forward_and_backward"):
             optimizer.zero_grad()
@@ -223,6 +267,24 @@ def main(task_id: int):
             overlap = find_overlap(true_amplitudes, predicted_amplitudes.view(-1))
             writer.add_scalar("overlap", overlap, step)
             logger.info(f"{step}: overlap = {overlap:.3f}, ‖∇E‖₂ = {grad_norm:.3f}")
+
+        with jsonlines.open(
+            output_dir / str(task_id) / f"results.jsonl", mode="a"
+        ) as json_writer:
+            json_writer.write(
+                config
+                | {
+                    "overlap": overlap.item(),
+                    "‖∇E‖₂": grad_norm.item(),
+                    "E_full_delta": E_full_delta.item(),
+                    "ipr": ipr.item(),
+                    "step": step,
+                    "E_variance": E_variance.item(),
+                    "temp": temp,
+                    "start_timestamp": start_timestamp,
+                }
+            )
+
         if step % 20 == 0:
             logger.info(str(local_sw))
 

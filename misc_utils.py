@@ -1,6 +1,7 @@
 from collections.abc import Callable, Iterable
 from math import ceil, sqrt
 from pathlib import Path
+from typing import overload
 
 import jsonlines
 import lattice_symmetries as ls
@@ -67,8 +68,7 @@ def hadamard_transform_pytorch_inplace(x: torch.Tensor, chunks: int = 8):
 ### END BASED
 
 
-@singledispatch
-def make_unpacked_configurations(states: npt.NDArray, number_spins: int):
+def make_unpacked_configurations_numpy(states: npt.NDArray, number_spins: int):
     initial_shape = np.shape(states)
     return (
         (
@@ -79,8 +79,7 @@ def make_unpacked_configurations(states: npt.NDArray, number_spins: int):
     ).reshape(initial_shape + (number_spins,))
 
 
-@make_unpacked_configurations.register
-def _(states: torch.Tensor, number_spins: int):
+def make_unpacked_configurations_torch(states: torch.Tensor, number_spins: int):
     initial_shape = states.shape
     states = states.reshape(-1, 1).to(torch.int64)
 
@@ -88,6 +87,31 @@ def _(states: torch.Tensor, number_spins: int):
     unpacked = (states >> range_tensor) & 1
 
     return unpacked.reshape(initial_shape + (number_spins,))
+
+
+@overload
+def make_unpacked_configurations(
+    states: torch.Tensor, number_spins: int
+) -> torch.Tensor:
+    ...
+
+
+@overload
+def make_unpacked_configurations(
+    states: npt.NDArray, number_spins: int
+) -> npt.NDArray[np.uint64]:
+    ...
+
+
+def make_unpacked_configurations(
+    states: npt.NDArray | torch.Tensor, number_spins: int
+) -> npt.NDArray | torch.Tensor:
+    if isinstance(states, np.ndarray):
+        return make_unpacked_configurations_numpy(states, number_spins)
+    elif isinstance(states, torch.Tensor):
+        return make_unpacked_configurations_torch(states, number_spins)
+    else:
+        raise ValueError(f"Unknown type for states: {type(states)}")
 
 
 def make_packed_configurations(
@@ -238,7 +262,7 @@ class Compose:
 
 
 # @torch.no_grad()
-def torch_overlap(x, y):
+def torch_overlap(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return torch.dot(x, y) / (torch.norm(x) * torch.norm(y))
 
 
