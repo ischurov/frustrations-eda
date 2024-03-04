@@ -8,7 +8,7 @@
 #SBATCH --array=0-1%2
 #SBATCH --exclusive
 set -x
-export PATH="/home/ischurov/.local/bin:$PATH"
-cd /home/ischurov/tcm10/frustrations-eda
+# export PATH="/home/ischurov/.local/bin:$PATH"
+# cd /home/ischurov/tcm10/frustrations-eda
 
 nix develop .#default --command python ./vmc_xor_2023_08_10_kagome24.py $SLURM_ARRAY_TASK_ID

@@ -63,6 +63,7 @@
           combinadics
           fire
           igraph
+          ipympl
           ising-glass-annealer
           jsonlines
           jupyter

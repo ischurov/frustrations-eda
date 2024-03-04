@@ -12,5 +12,5 @@ export PATH="/home/ishchurov/.local/bin:$PATH"
 cd /home/ishchurov/frustrations-eda
 
 apptainer exec --nv singularity-image-frustrations-eda.img  \
-          python ./vmc_2024_02_28.py $SLURM_ARRAY_TASK_ID
+          sh -c 'export CUBLAS_WORKSPACE_CONFIG=:16:8; python ./vmc_2024_02_28.py $SLURM_ARRAY_TASK_ID'
 

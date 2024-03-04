@@ -219,6 +219,10 @@ def main(task_id: int):
                 log_prob_fn(torch.from_numpy(eval_set.astype(np.float32)).to(device))
                 * 0.5
             )
+            np.save(
+                f"experiments/{self_name}_{task_id}_amplitudes.npy",
+                predicted_amplitudes.cpu().detach().numpy(),
+            )
 
             overlap = find_overlap(true_amplitudes, predicted_amplitudes.view(-1))
             writer.add_scalar("overlap", overlap, step)

@@ -50,6 +50,11 @@ default_config = {
     "use_symmetries": False,
     "spin_inversion": None,
     "eval_set_max_size": 50000,
+    "save_predictions": False,
+    "device": "auto",
+    "random_seed": None,
+    "force_numpy_sampling": False,  # If random_seed is not None, numpy_sampling is forced automatically
+    "prob_to_float64": False,
 }
 
 configs = {
@@ -59,6 +64,24 @@ configs = {
         "hidden_layers": 1,
     },
     1: {"_inherit": 0, "lr": 1e-3},
+    2: {
+        "_inherit": 0,
+        "max_iter": 1000,
+        "save_predictions": True,
+        "device": "cpu",
+        "random_seed": 42,
+    },
+    3: {"_inherit": 2, "device": "cuda:0"},
+    4: {"_inherit": 3, "force_numpy_sampling": True, "random_seed": None},
+    5: {
+        "_inherit": 3,
+        "force_numpy_sampling": False,
+        "random_seed": None,
+    },
+    6: {"_inherit": 5},  # run with CUBLAS_WORKSPACE_CONFIG=:4096:8
+    7: {"_inherit": 3, "random_seed": 43},
+    8: {"_inherit": 7},  # run with CUBLAS_WORKSPACE_CONFIG=:16:8
+    9: {"_inherit": 5, "prob_to_float64": True},
 }
 
 
@@ -96,11 +119,22 @@ def main(task_id: int):
     max_iter = config["max_iter"]
     sampling_mode = config["sampling_mode"]
 
+    output_dir_task = output_dir / str(task_id)
+
+    if config["random_seed"] is not None:
+        torch.manual_seed(config["random_seed"])
+        np.random.seed(config["random_seed"])
+        torch.use_deterministic_algorithms(True)
+
     temp = None
 
-    (output_dir / str(task_id)).mkdir(parents=True, exist_ok=True)
+    output_dir_task.mkdir(parents=True, exist_ok=True)
 
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    if config["device"] == "auto":
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(config["device"])
+
     logger.debug(f"Torch will use device: {device}")
     # lattice = TriangleLattice(6, 4)
     lattice = get_lattice(config["lattice"])
@@ -122,6 +156,9 @@ def main(task_id: int):
         )
     else:
         eval_set = system.canonical_basis.states
+
+    if config["save_predictions"]:
+        np.save(output_dir_task / "eval_set.npy", eval_set)
 
     log_prob_fn = get_network(config, system)
     log_prob_fn.to(device)
@@ -150,6 +187,12 @@ def main(task_id: int):
     for step in range(max_iter):
         with local_sw("sampling"):
             if sampling_mode == "exact":
+                other_options = {}
+                if config["random_seed"] is not None or config["force_numpy_sampling"]:
+                    other_options["force_numpy_sampling"] = True
+                if config["prob_to_float64"]:
+                    other_options["prob_to_float64"] = True
+
                 states, log_probs, all_probs = sample_exactly(
                     log_prob_fn,
                     system.basis,
@@ -160,31 +203,45 @@ def main(task_id: int):
                         sweep_size=1,
                         number_discarded=0,
                         device=device,
+                        other=other_options,
                     ),
                     return_all_probs=True,
                 )
                 states, weights = torch.unique(states.view(-1), return_counts=True)
                 weights: torch.Tensor = weights.float() / torch.sum(weights)
+            # elif sampling_mode == "full":
+            # This is commented out, as it is should be rewritten to be GPU compatible and reproducible
+            #     states, log_probs, _extra = sample_full(
+            #         log_prob_fn,
+            #         system.basis,
+            #         SamplingOptions(
+            #             number_samples=1,
+            #             number_chains=1,
+            #             mode="full",
+            #             sweep_size=1,
+            #             number_discarded=0,
+            #         ),
+            #     )
+            #     states = states.view(-1)
 
-            elif sampling_mode == "full":
-                states, log_probs, _extra = sample_full(
-                    log_prob_fn,
-                    system.basis,
-                    SamplingOptions(
-                        number_samples=1,
-                        number_chains=1,
-                        mode="full",
-                        sweep_size=1,
-                        number_discarded=0,
-                    ),
-                )
-                states = states.view(-1)
-
-                weights: torch.Tensor = _extra["weights"].view(-1)
-                all_probs = weights
+            #     weights: torch.Tensor = _extra["weights"].view(-1)
+            #     all_probs = weights
             else:
                 raise ValueError(f"Unknown sampling mode: {sampling_mode}")
 
+        if config["save_predictions"]:
+            np.save(
+                output_dir_task / f"states_{step}.npy",
+                states.cpu().detach().numpy(),
+            )
+            np.save(
+                output_dir_task / f"log_probs_{step}.npy",
+                log_probs.cpu().detach().numpy(),
+            )
+            np.save(
+                output_dir_task / f"weights_{step}.npy",
+                weights.cpu().detach().numpy(),
+            )
         ipr = torch.sum(all_probs**2)
         writer.add_scalar("loss/ipr", ipr, step)
 
@@ -201,6 +258,11 @@ def main(task_id: int):
                 .detach()
                 .numpy(),
             )
+            if config["save_predictions"]:
+                np.save(
+                    output_dir_task / f"log_E_loc_{step}.npy",
+                    log_E_loc,
+                )
             log_E_loc = torch.from_numpy(log_E_loc).to(
                 device=device, dtype=torch.complex64
             )
@@ -215,6 +277,16 @@ def main(task_id: int):
             with torch.no_grad():
                 weighted_E_loc = torch.exp(log_E_loc + torch.log(weights)).real
                 grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
+
+                if config["save_predictions"]:
+                    np.save(
+                        output_dir_task / f"weighted_E_loc_{step}.npy",
+                        weighted_E_loc.cpu().detach().numpy(),
+                    )
+                    np.save(
+                        output_dir_task / f"grad_{step}.npy",
+                        grad.cpu().detach().numpy(),
+                    )
 
                 # coeff 4 is due to: 2 from formula, 2 due to we are working with log probs
                 # instead of log amplitudes
@@ -259,17 +331,17 @@ def main(task_id: int):
             optimizer.step()
 
         with local_sw("evaluation"):
-            predicted_amplitudes = safe_exp(
-                log_prob_fn(torch.from_numpy(eval_set.astype(np.float32)).to(device))
-                * 0.5
+            predictions = log_prob_fn(
+                torch.from_numpy(eval_set.astype(np.float32)).to(device)
             )
+            predicted_amplitudes = safe_exp(predictions * 0.5)
 
             overlap = find_overlap(true_amplitudes, predicted_amplitudes.view(-1))
             writer.add_scalar("overlap", overlap, step)
             logger.info(f"{step}: overlap = {overlap:.3f}, ‖∇E‖₂ = {grad_norm:.3f}")
 
         with jsonlines.open(
-            output_dir / str(task_id) / f"results.jsonl", mode="a"
+            output_dir_task / f"results.jsonl", mode="a"
         ) as json_writer:
             json_writer.write(
                 config
@@ -282,7 +354,18 @@ def main(task_id: int):
                     "E_variance": E_variance.item(),
                     "temp": temp,
                     "start_timestamp": start_timestamp,
+                    "task_id": task_id,
+                    "device": str(device),
                 }
+            )
+        if config["save_predictions"]:
+            np.save(
+                output_dir_task / f"predictions_{step}.npy",
+                predictions.cpu().detach().numpy(),
+            )
+            np.save(
+                output_dir_task / f"amplitudes_{step}.npy",
+                predicted_amplitudes.cpu().detach().numpy(),
             )
 
         if step % 20 == 0:

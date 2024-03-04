@@ -187,19 +187,26 @@ def _determine_batch_size(options: SamplingOptions) -> int:
         batch_size = int(batch_size)
         if batch_size <= 0:
             raise ValueError(
-                "invalid 'batch_size': {}; expected a positive integer".format(batch_size)
+                "invalid 'batch_size': {}; expected a positive integer".format(
+                    batch_size
+                )
             )
     return batch_size
 
 
 def split_into_batches(
-    xs: Tensor | npt.NDArray | tuple[Tensor | npt.NDArray, ...] | list[Tensor | npt.NDArray],
+    xs: Tensor
+    | npt.NDArray
+    | tuple[Tensor | npt.NDArray, ...]
+    | list[Tensor | npt.NDArray],
     batch_size: int,
     device=None,
 ):
     batch_size = int(batch_size)
     if batch_size <= 0:
-        raise ValueError("invalid batch_size: {}; expected a positive integer".format(batch_size))
+        raise ValueError(
+            "invalid batch_size: {}; expected a positive integer".format(batch_size)
+        )
 
     expanded = False
     if isinstance(xs, (np.ndarray, Tensor)):
@@ -320,7 +327,9 @@ def sample_full(
         "".format(batch_size)
     )
     # states = pad_states(states)
-    log_prob = forward_with_batches(log_prob_fn, states, batch_size=batch_size, device=device)
+    log_prob = forward_with_batches(
+        log_prob_fn, states, batch_size=batch_size, device=device
+    )
     if log_prob.dim() > 1:
         log_prob.squeeze_(dim=1)
     _check_log_prob_shape(log_prob, device)
@@ -357,8 +366,11 @@ def sample_exactly(
     basis: ls.SpinBasis,
     options: SamplingOptions,
     return_all_probs: bool = False,
-) -> tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    r"""Sample states by explicitly constructing the discrete probability distribution.
+) -> (
+    tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+):
+    r"""
+    Sample states by explicitly constructing the discrete probability distribution.
 
     Number of samples is `options.number_chains * options.number_samples`, and
     `options.number_discarded` and `options.sweep_size` are ignored, since
@@ -370,13 +382,28 @@ def sample_exactly(
     prob = _extra["weights"].squeeze_(dim=1)
     device = options.device
     number_samples = options.number_chains * options.number_samples
-    if len(prob) < (1 << 24):
-        logger.debug("Using torch.multinomial to sample indices...")
+    if len(prob) < (1 << 24) and (
+        options.other is None or not options.other.get("force_numpy_sampling", False)
+    ):
         # PyTorch only supports discrete probability distributions
         # shorter than 2²⁴.
-        # NOTE: replacement=True is IMPORTANT because it more closely
-        # emulates the actual Monte Carlo behaviour
-        indices = torch.multinomial(prob, num_samples=number_samples, replacement=True)
+
+        logger.debug("Using torch.multinomial to sample indices...")
+        if options.other is not None and options.other.get("prob_to_float64", False):
+            logger.debug("Converting probabilities to float64...")
+            prob = prob.to(torch.float64)
+        try:
+            # NOTE: replacement=True is IMPORTANT because it more closely
+            # emulates the actual Monte Carlo behaviour
+            indices = torch.multinomial(
+                prob, num_samples=number_samples, replacement=True
+            )
+        except RuntimeError as e:
+            logger.error("Caught RuntimeError: {}", e)
+            logger.error(
+                "Use options.other['force_numpy_sampling'] = True to use numpy.random.choice as a reproducible workaround"
+            )
+            raise
     else:
         logger.debug("Using numpy.random.choice to sample indices...")
         # If we have more than 2²⁴ different probabilities chances are,
