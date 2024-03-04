@@ -82,6 +82,8 @@ configs = {
     7: {"_inherit": 3, "random_seed": 43},
     8: {"_inherit": 7},  # run with CUBLAS_WORKSPACE_CONFIG=:16:8
     9: {"_inherit": 5, "prob_to_float64": True},
+    10: {"_inherit": 0, "prob_to_float64": True, "device": "cuda:0"},
+    11: {"_inherit": 10, "lr": 1e-3},
 }
 
 
