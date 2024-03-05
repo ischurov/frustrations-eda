@@ -754,11 +754,8 @@ class ParallelogramSpinLattice(SpinLattice):
                     ]
                 ).elements
             ]
-
-    def spin_config_to_tensor(
-        self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
-    ) -> np.ndarray | torch.Tensor:
-        raise NotImplementedError
+        else:
+            raise ValueError("automorphisms must be 'all' or 'translations'")
 
     @overload
     def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
@@ -767,6 +764,11 @@ class ParallelogramSpinLattice(SpinLattice):
     @overload
     def spin_config_to_tensor(self, cfgs: torch.Tensor) -> torch.Tensor:
         ...
+
+    def spin_config_to_tensor(
+        self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
+    ) -> np.ndarray | torch.Tensor:
+        raise NotImplementedError
 
     def get_translation(self, direction: str) -> list[int]:
         if direction not in ["x", "y"]:
@@ -1175,9 +1177,9 @@ class KagomeLattice(ParallelogramSpinLattice):
     def spin_config_to_tensor(
         self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
     ) -> np.ndarray | torch.Tensor:
-        return self.unpack_configurations(cfgs, number_spins=self.number_spins)[
-            ..., self.num_tensor_order
-        ].reshape(-1, self.width, self.height, 3)
+        return self.unpack_configurations(cfgs)[..., self.num_tensor_order].reshape(
+            -1, self.width, self.height, 3
+        )
 
 
 def do_images_intersect(

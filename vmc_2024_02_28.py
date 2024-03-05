@@ -19,7 +19,7 @@ from nqs_playground_helpers import (
     sample_full,
     split_into_batches,
 )
-from spin_lattices import KagomeLattice
+from spin_lattices import KagomeLattice, ParallelogramSpinLattice
 from vmc_amplitude import (
     LogProbDenseNetPairwiseXor,
     almost_true_relsigns,
@@ -31,6 +31,7 @@ from typing import Any
 import torch
 from torch import nn
 import jsonlines
+from conv2d_circular import InvariantSpinCNNRegression
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -54,7 +55,9 @@ default_config = {
     "device": "auto",
     "random_seed": None,
     "force_numpy_sampling": False,  # If random_seed is not None, numpy_sampling is forced automatically
-    "prob_to_float64": False,
+    "prob_to_float64": True,
+    "dilations": None,
+    "hidden_channels": None,
 }
 
 configs = {
@@ -84,6 +87,30 @@ configs = {
     9: {"_inherit": 5, "prob_to_float64": True},
     10: {"_inherit": 0, "prob_to_float64": True, "device": "cuda:0"},
     11: {"_inherit": 10, "lr": 1e-3},
+    12: {"_inherit": 1, "hidden_layers": 2, "max_iter": 15_000},
+    13: {
+        "lr": 1e-3,
+        "log_prob_fn": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,
+        "max_iter": 15_000,
+    },
+    14: {
+        "_inherit": 13,
+        "dilations": [3, 2, 1],
+    },
+    15: {
+        "_inherit": 13,
+        "dilations": [1, 2, 3],
+    },
+    16: {
+        "_inherit": 13,
+        "kernel_size": 3,
+    },
+    17: {
+        "_inherit": 13,
+        "hidden_channels": [64, 64],
+    },
 }
 
 
@@ -101,6 +128,14 @@ def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
             n_hidden=config["n_hidden"],
             hidden_layers=config["hidden_layers"],
             xor_pairs=pairs,
+        )
+    elif config["log_prob_fn"] == "invariant_cnn":
+        assert isinstance(system.lattice, ParallelogramSpinLattice)
+        return InvariantSpinCNNRegression(
+            lattice=system.lattice,
+            hidden_channels=config["hidden_channels"],
+            dilations=config["dilations"],
+            kernel_size=config["kernel_size"],
         )
     else:
         raise ValueError(f"Unknown architecture {config['architecture']}")
