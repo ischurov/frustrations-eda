@@ -44,3 +44,8 @@ dtd*.gz
 fig/*
 MNIST/**
 stderr
+code
+libcuda.so
+libcuda.so.1
+result
+singularity-image-frustrations-eda.img

@@ -198,7 +198,9 @@ def read_jsonl_to_df(file: str | Path | Iterable[str | Path]):
     dataframes = []
     for f in file:
         with jsonlines.open(f) as reader:
-            dataframes.append(pd.DataFrame(reader))
+            df = pd.DataFrame(reader)
+            if not df.empty:
+                dataframes.append(df)
     return pd.concat(dataframes).reset_index(drop=True)
 
 

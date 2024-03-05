@@ -141,6 +141,24 @@ def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
         raise ValueError(f"Unknown architecture {config['architecture']}")
 
 
+def get_device(config):
+    if config["device"] == "auto":
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device(config["device"])
+    return device
+
+
+def get_eval_set(system: SpinSystem, max_size: int):
+    if len(system.canonical_basis.states) > max_size:
+        eval_set = np.random.choice(
+            system.canonical_basis.states, max_size, replace=False
+        )
+    else:
+        eval_set = system.canonical_basis.states
+    return eval_set
+
+
 def main(task_id: int):
     stopwatch.reset()
     local_sw = Stopwatch()
@@ -167,10 +185,7 @@ def main(task_id: int):
 
     output_dir_task.mkdir(parents=True, exist_ok=True)
 
-    if config["device"] == "auto":
-        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    else:
-        device = torch.device(config["device"])
+    device = get_device(config)
 
     logger.debug(f"Torch will use device: {device}")
     # lattice = TriangleLattice(6, 4)
@@ -187,12 +202,7 @@ def main(task_id: int):
     true_energy, _ = system.get_eigenstates(1)
     true_energy = true_energy[0]
 
-    if len(system.canonical_basis.states) > config["eval_set_max_size"]:
-        eval_set = np.random.choice(
-            system.canonical_basis.states, config["eval_set_max_size"], replace=False
-        )
-    else:
-        eval_set = system.canonical_basis.states
+    eval_set = get_eval_set(system, config["eval_set_max_size"])
 
     if config["save_predictions"]:
         np.save(output_dir_task / "eval_set.npy", eval_set)
