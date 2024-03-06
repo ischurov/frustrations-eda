@@ -57,8 +57,9 @@ default_config = {
     "sign_update_period": 100,
     "sign_reconstruction.method": "annealing",
     "sign_reconstruction.number_sweeps": 100,
-    "sign_reconstruction.repetitions": len(os.sched_getaffinity(0)),
+    "sign_reconstruction.repetitions": 16,
     "warm_up.sign_noise": 0.0,
+    "checkpoint_log_prob_fn_each": None,
 }
 
 configs = {
@@ -84,16 +85,75 @@ configs = {
     13: {"_inherit": 0, "warm_up_overlap": 0.6, "sign_update_period": 10},
     14: {"_inherit": 13, "sign_update_period": 100},
     15: {"_inherit": 13, "sign_update_period": 500},
-
-    16: {"_inherit": 0, "warm_up_overlap": 0.7, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 1000},
-    17: {"_inherit": 0, "warm_up_overlap": 0.7, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 5000},
-    18: {"_inherit": 0, "warm_up_overlap": 0.7, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 10000},
-    19: {"_inherit": 0, "warm_up_overlap": 0.8, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 1000},
-    20: {"_inherit": 0, "warm_up_overlap": 0.8, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 5000},
-    21: {"_inherit": 0, "warm_up_overlap": 0.8, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 10000},
-    22: {"_inherit": 0, "warm_up_overlap": 0.9, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 1000},
-    23: {"_inherit": 0, "warm_up_overlap": 0.9, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 5000},
-    24: {"_inherit": 0, "warm_up_overlap": 0.9, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 10000},
+    16: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.7,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 1000,
+    },
+    17: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.7,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 5000,
+    },
+    18: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.7,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 10000,
+    },
+    19: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.8,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 1000,
+    },
+    20: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.8,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 5000,
+    },
+    21: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.8,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 10000,
+    },
+    22: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.9,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 1000,
+    },
+    23: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.9,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 5000,
+    },
+    24: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.9,
+        "sign_update_period": 100,
+        "sign_reconstruction.repetitions": 128,
+        "sign_reconstruction.number_sweeps": 10000,
+    },
+    25: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.7,
+        "sign_update_period": 100,
+        "checkpoint_log_prob_fn_each": 100,
+    },
 }
 
 
@@ -253,11 +313,10 @@ def main(task_id: int):
         with local_sw("forward_and_backward"):
             optimizer.zero_grad()
 
-            forward_fn = log_prob_fn
             for states_chunk, grad_chunk in split_into_batches(
                 (states.view(-1, 1), grad), batch_size
             ):
-                output = forward_fn(states_chunk.view(-1))
+                output = log_prob_fn(states_chunk.view(-1))
                 output.backward(grad_chunk, retain_graph=False)
 
             # full_gradient_norm = get_gradient_norm(forward_fn.parameters())
@@ -279,6 +338,14 @@ def main(task_id: int):
             writer.add_scalar("overlap", amplitude_overlap, step)
             logger.info(
                 f"{step}: amplitude_overlap = {amplitude_overlap:.3f}, sign_overlap = {sign_overlap:.3f},  ‖∇E‖₂ = {grad_norm:.3f}"
+            )
+
+        if (
+            config["checkpoint_log_prob_fn_each"]
+            and step % config["checkpoint_log_prob_fn_each"] == 0
+        ):
+            torch.save(
+                log_prob_fn.state_dict(), output_dir_task / f"log_prob_fn_{step}.pt"
             )
 
         with jsonlines.open(
