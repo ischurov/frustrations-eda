@@ -1,5 +1,6 @@
 import itertools
 from datetime import datetime
+import os
 from pathlib import Path
 
 import fire
@@ -56,6 +57,7 @@ default_config = {
     "sign_update_period": 100,
     "sign_reconstruction.method": "annealing",
     "sign_reconstruction.number_sweeps": 100,
+    "sign_reconstruction.repetitions": len(os.sched_getaffinity(0)),
     "warm_up.sign_noise": 0.0,
 }
 
@@ -82,6 +84,16 @@ configs = {
     13: {"_inherit": 0, "warm_up_overlap": 0.6, "sign_update_period": 10},
     14: {"_inherit": 13, "sign_update_period": 100},
     15: {"_inherit": 13, "sign_update_period": 500},
+
+    16: {"_inherit": 0, "warm_up_overlap": 0.7, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 1000},
+    17: {"_inherit": 0, "warm_up_overlap": 0.7, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 5000},
+    18: {"_inherit": 0, "warm_up_overlap": 0.7, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 10000},
+    19: {"_inherit": 0, "warm_up_overlap": 0.8, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 1000},
+    20: {"_inherit": 0, "warm_up_overlap": 0.8, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 5000},
+    21: {"_inherit": 0, "warm_up_overlap": 0.8, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 10000},
+    22: {"_inherit": 0, "warm_up_overlap": 0.9, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 1000},
+    23: {"_inherit": 0, "warm_up_overlap": 0.9, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 5000},
+    24: {"_inherit": 0, "warm_up_overlap": 0.9, "sign_update_period": 100, "sign_reconstruction.repetitions": 128, "sign_reconstruction.number_sweeps": 10000},
 }
 
 
@@ -159,6 +171,7 @@ def main(task_id: int):
                     log_prob_fn,
                     number_sweeps=config["sign_reconstruction.number_sweeps"],
                     how=config["sign_reconstruction.method"],
+                    repetitions=config["sign_reconstruction.repetitions"],
                     device=device,
                 ),
             )
