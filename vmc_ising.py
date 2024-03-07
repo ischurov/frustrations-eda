@@ -154,11 +154,33 @@ configs = {
         "sign_update_period": 100,
         "checkpoint_log_prob_fn_each": 100,
     },
+    26: {
+        "_inherit": 0,
+        "warm_up_overlap": 0.3,
+        "sign_update_period": 10000,
+        "max_iter": 200000,
+    },
+    27: {
+        "_inherit": 26,
+        "warm_up_overlap": 0.6,
+    },
 }
 
 
 def get_config(task_id: int):
     return default_config | resolve_config_inheritance(task_id, configs=configs)
+
+
+def get_system(config):
+    lattice = get_lattice(config["lattice"])
+    return HeisenbergJ1J2(
+        lattice=lattice,
+        J1=1,
+        J2=config["J2"],
+        ground_state_cache_dir=Path("groundstates"),
+        use_symmetries=config["use_symmetries"],
+        spin_inversion=config["spin_inversion"],
+    )
 
 
 def main(task_id: int):
@@ -189,14 +211,7 @@ def main(task_id: int):
     # lattice = TriangleLattice(6, 4)
     lattice = get_lattice(config["lattice"])
     # lattice = ChainLattice(10)
-    system = HeisenbergJ1J2(
-        lattice=lattice,
-        J1=1,
-        J2=config["J2"],
-        ground_state_cache_dir=Path("groundstates"),
-        use_symmetries=config["use_symmetries"],
-        spin_inversion=config["spin_inversion"],
-    )
+    system = get_system(config)
     true_energy = system.get_eigenstates(1)[0][0]
 
     eval_set = get_eval_set(system, config["eval_set_max_size"])

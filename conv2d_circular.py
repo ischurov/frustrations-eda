@@ -93,7 +93,7 @@ class InvariantSpinCNNRegression(nn.Module):
         self.fc = nn.Linear(hidden_channels[-1], out_dim, bias=last_layer_bias)
 
     def forward(self, x: torch.Tensor):
-        assert x.device.type == "cuda"
+        #        assert x.device.type == "cuda"
 
         x_tensor = self.lattice.spin_config_to_tensor(x).permute(0, 3, 1, 2)
 

@@ -240,13 +240,13 @@ def resolve_config_inheritance(task_id: int, configs: dict[int, dict[str, Any]])
     config = configs[task_id]
     visited = set([task_id])
     while "_inherit" in config:
-        inherited = config.pop("_inherit")
+        inherited = config["_inherit"]
         if inherited in visited:
             raise ValueError(f"Circular inheritance detected: {visited}")
         visited.add(inherited)
 
         inherited_config = configs[inherited]
-        config = inherited_config | config
+        config = inherited_config | {k: v for k, v in config.items() if k != "_inherit"}
 
     return config
 
