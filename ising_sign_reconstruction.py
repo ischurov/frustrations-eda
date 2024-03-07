@@ -12,9 +12,9 @@ import torch
 def reconstruct_signs(
     system: SpinSystem,
     log_prob_fn: Callable,
-    number_sweeps: int,
     how="annealing",
-    repetitions: int = len(os.sched_getaffinity(0)),
+    number_sweeps: int | None = None,
+    repetitions: int | None = None,
     device=torch.device("cpu"),
 ):
     predicted_amplitudes = safe_exp_numpy(
@@ -38,6 +38,14 @@ def reconstruct_signs(
         field=np.zeros(ising_hamiltonian_matrix.shape[0]),
     )
     if how == "annealing":
+        if repetitions is None:
+            raise ValueError(
+                "If how='annealing', repetitions must be specified, but it was None"
+            )
+        if number_sweeps is None:
+            raise ValueError(
+                "If how='annealing', number_sweeps must be specified, but it was None"
+            )
         reconstructed_bits = ising.anneal(
             ising_hamiltonian, repetitions=repetitions, number_sweeps=number_sweeps
         )[0]

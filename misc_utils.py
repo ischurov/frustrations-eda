@@ -11,6 +11,8 @@ import pandas as pd
 import torch
 from loguru import logger
 from functools import singledispatch
+import git
+import os
 
 ### BASED ON: https://github.com/amitport/hadamard-transform
 ### MIT LICENSE
@@ -306,3 +308,17 @@ def concat_columns(columns):
         return df[columns].apply(lambda x: "_".join(map(str, x)), axis=1)
 
     return wrapper
+
+
+### FROM:
+
+
+def get_git_revision_hash() -> str:
+    repo = git.Repo(
+        os.path.dirname(os.path.realpath(__file__)), search_parent_directories=False
+    )
+    sha = repo.head.object.hexsha
+    return sha
+
+
+### END FROM

@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
 from misc_utils import differentiable_safe_exp
-from misc_utils import torch_overlap as find_overlap
+from misc_utils import torch_overlap as find_overlap, get_git_revision_hash
 from my_stopwatch import Stopwatch, stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
@@ -37,6 +37,8 @@ from vmc_2024_02_28 import get_network, get_device, get_eval_set
 from ising_sign_reconstruction import find_sign_overlap, reconstruct_signs, custom_signs
 
 self_name = Path(__file__).stem
+git_hash = get_git_revision_hash()
+
 output_dir = Path("experiments") / self_name
 default_config = {
     "n_samples": 10000,
@@ -57,7 +59,7 @@ default_config = {
     "sign_update_period": 100,
     "sign_reconstruction.method": "annealing",
     "sign_reconstruction.number_sweeps": 100,
-    "sign_reconstruction.repetitions": 16,
+    "sign_reconstruction.repetitions": 18,
     "warm_up.sign_noise": 0.0,
     "checkpoint_log_prob_fn_each": None,
 }
@@ -164,6 +166,16 @@ configs = {
         "_inherit": 26,
         "warm_up_overlap": 0.6,
     },
+    28: {"_inherit": 15, "sign_reconstruction.repetitions": 16},
+    29: {"_inherit": 27, "sign_update_period": 5000},
+    30: {"_inherit": 27, "sign_update_period": 2000},
+    31: {"_inherit": 27, "sign_update_period": 1000},
+    32: {"_inherit": 27, "sign_update_period": 500},
+    33: {"_inherit": 26, "warm_up_overlap": 0.7},
+    34: {"_inherit": 33, "sign_update_period": 5000},
+    35: {"_inherit": 33, "sign_update_period": 2000},
+    36: {"_inherit": 33, "sign_update_period": 1000},
+    37: {"_inherit": 33, "sign_update_period": 500},
 }
 
 
@@ -386,6 +398,7 @@ def main(task_id: int):
                     "signs_updated": signs_updated,
                     "signs_updated_at": signs_updated_at,
                     "step_since_signs_updated": step - signs_updated_at,
+                    "git_hash": git_hash,
                 }
             )
 

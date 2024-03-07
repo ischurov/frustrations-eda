@@ -62,6 +62,7 @@
           bitarray
           combinadics
           fire
+          gitpython
           igraph
           ipympl
           ising-glass-annealer
