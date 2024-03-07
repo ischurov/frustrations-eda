@@ -4,7 +4,7 @@
 #SBATCH --time=12:00:00     # walltime
 #SBATCH -n1
 #SBATCH -c16
-#SBATCH -p genoa 
+#SBATCH -p genoa
 
 set -x
 
