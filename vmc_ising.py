@@ -191,6 +191,47 @@ configs = {
         "checkpoint_signs": True,
         "checkpoint_signs_greedy": True,
     },
+    40: {
+        "_inherit": 38,
+        "warm_up_overlap": 0.7,
+    },
+    41: {
+        "_inherit": 38,
+        "warm_up_overlap": 0.8,
+    },
+    42: {
+        "_inherit": 38,
+        "warm_up_overlap": 0.9,
+    },
+    43: {
+        "_inherit": 38,
+        "warm_up_overlap": 0.7,
+        "sign_update_period": 5000,
+    },
+    44: {
+        "_inherit": 43,
+        "sign_update_period": 2000,
+    },
+    45: {
+        "_inherit": 43,
+        "sign_update_period": 1000,
+    },
+    46: {
+        "_inherit": 43,
+        "sign_update_period": 500,
+    },
+    47: {
+        "_inherit": 43,
+        "sign_update_period": 100,
+    },
+    48: {
+        "_inherit": 38,
+        "warm_up_overlap": 0.7,
+    },
+    49: {
+        "_inherit": 38,
+        "warm_up_overlap": 0.8,
+    },
 }
 
 
