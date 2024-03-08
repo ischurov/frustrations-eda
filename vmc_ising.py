@@ -62,6 +62,9 @@ default_config = {
     "sign_reconstruction.repetitions": 18,
     "warm_up.sign_noise": 0.0,
     "checkpoint_log_prob_fn_each": None,
+    "checkpoint_log_prob_fn_on_sign_update": False,
+    "checkpoint_signs": False,
+    "checkpoint_signs_greedy": False,
 }
 
 configs = {
@@ -176,6 +179,18 @@ configs = {
     35: {"_inherit": 33, "sign_update_period": 2000},
     36: {"_inherit": 33, "sign_update_period": 1000},
     37: {"_inherit": 33, "sign_update_period": 500},
+    38: {
+        "_inherit": 27,
+        "checkpoint_log_prob_fn_on_sign_update": True,
+        "checkpoint_signs": True,
+        "sign_reconstruction.method": "gready_solve",
+    },
+    39: {
+        "_inherit": 27,
+        "checkpoint_log_prob_fn_on_sign_update": True,
+        "checkpoint_signs": True,
+        "checkpoint_signs_greedy": True,
+    },
 }
 
 
@@ -251,17 +266,36 @@ def main(task_id: int):
             and (step - warm_up_finished_at) % config["sign_update_period"] == 0
         ):
             logger.debug("Updating signs")
+            reconstructed_signs = reconstruct_signs(
+                system,
+                log_prob_fn,
+                how=config["sign_reconstruction.method"],
+                number_sweeps=config["sign_reconstruction.number_sweeps"],
+                repetitions=config["sign_reconstruction.repetitions"],
+                device=device,
+            )
             relsigns_fn = custom_signs(
                 system,
-                reconstruct_signs(
-                    system,
-                    log_prob_fn,
-                    number_sweeps=config["sign_reconstruction.number_sweeps"],
-                    how=config["sign_reconstruction.method"],
-                    repetitions=config["sign_reconstruction.repetitions"],
-                    device=device,
-                ),
+                reconstructed_signs,
             )
+            if config["checkpoint_log_prob_fn_on_sign_update"]:
+                torch.save(
+                    log_prob_fn.state_dict(),
+                    output_dir_task / f"log_prob_fn_{step-1}.pt",
+                )
+            if config["checkpoint_signs_greedy"]:
+                reconstructed_signs_greedy = reconstruct_signs(
+                    system, log_prob_fn, how="gready_solve", device=device
+                )
+                torch.save(
+                    reconstructed_signs_greedy,
+                    output_dir_task / f"reconstructed_signs_greedy_{step-1}.pt",
+                )
+            if config["checkpoint_signs"]:
+                torch.save(
+                    reconstructed_signs,
+                    output_dir_task / f"reconstructed_signs_{step-1}.pt",
+                )
             signs_updated = True
             signs_updated_at = step
         else:

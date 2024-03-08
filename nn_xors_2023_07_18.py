@@ -22,9 +22,6 @@ import jsonlines
 from typing import Callable
 
 self_name = Path(__file__).stem
-output_dir = Path("experiments") / self_name
-output_dir.mkdir(exist_ok=True)
-logger.add(output_dir / "log_{time}.log")
 
 
 class FourierSeries:
@@ -134,6 +131,10 @@ def train(
 
 
 def main():
+    output_dir = Path("experiments") / self_name
+    output_dir.mkdir(exist_ok=True)
+    logger.add(output_dir / "log_{time}.log")
+
     n_spins = 24
     eps_test = 0.03
     all_states = np.arange(2**n_spins, dtype=np.uint64)
