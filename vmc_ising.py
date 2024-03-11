@@ -183,7 +183,7 @@ configs = {
         "_inherit": 27,
         "checkpoint_log_prob_fn_on_sign_update": True,
         "checkpoint_signs": True,
-        "sign_reconstruction.method": "gready_solve",
+        "sign_reconstruction.method": "greedy_solve",
     },
     39: {
         "_inherit": 27,
@@ -231,6 +231,19 @@ configs = {
     49: {
         "_inherit": 38,
         "warm_up_overlap": 0.8,
+    },
+    50: {
+        "_inherit": 0,
+        "lattice": "kagome2x4",
+        "sign_reconstruction.method": "greedy_solve",
+        "warm_up_overlap": 0.1,
+    },
+    51: {
+        "_inherit": 0,
+        "lattice": "kagome2x4",
+        "sign_reconstruction.method": "greedy_solve",
+        "warm_up_overlap": 0.7,
+        "sign_update_period": 10000,
     },
 }
 
@@ -326,7 +339,7 @@ def main(task_id: int):
                 )
             if config["checkpoint_signs_greedy"]:
                 reconstructed_signs_greedy = reconstruct_signs(
-                    system, log_prob_fn, how="gready_solve", device=device
+                    system, log_prob_fn, how="greedy_solve", device=device
                 )
                 torch.save(
                     reconstructed_signs_greedy,

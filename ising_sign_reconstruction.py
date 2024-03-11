@@ -49,7 +49,7 @@ def reconstruct_signs(
         reconstructed_bits = ising.anneal(
             ising_hamiltonian, repetitions=repetitions, number_sweeps=number_sweeps
         )[0]
-    elif how == "gready_solve":
+    elif how == "greedy_solve":
         reconstructed_bits = ising.greedy_solve(ising_hamiltonian)[0]
     else:
         raise ValueError(f"how={how} not implemented")
