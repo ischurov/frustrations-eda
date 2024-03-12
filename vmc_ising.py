@@ -246,6 +246,7 @@ configs = {
         "sign_update_period": 10000,
         "checkpoint_log_prob_fn_on_sign_update": True,
         "max_iter": 1000,
+        "checkpoint_signs": True,
     },
 }
 
