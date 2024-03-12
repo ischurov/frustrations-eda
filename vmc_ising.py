@@ -244,7 +244,8 @@ configs = {
         "sign_reconstruction.method": "greedy_solve",
         "warm_up_overlap": 0.7,
         "sign_update_period": 10000,
-        "checkpoint_log_prob_fn_on_sign_update": False,
+        "checkpoint_log_prob_fn_on_sign_update": True,
+        "max_iter": 1000,
     },
 }
 
