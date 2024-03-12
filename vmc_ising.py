@@ -248,6 +248,19 @@ configs = {
         "max_iter": 1000,
         "checkpoint_signs": True,
     },
+    52: {
+        "_inherit": 51,
+        "warm_up_overlap": 0.8,
+        "max_iter": 200000,
+    },
+    53: {
+        "_inherit": 52,
+        "warm_up_overlap": 0.9,
+    },
+    53: {
+        "_inherit": 52,
+        "warm_up_overlap": 0.95,
+    },
 }
 
 
