@@ -65,6 +65,8 @@ default_config = {
     "checkpoint_log_prob_fn_on_sign_update": False,
     "checkpoint_signs": False,
     "checkpoint_signs_greedy": False,
+    "sign_reconstruction.use_true_if_true_energy_is_better": False,
+    "use_correct_E_full": False,
 }
 
 configs = {
@@ -261,7 +263,37 @@ configs = {
         "_inherit": 52,
         "warm_up_overlap": 0.95,
     },
+    55: {
+        "_inherit": 51,
+        "sign_update_period": 100,
+        "sign_reconstruction.use_true_if_true_energy_is_better": True,
+    },
+    56: {
+        "_inherit": 55,
+        "use_correct_E_full": True,
+    },
 }
+
+
+def get_energy(signs, system, log_prob_fn, device=torch.device("cpu")):
+    probs = (
+        safe_exp(
+            (
+                log_prob_fn(
+                    torch.from_numpy(system.basis.states.astype(np.int64)).to(device)
+                )
+            ),
+            normalise=True,
+        )
+        .cpu()
+        .view(-1)
+        .detach()
+        .numpy()
+    )
+    amplitudes = np.sqrt(probs)
+
+    wavefunction = signs * amplitudes
+    return (system.hamiltonian @ wavefunction) @ wavefunction
 
 
 def get_config(task_id: int):
@@ -330,11 +362,15 @@ def main(task_id: int):
     warm_up = True
     warm_up_finished_at = 0
     signs_updated_at = 0
+    using_true_signs = True
     for step in range(max_iter):
+        energy_with_true_signs = np.nan
+        energy_with_reconstructed_signs = np.nan
         if (
             not warm_up
             and (step - warm_up_finished_at) % config["sign_update_period"] == 0
         ):
+            using_true_signs = False
             logger.debug("Updating signs")
             reconstructed_signs = reconstruct_signs(
                 system,
@@ -344,9 +380,28 @@ def main(task_id: int):
                 repetitions=config["sign_reconstruction.repetitions"],
                 device=device,
             )
+
+            if config["sign_reconstruction.use_true_if_true_energy_is_better"]:
+                true_signs = np.sign(system.get_ground_state())
+                energy_with_true_signs = get_energy(
+                    true_signs, system, log_prob_fn, device=device
+                )
+                energy_with_reconstructed_signs = get_energy(
+                    reconstructed_signs, system, log_prob_fn, device=device
+                )
+                if energy_with_true_signs < energy_with_reconstructed_signs:
+                    logger.info(
+                        "True energy is better than reconstructed, using true signs"
+                    )
+                    using_true_signs = True
+                else:
+                    logger.info(
+                        "Reconstructed energy is better than true, using reconstructed signs"
+                    )
+
             relsigns_fn = custom_signs(
                 system,
-                reconstructed_signs,
+                true_signs if using_true_signs else reconstructed_signs,
             )
             if config["checkpoint_log_prob_fn_on_sign_update"]:
                 torch.save(
@@ -436,7 +491,10 @@ def main(task_id: int):
                 # Calculate full energy
                 # if sampling_mode == "exact":
                 E = torch.exp(log_E_loc).real
-                E_full = E @ safe_exp(log_prob_fn(states).view(-1), normalise=True)
+                if config["use_correct_E_full"]:
+                    E_full = E.mean()
+                else:
+                    E_full = E @ safe_exp(log_prob_fn(states).view(-1), normalise=True)
                 E_full_delta = E_full - torch.tensor(true_energy)
                 writer.add_scalar("loss/E_full_delta", E_full_delta, step)
                 logger.info("E_full_delta = {}", E_full_delta)
@@ -503,6 +561,11 @@ def main(task_id: int):
                     "signs_updated_at": signs_updated_at,
                     "step_since_signs_updated": step - signs_updated_at,
                     "git_hash": git_hash,
+                    "using_true_signs": using_true_signs,
+                    "energy_with_true_signs": energy_with_true_signs,
+                    "energy_with_reconstructed_signs": energy_with_reconstructed_signs,
+                    "E_full": E_full.item(),
+                    "true_energy": true_energy,
                 }
             )
 
