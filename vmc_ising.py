@@ -15,6 +15,7 @@ from misc_utils import torch_overlap as find_overlap, get_git_revision_hash
 from my_stopwatch import Stopwatch, stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
+    forward_with_batches,
     safe_exp,
     sample_exactly,
     sample_full,
@@ -35,6 +36,7 @@ import jsonlines
 from conv2d_circular import InvariantSpinCNNRegression
 from vmc_2024_02_28 import get_network, get_device, get_eval_set
 from ising_sign_reconstruction import find_sign_overlap, reconstruct_signs, custom_signs
+from nqs_playground_helpers import forward_with_batches
 
 self_name = Path(__file__).stem
 git_hash = get_git_revision_hash()
@@ -67,6 +69,7 @@ default_config = {
     "checkpoint_signs_greedy": False,
     "sign_reconstruction.use_true_if_true_energy_is_better": False,
     "use_correct_E_full": False,
+    "checkpoint_amplitudes_all_states_on_sign_update": False,
 }
 
 configs = {
@@ -249,6 +252,7 @@ configs = {
         "checkpoint_log_prob_fn_on_sign_update": True,
         "max_iter": 1000,
         "checkpoint_signs": True,
+        "checkpoint_amplitudes_all_states_on_sign_update": True,
     },
     52: {
         "_inherit": 51,
@@ -370,6 +374,29 @@ def main(task_id: int):
             not warm_up
             and (step - warm_up_finished_at) % config["sign_update_period"] == 0
         ):
+            if config["checkpoint_amplitudes_all_states_on_sign_update"]:
+                probs = (
+                    safe_exp(
+                        forward_with_batches(
+                            log_prob_fn,
+                            torch.from_numpy(system.basis.states.astype(np.int64)).to(
+                                device
+                            ),
+                            batch_size=config["batch_size"],
+                        ),
+                        normalise=True,
+                    )
+                    .cpu()
+                    .view(-1)
+                    .detach()
+                    .numpy()
+                )
+                amplitudes = np.sqrt(probs)
+                torch.save(
+                    amplitudes,
+                    output_dir_task / f"amplitudes_all_states_{step-1}.pt",
+                )
+
             using_true_signs = False
             logger.debug("Updating signs")
             reconstructed_signs = reconstruct_signs(
