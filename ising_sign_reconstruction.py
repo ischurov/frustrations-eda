@@ -7,18 +7,23 @@ from collections.abc import Callable
 import os
 import numpy.typing as npt
 import torch
+import lattice_symmetries as ls
+from scipy.sparse import csr_matrix
+from loguru import logger
 
 
 def reconstruct_signs(
-    system: SpinSystem,
+    basis: ls.Basis,
+    hamiltonian_matrix: csr_matrix,
     log_prob_fn: Callable,
     how="annealing",
     number_sweeps: int | None = None,
     repetitions: int | None = None,
     device=torch.device("cpu"),
+    force_symmetry=False,
 ):
     predicted_amplitudes = safe_exp_numpy(
-        log_prob_fn(torch.from_numpy(system.basis.states.astype(np.int64)).to(device))
+        log_prob_fn(torch.from_numpy(basis.states.astype(np.int64)).to(device))
         .detach()
         .cpu()
         .numpy()
@@ -29,15 +34,25 @@ def reconstruct_signs(
     predicted_amplitudes /= np.linalg.norm(predicted_amplitudes)
 
     ising_hamiltonian_matrix = (
-        diags(predicted_amplitudes)
-        @ get_csr_hamiltonian(system)
-        @ diags(predicted_amplitudes)
+        diags(predicted_amplitudes) @ hamiltonian_matrix @ diags(predicted_amplitudes)
     )
+    if force_symmetry:
+        logger.debug("Forcing symmetry")
+        ising_hamiltonian_matrix = (
+            ising_hamiltonian_matrix + ising_hamiltonian_matrix.transpose()
+        ) / 2
+        mask = np.abs(ising_hamiltonian_matrix.data) <= 1e-14
+        ising_hamiltonian_matrix.data[mask] = 0
+        ising_hamiltonian_matrix.eliminate_zeros()
+        logger.debug("Forcing symmetry done")
+
+    logger.debug("Creating ising Hamiltonian")
     ising_hamiltonian = ising.Hamiltonian(
         exchange=ising_hamiltonian_matrix,
         field=np.zeros(ising_hamiltonian_matrix.shape[0]),
     )
     if how == "annealing":
+        logger.debug("Using annealing")
         if repetitions is None:
             raise ValueError(
                 "If how='annealing', repetitions must be specified, but it was None"
@@ -50,6 +65,7 @@ def reconstruct_signs(
             ising_hamiltonian, repetitions=repetitions, number_sweeps=number_sweeps
         )[0]
     elif how == "greedy_solve":
+        logger.debug("Using greedy solve")
         reconstructed_bits = ising.greedy_solve(ising_hamiltonian)[0]
     else:
         raise ValueError(f"how={how} not implemented")

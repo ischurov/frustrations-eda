@@ -26,6 +26,7 @@ from vmc_amplitude import (
     LogProbDenseNetPairwiseXor,
     almost_true_relsigns,
     compute_log_local_energies,
+    get_csr_hamiltonian,
 )
 from dilated_nns_xors import resolve_config_inheritance
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
@@ -37,6 +38,8 @@ from conv2d_circular import InvariantSpinCNNRegression
 from vmc_2024_02_28 import get_network, get_device, get_eval_set
 from ising_sign_reconstruction import find_sign_overlap, reconstruct_signs, custom_signs
 from nqs_playground_helpers import forward_with_batches
+import lattice_symmetries as ls
+from spin_lattices import AllToAllLattice
 
 self_name = Path(__file__).stem
 git_hash = get_git_revision_hash()
@@ -70,6 +73,7 @@ default_config = {
     "sign_reconstruction.use_true_if_true_energy_is_better": False,
     "use_correct_E_full": False,
     "checkpoint_amplitudes_all_states_on_sign_update": False,
+    "sign_reconstruction.full_spin_regularization": None,
 }
 
 configs = {
@@ -79,6 +83,11 @@ configs = {
         "kernel_size": 2,
         "warm_up_overlap": 0.4,
         "sign_update_period": 5,
+        "checkpoint_amplitudes_all_states_on_sign_update": True,
+        "checkpoint_signs": True,
+        "use_correct_E_full": True,
+        "sign_reconstruction.use_true_if_true_energy_is_better": True,
+        "checkpoint_log_prob_fn_on_sign_update": True,
     },
     1: {"_inherit": 0, "warm_up_overlap": 0.95, "sign_update_period": 10},
     2: {"_inherit": 1, "sign_update_period": 100},
@@ -276,17 +285,56 @@ configs = {
         "_inherit": 55,
         "use_correct_E_full": True,
     },
+    58: {
+        "_inherit": 51,
+        "max_iter": 200000,
+        "sign_reconstruction.full_spin_regularization": 0.2,
+    },
+    59: {
+        "_inherit": 58,
+        "warm_up_overlap": 0.3,
+    },
+    60: {
+        "_inherit": 51,
+        "max_iter": 200000,
+        "sign_reconstruction.full_spin_regularization": 0.3,
+    },
+    61: {
+        "_inherit": 51,
+        "max_iter": 200000,
+        "sign_reconstruction.full_spin_regularization": 0.4,
+    },
+    62: {
+        "_inherit": 51,
+        "sign_update_period": 100,
+        "max_iter": 200000,
+        "sign_reconstruction.full_spin_regularization": 0.2,
+    },
+    63: {
+        "_inherit": 51,
+        "sign_update_period": 100,
+        "max_iter": 200000,
+        "sign_reconstruction.full_spin_regularization": 0.3,
+    },
+    64: {
+        "_inherit": 51,
+        "sign_update_period": 100,
+        "max_iter": 200000,
+        "sign_reconstruction.full_spin_regularization": 0.4,
+    },
 }
 
 
-def get_energy(signs, system, log_prob_fn, device=torch.device("cpu")):
+def get_energy(
+    signs,
+    basis: ls.Basis,
+    hamiltonian: ls.Operator,
+    log_prob_fn,
+    device=torch.device("cpu"),
+):
     probs = (
         safe_exp(
-            (
-                log_prob_fn(
-                    torch.from_numpy(system.basis.states.astype(np.int64)).to(device)
-                )
-            ),
+            (log_prob_fn(torch.from_numpy(basis.states.astype(np.int64)).to(device))),
             normalise=True,
         )
         .cpu()
@@ -297,7 +345,7 @@ def get_energy(signs, system, log_prob_fn, device=torch.device("cpu")):
     amplitudes = np.sqrt(probs)
 
     wavefunction = signs * amplitudes
-    return (system.hamiltonian @ wavefunction) @ wavefunction
+    return (hamiltonian @ wavefunction) @ wavefunction
 
 
 def get_config(task_id: int):
@@ -343,8 +391,18 @@ def main(task_id: int):
     logger.debug(f"Torch will use device: {device}")
     # lattice = TriangleLattice(6, 4)
     lattice = get_lattice(config["lattice"])
+    all_to_all_lattice = AllToAllLattice(lattice)
+
     # lattice = ChainLattice(10)
     system = get_system(config)
+    if config["sign_reconstruction.full_spin_regularization"] is not None:
+        full_spin_system = HeisenbergJ1J2(
+            lattice=all_to_all_lattice,
+            use_symmetries=system.use_symmetries,
+            spin_inversion=system.spin_inversion,
+        )
+        full_spin_matrix = get_csr_hamiltonian(full_spin_system)
+
     true_energy = system.get_eigenstates(1)[0][0]
 
     eval_set = get_eval_set(system, config["eval_set_max_size"])
@@ -367,6 +425,7 @@ def main(task_id: int):
     warm_up_finished_at = 0
     signs_updated_at = 0
     using_true_signs = True
+
     for step in range(max_iter):
         energy_with_true_signs = np.nan
         energy_with_reconstructed_signs = np.nan
@@ -399,22 +458,43 @@ def main(task_id: int):
 
             using_true_signs = False
             logger.debug("Updating signs")
+            if config["sign_reconstruction.full_spin_regularization"] is not None:
+                logger.debug("Using full spin regularization")
+                matrix = (
+                    get_csr_hamiltonian(system)
+                    + config["sign_reconstruction.full_spin_regularization"]
+                    * full_spin_matrix
+                )
+                assert (matrix != matrix.transpose()).nnz == 0
+            else:
+                matrix = get_csr_hamiltonian(system)
+
             reconstructed_signs = reconstruct_signs(
-                system,
+                system.basis,
+                matrix,
                 log_prob_fn,
                 how=config["sign_reconstruction.method"],
                 number_sweeps=config["sign_reconstruction.number_sweeps"],
                 repetitions=config["sign_reconstruction.repetitions"],
                 device=device,
+                force_symmetry=True,
             )
 
             if config["sign_reconstruction.use_true_if_true_energy_is_better"]:
                 true_signs = np.sign(system.get_ground_state())
                 energy_with_true_signs = get_energy(
-                    true_signs, system, log_prob_fn, device=device
+                    true_signs,
+                    system.basis,
+                    system.hamiltonian,
+                    log_prob_fn,
+                    device=device,
                 )
                 energy_with_reconstructed_signs = get_energy(
-                    reconstructed_signs, system, log_prob_fn, device=device
+                    reconstructed_signs,
+                    system.basis,
+                    system.hamiltonian,
+                    log_prob_fn,
+                    device=device,
                 )
                 if energy_with_true_signs < energy_with_reconstructed_signs:
                     logger.info(
@@ -437,7 +517,12 @@ def main(task_id: int):
                 )
             if config["checkpoint_signs_greedy"]:
                 reconstructed_signs_greedy = reconstruct_signs(
-                    system, log_prob_fn, how="greedy_solve", device=device
+                    system.basis,
+                    get_csr_hamiltonian(system),
+                    log_prob_fn,
+                    how="greedy_solve",
+                    device=device,
+                    force_symmetry=True,
                 )
                 torch.save(
                     reconstructed_signs_greedy,

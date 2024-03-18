@@ -39,13 +39,17 @@ def main(task_id: int, step: int):
     signs_greedy = torch.load(output_dir / f"{task_id}/reconstructed_signs_{step}.pt")
 
     # %%
-    print(f"Energy true signs = {get_energy(true_signs, system, log_prob_fn)}")
-    print(f"Energy greedy signs = {get_energy(signs_greedy, system, log_prob_fn)}")
     print(
-        f"Full spin true signs = {get_energy(true_signs, full_spin_system, log_prob_fn)}"
+        f"Energy true signs = {get_energy(true_signs, system.basis, system.hamiltonian, log_prob_fn)}"
     )
     print(
-        f"Full spin greedy signs = {get_energy(signs_greedy, full_spin_system, log_prob_fn)}"
+        f"Energy greedy signs = {get_energy(signs_greedy, system.basis, system.hamiltonian, log_prob_fn)}"
+    )
+    print(
+        f"Full spin true signs = {get_energy(true_signs, full_spin_system.basis, full_spin_system.hamiltonian, log_prob_fn)}"
+    )
+    print(
+        f"Full spin greedy signs = {get_energy(signs_greedy, full_spin_system.basis, full_spin_system.hamiltonian, log_prob_fn)}"
     )
 
 
