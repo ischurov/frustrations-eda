@@ -322,6 +322,11 @@ configs = {
         "max_iter": 200000,
         "sign_reconstruction.full_spin_regularization": 0.4,
     },
+    65: {
+        "_inherit": 51,
+        "max_iter": 200000,
+        "J2": 0.7,
+    },
 }
 
 
