@@ -1,7 +1,7 @@
 import pickle
 from hashlib import md5
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 import lattice_symmetries as ls
 import matplotlib.pyplot as plt
@@ -19,47 +19,121 @@ from misc_utils import (
     make_unpacked_configurations,
 )
 from spin_lattices import SpinLattice
+from sympy.combinatorics import Permutation
+from sympy import Rational
+import json
+
+
+class DictKeyedCache:
+    def __init__(
+        self,
+        cache_dir: Path,
+        default_params: dict[str, Any] = {},
+        params: dict[str, Any] = {},
+    ):
+        """
+        Implements cache whose keys are dictionaries. The cache is stored in a directory
+        with a file for each set of parameters. The cache is stored as a pickle file.
+
+        Parameters
+        ----------
+        cache_dir : Path
+            Directory where the cache is stored
+
+        default_params : dict
+            Default parameters. If new parameter is added, its value that were
+            actual before it was introduced should be added to this dictionary
+
+        params : dict
+            Parameters to be used to generate the cache key
+        """
+        if not default_params:
+            default_params = {}
+        if not params:
+            params = {}
+
+        self.cache_dir.mkdir(exist_ok=True, parents=True)
+        self.cache_dir = cache_dir
+        self.default_params = default_params
+        self.params = params
+
+    def get_minimal_params(self, additional_params: dict[str, Any]) -> dict[str, Any]:
+        return {
+            k: v
+            for k, v in sorted((self.params | additional_params).items())
+            if v != self.default_params.get(k)
+        }
+
+    def get_cache_id(self, additional_params: dict[str, Any]) -> str:
+        return md5(
+            json.dumps(self.get_minimal_params(additional_params)).encode("utf8")
+        ).hexdigest()
+
+    def get_cache_path(
+        self, additional_params: dict[str, Any], suffix: str = ""
+    ) -> Path:
+        return self.cache_dir / (self.get_cache_id(additional_params) + suffix)
+
+    def get_cache(self, additional_params: dict[str, Any], suffix: str = "") -> Any:
+        cache_path = self.get_cache_path(additional_params, suffix + ".pickle")
+        if cache_path.exists():
+            return pickle.loads(cache_path.read_bytes())
+        return None
+
+    def set_cache(
+        self, additional_params: dict[str, Any], value: Any, suffix: str = ""
+    ) -> None:
+        cache_path = self.get_cache_path(additional_params, suffix + ".pickle")
+        cache_path.write_bytes(pickle.dumps(value))
+        self.get_cache_path(additional_params, ".params.repr").write_text(
+            repr(self.params | additional_params)
+        )
 
 
 class SpinSystem:
-    hamming_weight: int
-
     def __init__(
         self,
         lattice: SpinLattice,
         basis: ls.SpinBasis,
         hamiltonian: ls.Operator,
-        symmetries: ls.Symmetries,
         ground_state_cache_dir: Path | None = None,
-        use_symmetries: bool = False,
     ):
         self.lattice = lattice
         self.basis = basis
         self.hamiltonian = hamiltonian
         self.number_spins = len(lattice.sites)
-        self.symmetries = symmetries
-        self.ground_state_cache_dir = ground_state_cache_dir
-        self.use_symmetries = use_symmetries
-        if use_symmetries and (len(symmetries) == 0):
-            raise ValueError("symmetries must be provided if use_symmetries is True")
+        self.ground_state_cache = (
+            DictKeyedCache(
+                cache_dir=ground_state_cache_dir,
+                default_params=self.get_default_cache_params(),
+                params=self.get_cache_params(),
+            )
+            if ground_state_cache_dir is not None
+            else None
+        )
 
         self.eigenstates = None
         self.eigenvalues = None
-        self.ground_energy = None
-        self.ground_state = None
+
+    def get_cache_params(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def get_default_cache_params(self) -> dict[str, Any]:
+        return {}
 
     @property
-    def canonical_basis(self):
-        if not hasattr(self, "_canonical_basis"):
-            self._canonical_basis = self.lattice.get_basis(
-                use_symmetries=False,
-                hamming_weight=self.hamming_weight,
-                spin_inversion=None,
-            )
-        return self._canonical_basis
+    def ground_state(self) -> npt.NDArray[np.float64]:
+        if self.eigenstates is None:
+            self.get_eigenstates(1)
+        assert self.eigenstates is not None
+        return self.eigenstates[:, 0]
 
-    def __repr__(self):
-        return f"<{self.__class__.__name__}:{self.get_cache_id()}>"
+    @property
+    def ground_energy(self) -> float:
+        if self.eigenvalues is None:
+            self.get_eigenstates(1)
+        assert self.eigenvalues is not None
+        return self.eigenvalues[0]
 
     def unpack_configurations(self):
         """
@@ -69,15 +143,17 @@ class SpinSystem:
         return make_unpacked_configurations(self.basis.states, self.number_spins)
 
     def _find_cached_eigenstate(self, k) -> tuple[np.ndarray, np.ndarray] | None:
-        if self.ground_state_cache_dir is None:
+        if self.ground_state_cache is None:
             return None
         for eigenstate in range(k, 20):
-            eigenstate_path = self.eigenstate_path(eigenstate)
-            if eigenstate_path and eigenstate_path.exists():
+            if cached_value := self.ground_state_cache.get_cache(
+                additional_params={"up_to_eigenstate": eigenstate}
+            ):
                 logger.debug(
-                    f"Using cached version of eigenvalues / eigenstates from {eigenstate_path}"
+                    f"Using cached version of eigenvalues / eigenstates up to {eigenstate}, "
+                    f"cache params = {self.ground_state_cache.params}"
                 )
-                eigenvalues, eigenstates = pickle.loads(eigenstate_path.read_bytes())
+                eigenvalues, eigenstates = cached_value
                 return eigenvalues, eigenstates
 
     def get_eigenstates(self, k=1) -> tuple[np.ndarray, np.ndarray]:
@@ -104,334 +180,28 @@ class SpinSystem:
         ):
             return self.eigenvalues, self.eigenstates
         if (cached_eigenstate := self._find_cached_eigenstate(k)) is not None:
-            eigenvalues, eigenstates = cached_eigenstate
-        else:
-            # Diagonalize the Hamiltonian using ARPACK
+            self.eigenvalues, self.eigenstates = cached_eigenstate
+            return self.eigenvalues, self.eigenstates
 
-            logger.debug("Calculating eigenvalues / eigenstates")
-            eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(
-                self.hamiltonian, k=k, which="SA"
-            )
-            eigenstates = np.asarray(
-                eigenstates * np.sign(eigenstates[0, :]).reshape(1, -1),
-                dtype=np.float64,
-            )
-            # make sure that the first element of each eigenvector is positive
-            # for reproducibility
+        # Diagonalize the Hamiltonian using ARPACK
 
-            if self.ground_state_cache_dir is not None:
-                self.ground_state_cache_dir.mkdir(exist_ok=True)
-                if eigenstate_path := self.eigenstate_path(k):
-                    eigenstate_path.write_bytes(
-                        pickle.dumps((eigenvalues, eigenstates))
-                    )
+        logger.debug("Calculating eigenvalues / eigenstates")
+        eigenvalues, eigenstates = scipy.sparse.linalg.eigsh(
+            self.hamiltonian, k=k, which="SA"
+        )
+
+        if self.ground_state_cache is not None:
+            self.ground_state_cache.set_cache(
+                additional_params={"up_to_eigenstate": k},
+                value=(eigenvalues, eigenstates),
+            )
 
         logger.debug("Ground state energy is {:.10f}".format(eigenvalues[0]))
-
-        self.ground_energy = eigenvalues[0]
-        self.ground_state = eigenstates[:, 0]
 
         self.eigenvalues = eigenvalues
         self.eigenstates = eigenstates
 
         return eigenvalues, eigenstates
-
-    def get_df_eigenstate(
-        self,
-        k: int,
-        unpack_configurations=False,
-        expand_basis_columns=False,
-        canonical_basis=True,
-        add_amplitude=True,
-    ) -> pd.DataFrame:
-        """
-        Returns the dataframe with the k'th eigenstate indexed by basis states
-        Optionally, basis configurations can be unpacked
-        If expand_basis_columns, they will be unpacked as separate columns
-
-        Columns:
-        - eigenstate_coeff: the k'th eigenvector
-        - amplitude: the absolute value of the k'th eigenvector
-
-        If unpack_configurations:
-        - configurations: the unpacked basis configurations
-
-        If expand_basis_columns:
-        - s0, s1, s2, ...: spin values
-
-        """
-
-        if self.eigenstates is None:
-            raise ValueError(f"Eigenstate not found; run .get_eigenstates({k}) first")
-        elif self.eigenstates.shape[1] <= k:
-            raise ValueError(
-                f"Not enough eigenstates found; run .get_eigenstates({k}) first"
-            )
-        if expand_basis_columns and not unpack_configurations:
-            raise ValueError(
-                "expand_basis_columns=True requires unpack_configurations=True"
-            )
-
-        df = pd.DataFrame(
-            dict(eigenstate_coeff=self.eigenstates[:, k]),
-            index=self.basis.states,
-        )
-
-        if canonical_basis:
-            df = self.transform_df_to_canonical(df)
-
-        if add_amplitude:
-            df["amplitude"] = np.abs(df["eigenstate_coeff"])
-
-        if unpack_configurations:
-            unpacked_configurations = make_unpacked_configurations(
-                df.index, self.number_spins
-            )
-            if expand_basis_columns:
-                spins_df = pd.DataFrame(
-                    unpacked_configurations,
-                    columns=[f"s{i}" for i in range(self.number_spins)],
-                    index=df.index,
-                )
-            else:
-                spins_df = pd.DataFrame(
-                    dict(configuration=list(unpacked_configurations)), index=df.index
-                )
-            return df.join(spins_df)
-
-        return df
-
-    def get_ground_state_in_full_basis(self) -> npt.NDArray[np.float64]:
-        """
-        Returns the ground state in the full basis (of size 2**number_spins)
-        """
-        if self.ground_state is None:
-            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
-
-        if hasattr(self, "ground_state_in_full_basis"):
-            return self.ground_state_in_full_basis
-
-        if not self.use_symmetries:
-            coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
-            coeffs[self.canonical_basis.states] = self.ground_state
-            self.ground_state_in_full_basis = coeffs
-            return self.ground_state_in_full_basis
-
-        logger.debug("Finding coeffs")
-
-        coeffs = np.zeros(2**self.number_spins, dtype=np.float64)
-        coeffs[self.canonical_basis.states] = self.get_ground_state_in_canonical_basis()
-
-        self.ground_state_in_full_basis = coeffs
-        return coeffs
-
-    def get_ground_state(self) -> npt.NDArray[np.float64]:
-        """
-        Returns the ground state in the basis of the system.
-        If use_symmetries is True, no conversion is done.
-        """
-        if self.ground_state is None:
-            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
-
-        return self.ground_state
-
-    def get_ground_state_in_canonical_basis(self) -> npt.NDArray[np.float64]:
-        """
-        Returns the ground state in the canonical basis
-        """
-        if self.ground_state is None:
-            raise ValueError(f"Ground state not found; run .get_eigenstates(1) first")
-
-        if hasattr(self, "ground_state_in_canonical_basis"):
-            return self.ground_state_in_canonical_basis
-
-        if not self.use_symmetries:
-            self.ground_state_in_canonical_basis = self.ground_state
-            return self.ground_state_in_canonical_basis
-
-        logger.debug("Finding basis_state_info")
-        corresp_reprs, characters, norms = self.basis.state_info(
-            self.canonical_basis.states
-        )
-
-        logger.debug("Finding corresp_repr_indices")
-
-        corresp_repr_indices = self.basis.index(corresp_reprs)
-        # Old implementation:
-        # corresp_repr_indices = np.asarray(np.searchsorted(reprs, corresp_reprs), dtype=np.uint64)
-
-        logger.debug("Finding coeffs")
-        self.ground_state_in_canonical_basis = (
-            self.ground_state[corresp_repr_indices] * characters * norms
-        )
-
-        return self.ground_state_in_canonical_basis
-
-    def get_ground_state_coeffs(
-        self, states, apply_symmetries=True
-    ) -> npt.NDArray[np.float64]:
-        if self.ground_state is None:
-            self.get_eigenstates(1)
-        if apply_symmetries:
-            corresp_reprs, characters, norms = self.basis.state_info(states)
-            corresp_repr_indices = self.basis.index(corresp_reprs)
-            return np.real_if_close(
-                self.ground_state[corresp_repr_indices] * characters * norms
-            )
-        return np.real_if_close(self.ground_state[self.basis.index(states)])
-
-    def get_df_ground_state(
-        self,
-        unpack_configurations=False,
-        expand_basis_columns=False,
-        canonical_basis=True,
-        add_amplitude=True,
-    ) -> pd.DataFrame:
-        """
-        Alias for get_df_eigenstate(k=0, ...)
-        """
-        if canonical_basis and not unpack_configurations:
-            df = pd.DataFrame(
-                dict(eigenstate_coeff=self.get_ground_state_in_canonical_basis()),
-                index=self.canonical_basis.states,
-            )
-            if add_amplitude:
-                df["amplitude"] = np.abs(df["eigenstate_coeff"])
-            return df
-
-        return self.get_df_eigenstate(
-            k=0,
-            unpack_configurations=unpack_configurations,
-            expand_basis_columns=expand_basis_columns,
-            canonical_basis=canonical_basis,
-        )
-
-    def transform_df_to_canonical(self, df):
-        state_info_df = batched_state_info_df(self.basis, self.canonical_basis.states)
-
-        return (
-            state_info_df.merge(df, left_on="representative", right_index=True)
-            .assign(
-                eigenstate_adjusted=lambda x: np.real_if_close(
-                    x["eigenstate_coeff"] * x["character"] * x["norm"]
-                )
-            )
-            .drop(
-                [
-                    "eigenstate_coeff",
-                    "representative",
-                    "character",
-                    "norm",
-                ],
-                axis=1,
-            )
-            .rename(
-                columns={
-                    "eigenstate_adjusted": "eigenstate_coeff",
-                }
-            )
-            .reindex(self.canonical_basis.states)
-        )
-
-    def visualize_probable_configurations(self, m=0, canonical_basis=True):
-        """
-        Visualizes m'th most probable configuration
-        """
-        df = self.get_df_ground_state(
-            unpack_configurations=True, canonical_basis=canonical_basis
-        ).sort_values("amplitude", ascending=False)
-        self.lattice.plot(spins=df.iloc[m]["configuration"])
-        plt.title(
-            f"Plotted {m}'s most probable state, wavefunction value "
-            f"= {df.iloc[m]['eigenstate_coeff']}"
-        )
-
-    def eigenstate_path(self, k: int) -> Optional[Path]:
-        raise NotImplementedError
-
-    def get_cache_id(self) -> str:
-        raise NotImplementedError
-
-    def sample_elements(
-        self,
-        representatives: npt.NDArray[np.uint64],
-        n: int,
-        prob: pd.Series | None = None,
-    ) -> npt.NDArray[np.uint64]:
-        """
-        Sample n elements from the union of the orbits of the given representatives.
-        It is guaranteed that each orbit is sampled at most once.
-
-        Parameters
-        ----------
-        basis
-            The basis taking account of the symmetries of the system.
-        canonical_basis
-            The canonical basis of the system.
-        representatives
-            The representatives of the orbits to sample from.
-        n
-            The number of elements to sample.
-        prob
-            The probability of sampling each state. It should be pd.DataFrame
-            with keys being the states and values being the probabilities, like
-            returned by `.get_df_ground_state()`.
-
-            If None, all states are equally likely.
-
-        Returns
-        -------
-        The sampled elements.
-        """
-
-        if n > len(representatives):
-            raise ValueError(
-                "n must be smaller than the length of the representatives array"
-            )
-
-        if prob is not None and (prob < 0).any():
-            raise ValueError("probabilities must be positive")
-
-        if prob is not None:
-            prob = prob / np.sum(prob)
-
-        state_info_df = batched_state_info_df(
-            self.basis, self.canonical_basis.states
-        ).merge(
-            pd.DataFrame(index=representatives),
-            left_on="representative",
-            right_index=True,
-            how="right",
-        )
-        if state_info_df.isna().any().any():
-            raise ValueError("Some representatives are not in the canonical basis")
-
-        if prob is not None:
-            state_info_df = state_info_df.merge(
-                prob.rename("prob"), left_index=True, right_index=True, how="left"
-            )
-        else:
-            state_info_df["prob"] = 1
-        state_info_df["prob"] = state_info_df["prob"] / state_info_df["prob"].sum()
-
-        repr_prob = state_info_df.groupby("representative")["prob"].sum()
-        selected_repr = np.random.choice(
-            repr_prob.index, size=n, replace=False, p=repr_prob
-        )
-
-        return (
-            state_info_df.merge(
-                pd.DataFrame(index=selected_repr),
-                left_on="representative",
-                right_index=True,
-                how="right",
-            )
-            .reset_index()
-            .rename(columns={"index": "state"})
-            .groupby("representative")
-            .agg(lambda x: np.random.choice(x))["state"]
-            .values
-        )  # type: ignore
 
     def make_unpacked_configurations(
         self, states: npt.NDArray[np.uint64]
@@ -445,7 +215,6 @@ class SpinSystem:
 
 
 heisenberg_expr = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
-heisenberg_expr_hadamard = "0.5 (σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀)(σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀) + 0.25 (σˣ₁ + σᶻ₁)(σˣ₀ + σᶻ₀)σᶻ₀ σᶻ₁(σˣ₀ + σᶻ₀)(σˣ₁ + σᶻ₁)"
 
 
 def heisenberg_expr_rot(phi):
@@ -454,100 +223,21 @@ def heisenberg_expr_rot(phi):
 
 
 class HeisenbergJ1J2(SpinSystem):
-    symmetries_whitelist = {
-        "KagomeLattice2x4",
-        "SquareLattice4x4",
-        "SquareLattice2x4",
-        "SquareLattice4x2",
-        "SquareLattice2x2",
-        "SquareLattice6x4",
-        "SquareLattice4x6",
-        "ChainLattice4x1",
-        "ChainLattice8x1",
-        "ChainLattice12x1",
-        "KagomeLattice4x2",
-        "TriangleLattice2x2",
-        "TriangleLattice2x4",
-        "TriangleLattice4x2",
-        "TriangleLattice4x4",
-        "TriangleLattice4x6",
-        "TriangleLattice6x4",
-    }
-
     def __init__(
         self,
         lattice: SpinLattice,
+        basis: ls.SpinBasis,
         J1: float = 1.0,
         J2: float = 1.0,
-        use_symmetries: bool | None = None,
-        spin_inversion: int | None = None,
-        ground_state_cache_dir: Path | None = Path("groundstates"),
-        skip_symmetries_whitelist: bool = False,
-        hamming_weight: int | Literal["half"] | None = "half",
+        ground_state_cache_dir: Path | None = Path("groundstates_cache"),
         expr_str=heisenberg_expr,
     ):
         self.expr_str = expr_str
-        if (
-            use_symmetries or spin_inversion is not None
-        ) and lattice.get_cache_id() not in self.symmetries_whitelist:
-            if skip_symmetries_whitelist:
-                logger.warning(
-                    f"Symmetries are not tested with {lattice.get_cache_id()}, "
-                    f"and can produce incorrect results. Using them anyway due to skip_symmetries_whitelist=True."
-                )
-            else:
-                raise ValueError(
-                    f"Symmetries are not tested with {lattice.get_cache_id()}, "
-                    f"set use_symmetries=False instead. For testing, use skip_symmetries_whitelist=True."
-                )
-        if use_symmetries is None:
-            if lattice.get_cache_id() in self.symmetries_whitelist:
-                logger.debug(
-                    "use_symmetries is None and lattice is in symmetries whitelist, setting use_symmetries=True, spin_inversion=1"
-                )
-                use_symmetries = True
-                spin_inversion = 1
-            else:
-                logger.debug(
-                    "use_symmetries is None and lattice is not in symmetries whitelist, setting use_symmetries=False"
-                )
-                use_symmetries = False
-                spin_inversion = None
 
         J1 = float(J1)
         J2 = float(J2)
         self.J1 = J1
         self.J2 = J2
-        self.use_symmetries = use_symmetries
-        self.spin_inversion = spin_inversion
-
-        number_spins = len(lattice.sites)
-
-        logger.debug(f"{number_spins=}")
-        if hamming_weight == "half":
-            logger.debug("Setting hamming_weight to half")
-            hamming_weight = (
-                number_spins // 2
-            )  # Hamming weight (i.e. number of spin ups)
-        self.hamming_weight = hamming_weight
-
-        # Constructing symmetries
-
-        if use_symmetries:
-            symmetries = lattice.get_heisenberg_symmetries()
-        else:
-            symmetries = ls.Symmetries([])
-
-        logger.debug("Symmetry group contains {} elements".format(len(symmetries)))
-        logger.debug("Constructing basis")
-        # Constructing the basis
-        basis = lattice.get_basis(
-            use_symmetries=use_symmetries,
-            spin_inversion=spin_inversion,
-            hamming_weight=hamming_weight,
-        )
-
-        logger.debug("Hilbert space dimension is {}".format(basis.number_states))
 
         # Constructing the Hamiltonian
 
@@ -556,33 +246,23 @@ class HeisenbergJ1J2(SpinSystem):
                 J2 * ls.Expr(expr_str, sites=lattice.kind_to_edges[2]))
         # fmt: on
 
-        hamiltonian = ls.Operator(basis, expr)
+        hamiltonian = ls.Operator(expr, basis)
 
         super().__init__(
             lattice=lattice,
             basis=basis,
             hamiltonian=hamiltonian,
-            symmetries=symmetries,
             ground_state_cache_dir=ground_state_cache_dir,
-            use_symmetries=use_symmetries,
         )
 
-    def eigenstate_path(self, k: int) -> Path | None:
-        if self.ground_state_cache_dir is None:
-            return None
-        return Path(self.ground_state_cache_dir / f"{self.get_cache_id()}-{k}.pickle")
-
-    def get_cache_id(self) -> str:
-        if self.expr_str == heisenberg_expr:
-            expr_id = ""
-        else:
-            expr_id = "-expr-" + md5(self.expr_str.encode("utf8")).hexdigest()[:10]
-
-        if self.hamming_weight == self.number_spins // 2:
-            hamming_weight_id = ""
-        else:
-            hamming_weight_id = f"-hamming_weight-{self.hamming_weight}"
-        return (
-            f"{self.__class__.__name__}-{self.lattice.get_cache_id()}-"
-            f"{self.J1!r}-{self.J2!r}-{self.use_symmetries}-{self.spin_inversion}{hamming_weight_id}{expr_id}"
-        )
+    def get_cache_params(self) -> dict[str, Any]:
+        return {
+            "basis.number_sites": self.basis.number_sites,
+            "basis.hamming_weight": self.basis.hamming_weight,
+            "basis.spin_inversion": self.basis.spin_inversion,
+            "basis.symmetries": [
+                (symmetry.list(), (character.numerator, character.denominator))
+                for symmetry, character in self.basis.symmetries
+            ],
+            "hamiltonian.expression": str(self.hamiltonian.expression),
+        }

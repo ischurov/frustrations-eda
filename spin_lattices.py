@@ -15,6 +15,7 @@ import pandas as pd
 import seaborn as sns
 from loguru import logger
 from sympy.combinatorics import Permutation, PermutationGroup
+from sympy import Rational
 
 from misc_utils import (
     batched_state_info_df,
@@ -25,13 +26,13 @@ from parity import parity, popcount
 import torch
 from functools import singledispatchmethod
 
-# BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
-
 
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+
+# BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
 
 def scatter_plot(
@@ -97,9 +98,9 @@ class SpinLattice:
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis]
         self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame]
         self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
-        self.state_info_dfs: dict[
-            tuple[bool, int | None, int | None], pd.DataFrame
-        ] = {}
+        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = (
+            {}
+        )
 
     def __repr__(self):
         return f"<SpinLattice:{self.get_cache_id()}>"
@@ -110,8 +111,7 @@ class SpinLattice:
 
     @property
     @abstractmethod
-    def sites_df(self) -> pd.DataFrame:
-        ...
+    def sites_df(self) -> pd.DataFrame: ...
 
     @property
     def edges_to_kind(self) -> dict[tuple[int, int], int]:
@@ -153,12 +153,10 @@ class SpinLattice:
         return make_packed_configurations(states, number_spins=self.number_spins)
 
     @overload
-    def unpack_configurations(self, states: npt.NDArray) -> npt.NDArray:
-        ...
+    def unpack_configurations(self, states: npt.NDArray) -> npt.NDArray: ...
 
     @overload
-    def unpack_configurations(self, states: torch.Tensor) -> torch.Tensor:
-        ...
+    def unpack_configurations(self, states: torch.Tensor) -> torch.Tensor: ...
 
     def unpack_configurations(
         self, states: npt.NDArray | torch.Tensor
@@ -172,12 +170,10 @@ class SpinLattice:
 
         logger.debug("Cached fourier_basis not found, building...")
 
-        symmetries = ls.Symmetries(
-            [
-                ls.Symmetry(automorphism, sector=0)
-                for automorphism in self.get_automorphisms()
-            ]
-        )
+        symmetries = [
+            (Permutation(automorphism), Rational(0))
+            for automorphism in self.get_automorphisms()
+        ]
 
         number_spins = self.number_spins
 
@@ -280,12 +276,11 @@ class SpinLattice:
         if hasattr(self, "fourier_basis_state_info"):
             return self.fourier_basis_state_info
 
-        symmetries = ls.Symmetries(
-            [
-                ls.Symmetry(automorphism, sector=0)
-                for automorphism in self.get_automorphisms()
-            ]
-        )
+        symmetries = [
+            (Permutation(automorphism), Rational(0))
+            for automorphism in self.get_automorphisms()
+        ]
+
         number_spins = self.number_spins
 
         fourier_basis = ls.SpinBasis(
@@ -359,138 +354,9 @@ class SpinLattice:
 
         return subsets, fourier_basis_state_info_df
 
-    def get_heisenberg_symmetries(self) -> ls.Symmetries:
-        """
-        Returns ls.Symmetries object for the lattice.
-        Each symmetry has sector=0, which is appropriate for some (not any!)
-        Heisenberg hamiltonians.
-        """
-        return ls.Symmetries(
-            [
-                ls.Symmetry(automorphism, sector=0)
-                for automorphism in self.get_automorphisms()
-            ]
-        )
-
     @property
     def number_spins(self) -> int:
         return len(self.sites)
-
-    def get_basis(
-        self,
-        use_symmetries: bool = True,
-        hamming_weight: int | None = None,
-        spin_inversion: int | None = None,
-    ) -> ls.SpinBasis:
-        """
-        Returns a spin basis for the lattice.
-        If use_symmetries is True, the basis will contain only the representatives of the
-        symmetry-equivalent states.
-
-        It currently supports only sector=0 symmetries (i.e. suitable for Heisenberg hamiltonians)
-
-        If hamming_weight is not None, the basis will contain only states with the given
-        hamming weight.
-
-        If spin_inversion is not None, the spin inversion symmetry will be used to reduce the
-        number of states in the basis. In this case, spin_inversion is a character of the
-        spin inversion representation. I.e. spin_inversion=1 means that the ground state
-        is invariant under the spin inversion.
-
-        For Heisenberg models, it is usually hamming_weight=number_spins // 2 and
-        spin_inversion=1.
-        """
-
-        basis = self.bases.get((use_symmetries, hamming_weight, spin_inversion))
-        if basis is not None:
-            return basis
-        number_spins = self.number_spins
-        if use_symmetries:
-            symmetries = self.get_heisenberg_symmetries()
-        else:
-            symmetries = ls.Symmetries([])
-
-        basis = ls.SpinBasis(
-            symmetries=symmetries,
-            number_spins=number_spins,
-            hamming_weight=hamming_weight,
-            spin_inversion=spin_inversion,
-        )
-        basis.build()
-        self.bases[(use_symmetries, hamming_weight, spin_inversion)] = basis
-        return basis
-
-    def get_state_info_df(
-        self,
-        use_symmetries: bool = True,
-        hamming_weight: int | None = None,
-        spin_inversion: int | None = None,
-    ) -> pd.DataFrame:
-        """
-        Returns state_info_df for the given basis with respect to the canonical basis.
-        The canonical basis is the basis with the following parameters:
-        use_symmetries=False, hamming_weight=number_spins // 2, spin_inversion=None.
-        """
-        state_info_df = self.state_info_dfs.get(
-            (use_symmetries, hamming_weight, spin_inversion)
-        )
-        if state_info_df is not None:
-            return state_info_df
-
-        basis = self.get_basis(use_symmetries, hamming_weight, spin_inversion)
-        canonical_basis = self.get_basis(
-            use_symmetries=False,
-            hamming_weight=self.number_spins // 2,
-            spin_inversion=None,
-        )
-        state_info_df = batched_state_info_df(basis, canonical_basis.states)
-        self.state_info_dfs[
-            (use_symmetries, hamming_weight, spin_inversion)
-        ] = state_info_df
-        return state_info_df
-
-    # def get_canonical_heisenberg_basis(self):
-    #     """
-    #     This function builds a canonical basis for the Heisenberg model on the lattice.
-    #     No symmetries, hamming_weight = number_spins // 2, spin_inversion = None.
-    #     """
-
-    #     if hasattr(self, "canonical_heisenberg_basis"):
-    #         return self.canonical_heisenberg_basis
-    #     number_spins = len(self.sites)
-    #     self.canonical_heisenberg_basis = ls.SpinBasis(
-    #         symmetries=ls.Symmetries([]),
-    #         number_spins=number_spins,
-    #         hamming_weight=number_spins // 2,
-    #         spin_inversion=None,
-    #     )
-    #     self.canonical_heisenberg_basis.build()
-    #     return self.canonical_heisenberg_basis
-
-    # def get_heisenberg_basis_sym(self):
-    #     """
-    #     This function builds a basis with symmetries for the Heisenberg model
-    #     on the lattice.
-
-    #     The symmetries are the automorphisms of the lattice.
-    #     hamming_weight = number_spins // 2, spin_inversion = 1.
-    #     """
-    #     if hasattr(self, "heisenberg_basis"):
-    #         return self.heisenberg_basis
-
-    #     number_spins = len(self.sites)
-    #     symmetries_lst = [
-    #         ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()
-    #     ]
-    #     symmetries = ls.Symmetries(symmetries_lst)
-    #     self.heisenberg_basis = ls.SpinBasis(
-    #         symmetries=symmetries,
-    #         number_spins=number_spins,
-    #         hamming_weight=number_spins // 2,
-    #         spin_inversion=1,
-    #     )
-    #     self.heisenberg_basis.build()
-    #     return self.heisenberg_basis
 
     def plot(
         self,
@@ -510,7 +376,10 @@ class SpinLattice:
         if scatter_kws is None:
             scatter_kws = {}
 
-        if isinstance(spins, (int, np.uint64)):
+        if isinstance(spins, (int, np.unsignedinteger)):
+            # should be np.uint64, but numpy has a bug:
+            # see https://github.com/numpy/numpy/issues/23007
+
             spins = np.array(
                 self.unpack_configurations(np.array(spins, dtype="uint64"))
             )
@@ -758,12 +627,10 @@ class ParallelogramSpinLattice(SpinLattice):
             raise ValueError("automorphisms must be 'all' or 'translations'")
 
     @overload
-    def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray:
-        ...
+    def spin_config_to_tensor(self, cfgs: npt.NDArray[np.uint64]) -> np.ndarray: ...
 
     @overload
-    def spin_config_to_tensor(self, cfgs: torch.Tensor) -> torch.Tensor:
-        ...
+    def spin_config_to_tensor(self, cfgs: torch.Tensor) -> torch.Tensor: ...
 
     def spin_config_to_tensor(
         self, cfgs: npt.NDArray[np.uint64] | torch.Tensor
@@ -791,9 +658,9 @@ class ParallelogramSpinLattice(SpinLattice):
             .merge(
                 sites_df_shifted,
                 left_on=["ix", "iy"],
-                right_on=["ix_shifted", "iy"]
-                if direction == "x"
-                else ["ix", "iy_shifted"],
+                right_on=(
+                    ["ix_shifted", "iy"] if direction == "x" else ["ix", "iy_shifted"]
+                ),
                 suffixes=("", "__shifted"),
             )[["num", "num__shifted"]]
             .set_index("num__shifted")["num"]
@@ -1310,11 +1177,9 @@ class AllToAllLattice(SpinLattice):
         self.lattice_basis = original_lattice.lattice_basis
         self.site_to_num = original_lattice.site_to_num
         sites = original_lattice.sites_df.query("is_canonical")[["ix", "iy"]].to_numpy()
-        self.edges: list[
-            tuple[tuple[npt.NDArray, npt.NDArray], int]
-        ] = [  # (start, end), kind
+        self.edges: list[tuple[tuple[npt.NDArray, npt.NDArray], int]] = [
             ((p, q), 1) for p in sites for q in sites
-        ]
+        ]  # (start, end), kind
 
     @property
     def sites_df(self) -> pd.DataFrame:
