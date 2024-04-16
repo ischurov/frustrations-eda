@@ -518,7 +518,7 @@ class ParallelogramSpinLattice(SpinLattice):
         width=1,
         height=1,
         boundary_conditions: Literal["periodic", "open"] = "periodic",
-        enumerate_along: Literal["x", "y"] | None = None,
+        enumerate_along: Literal["x", "y"] | None = "x",
         automorphisms: str = "all",
     ):
         """

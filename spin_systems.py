@@ -1,23 +1,19 @@
 import pickle
 from hashlib import md5
 from pathlib import Path
-from typing import Optional, Any
+from typing import Any
 
 import lattice_symmetries as ls
-import matplotlib.pyplot as plt
 import numpy as np
 import numpy.typing as npt
-import pandas as pd
 import scipy
 import scipy.sparse.linalg
 from loguru import logger
 from typing_extensions import Literal
+from functools import reduce
+import operator
+from typing import Callable, Iterable
 
-from misc_utils import (
-    batched_state_info_df,
-    make_packed_configurations,
-    make_unpacked_configurations,
-)
 from spin_lattices import SpinLattice
 from sympy.combinatorics import Permutation
 from sympy import Rational
@@ -52,21 +48,23 @@ class DictKeyedCache:
         if not params:
             params = {}
 
-        self.cache_dir.mkdir(exist_ok=True, parents=True)
         self.cache_dir = cache_dir
+        self.cache_dir.mkdir(exist_ok=True, parents=True)
         self.default_params = default_params
         self.params = params
 
-    def get_minimal_params(self, additional_params: dict[str, Any]) -> dict[str, Any]:
+    def get_minimal_params(self, params: dict[str, Any]) -> dict[str, Any]:
         return {
             k: v
-            for k, v in sorted((self.params | additional_params).items())
-            if v != self.default_params.get(k)
+            for k, v in sorted(params.items())
+            if k not in self.default_params or v != self.default_params[k]
         }
 
     def get_cache_id(self, additional_params: dict[str, Any]) -> str:
         return md5(
-            json.dumps(self.get_minimal_params(additional_params)).encode("utf8")
+            json.dumps(self.get_minimal_params(self.params | additional_params)).encode(
+                "utf8"
+            )
         ).hexdigest()
 
     def get_cache_path(
@@ -77,6 +75,21 @@ class DictKeyedCache:
     def get_cache(self, additional_params: dict[str, Any], suffix: str = "") -> Any:
         cache_path = self.get_cache_path(additional_params, suffix + ".pickle")
         if cache_path.exists():
+            cached_params = json.loads(
+                self.get_cache_path(additional_params, ".params.json").read_text()
+            )
+            if self.get_minimal_params(cached_params) != json.loads(
+                json.dumps(self.get_minimal_params(self.params | additional_params))
+            ):
+                logger.debug("Caching error")
+                logger.debug(f"{cached_params=}")
+                logger.debug(f"{self.params | additional_params=}")
+                logger.debug(f"{self.get_minimal_params(cached_params)=}")
+                logger.debug(
+                    f"{self.get_minimal_params(self.params | additional_params)=}"
+                )
+                raise ValueError("Caching error")
+
             return pickle.loads(cache_path.read_bytes())
         return None
 
@@ -85,8 +98,8 @@ class DictKeyedCache:
     ) -> None:
         cache_path = self.get_cache_path(additional_params, suffix + ".pickle")
         cache_path.write_bytes(pickle.dumps(value))
-        self.get_cache_path(additional_params, ".params.repr").write_text(
-            repr(self.params | additional_params)
+        self.get_cache_path(additional_params, ".params.json").write_text(
+            json.dumps(self.params | additional_params)
         )
 
 
@@ -94,14 +107,19 @@ class SpinSystem:
     def __init__(
         self,
         lattice: SpinLattice,
-        basis: ls.SpinBasis,
         hamiltonian: ls.Operator,
         ground_state_cache_dir: Path | None = None,
     ):
+        """
+        User-friendly wrapper over ls.Operator that provides methods to
+        calculate eigenstates and eigenvalues with proper caching.
+
+        It is usually better to use `spin_system` function to construct SpinSystem
+        """
         self.lattice = lattice
-        self.basis = basis
         self.hamiltonian = hamiltonian
-        self.number_spins = len(lattice.sites)
+        hamiltonian.basis.build()
+        self.number_spins = lattice.number_spins
         self.ground_state_cache = (
             DictKeyedCache(
                 cache_dir=ground_state_cache_dir,
@@ -115,8 +133,23 @@ class SpinSystem:
         self.eigenstates = None
         self.eigenvalues = None
 
+    @property
+    def basis(self) -> ls.SpinBasis:
+        return self.hamiltonian.basis  # type: ignore
+
     def get_cache_params(self) -> dict[str, Any]:
-        raise NotImplementedError
+        return {
+            "basis.number_sites": self.basis.number_sites,
+            "basis.hamming_weight": self.basis.hamming_weight,
+            "basis.spin_inversion": self.basis.spin_inversion,
+            "basis.symmetries": sorted(
+                [
+                    (symmetry.list(), (character.numerator, character.denominator))
+                    for symmetry, character in self.basis.symmetries
+                ]
+            ),
+            "hamiltonian.expression": str(self.hamiltonian.expression),
+        }
 
     def get_default_cache_params(self) -> dict[str, Any]:
         return {}
@@ -140,7 +173,7 @@ class SpinSystem:
         Unpacks all configurations in the basis into an np.array
         of one-dimensional np.arrays with 0's and 1's
         """
-        return make_unpacked_configurations(self.basis.states, self.number_spins)
+        return self.lattice.unpack_configurations(self.basis.states)
 
     def _find_cached_eigenstate(self, k) -> tuple[np.ndarray, np.ndarray] | None:
         if self.ground_state_cache is None:
@@ -203,66 +236,97 @@ class SpinSystem:
 
         return eigenvalues, eigenstates
 
-    def make_unpacked_configurations(
-        self, states: npt.NDArray[np.uint64]
-    ) -> npt.NDArray:
-        return make_unpacked_configurations(states, self.number_spins)
 
-    def make_packed_configurations(
-        self, unpacked_configurations: npt.NDArray
-    ) -> npt.NDArray[np.uint64]:
-        return make_packed_configurations(unpacked_configurations, self.number_spins)
-
-
-heisenberg_expr = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
-
-
-def heisenberg_expr_rot(phi):
-    C = f"({np.sin(phi)} σˣ₀ + {np.cos(phi)} σᶻ₀)({np.sin(phi)} σˣ₁ + {np.cos(phi)} σᶻ₁)"
-    return f"2 {C}(σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) {C} + {C} σᶻ₀ σᶻ₁{C}"
-
-
-class HeisenbergJ1J2(SpinSystem):
-    def __init__(
-        self,
-        lattice: SpinLattice,
-        basis: ls.SpinBasis,
-        J1: float = 1.0,
-        J2: float = 1.0,
-        ground_state_cache_dir: Path | None = Path("groundstates_cache"),
-        expr_str=heisenberg_expr,
-    ):
+class LatticeExpr:
+    def __init__(self, lattice: SpinLattice, expr_str: str, params: dict[int, float]):
+        self.lattice = lattice
         self.expr_str = expr_str
-
-        J1 = float(J1)
-        J2 = float(J2)
-        self.J1 = J1
-        self.J2 = J2
-
-        # Constructing the Hamiltonian
-
-        # fmt: off
-        expr = (J1 * ls.Expr(expr_str, sites=lattice.kind_to_edges[1]) + 
-                J2 * ls.Expr(expr_str, sites=lattice.kind_to_edges[2]))
-        # fmt: on
-
-        hamiltonian = ls.Operator(expr, basis)
-
-        super().__init__(
-            lattice=lattice,
-            basis=basis,
-            hamiltonian=hamiltonian,
-            ground_state_cache_dir=ground_state_cache_dir,
+        self.params = params
+        self.expr: ls.Expr = reduce(
+            operator.add,
+            (
+                j_value * ls.Expr(expr_str, sites=lattice.kind_to_edges[i])
+                for i, j_value in params.items()
+            ),
         )
 
-    def get_cache_params(self) -> dict[str, Any]:
-        return {
-            "basis.number_sites": self.basis.number_sites,
-            "basis.hamming_weight": self.basis.hamming_weight,
-            "basis.spin_inversion": self.basis.spin_inversion,
-            "basis.symmetries": [
-                (symmetry.list(), (character.numerator, character.denominator))
-                for symmetry, character in self.basis.symmetries
-            ],
-            "hamiltonian.expression": str(self.hamiltonian.expression),
-        }
+
+def heisenberg(lattice: SpinLattice, J1: float = 1.0, J2: float = 0.0) -> LatticeExpr:
+    """
+    Two-parametric Heisenberg Hamiltonian
+    """
+    return LatticeExpr(
+        lattice,
+        expr_str="2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁",
+        params={1: J1, 2: J2},
+    )
+
+
+def spin_system(
+    expr: LatticeExpr,
+    basis: Callable[[LatticeExpr], ls.Basis],
+    ground_state_cache_dir: Path | None = Path("groundstates_cache"),
+) -> SpinSystem:
+    lattice = expr.lattice
+    hamiltonian = ls.Operator(expr.expr, basis(expr))
+    return SpinSystem(lattice, hamiltonian, ground_state_cache_dir)
+
+
+def basis_factory(
+    symmetries_factory: Callable[[LatticeExpr], list[tuple[Permutation, Rational]]],
+    hamming_weight: int | Literal["half"] = "half",
+    spin_inversion: int | None = None,
+) -> Callable[[LatticeExpr], ls.Basis]:
+    """
+    Wraps symmetries_factory into a function that returns basis
+    with given symmetries, hamming_weight and spin_inversion
+
+    See `zero_sector_basis` and `no_symmetries_basis` for examples
+    """
+
+    def wrapper(expr: LatticeExpr) -> ls.Basis:
+        return ls.SpinBasis(
+            number_spins=(expr.lattice.number_spins),
+            hamming_weight=(
+                (expr.lattice.number_spins // 2)
+                if hamming_weight == "half"
+                else hamming_weight
+            ),
+            spin_inversion=spin_inversion,
+            symmetries=symmetries_factory(expr),
+        )
+
+    return wrapper
+
+
+def zero_sector_basis(
+    hamming_weight: int | Literal["half"] = "half",
+    spin_inversion: int | None = None,
+    get_permutations: Callable[
+        [LatticeExpr], Iterable[Permutation]
+    ] = lambda expr: expr.expr.permutation_group(),  # type: ignore
+) -> Callable[[LatticeExpr], ls.Basis]:
+    """
+    Creates basis with all zero sectors
+    """
+
+    return basis_factory(
+        lambda expr: [
+            (permutation, Rational(0)) for permutation in get_permutations(expr)
+        ],
+        hamming_weight=hamming_weight,
+        spin_inversion=spin_inversion,
+    )
+
+
+def no_symmetries_basis(
+    hamming_weight: int | Literal["half"] = "half",
+    spin_inversion: int | None = None,
+) -> Callable[[LatticeExpr], ls.Basis]:
+    """
+    Creates a basis without permuation symmetries
+    (but possibly with hamming_weight and spin_inversion)
+    """
+    return basis_factory(
+        lambda expr: [], hamming_weight=hamming_weight, spin_inversion=spin_inversion
+    )
