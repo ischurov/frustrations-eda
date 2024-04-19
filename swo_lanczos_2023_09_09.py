@@ -8,7 +8,7 @@ from jsonlines import jsonlines
 from loguru import logger
 from torch.utils.data import DataLoader, TensorDataset
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from misc_utils import torch_overlap as overlap
 from my_stopwatch import stopwatch
 from nqs_playground_helpers import SamplingOptions, sample_exactly

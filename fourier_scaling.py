@@ -14,7 +14,7 @@ from fourier_supervised_cleanroom import (
     mk_train_test,
     sign_signal,
 )
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from parity import calculate_fourier_transform_matrix
 from spin_lattices import KagomeLattice
 

@@ -137,6 +137,18 @@ class SpinSystem:
     def basis(self) -> ls.SpinBasis:
         return self.hamiltonian.basis  # type: ignore
 
+    def get_ground_state_coeffs(
+        self, states, apply_symmetries=True
+    ) -> npt.NDArray[np.float64 | np.complex128]:
+        if apply_symmetries:
+            raise NotImplementedError
+            # corresp_reprs, characters, norms = self.basis.state_info(states)
+            # corresp_repr_indices = self.basis.index(corresp_reprs)
+            # return np.real_if_close(
+            #     self.ground_state[corresp_repr_indices] * characters * norms
+            # )
+        return np.real_if_close(self.ground_state[self.basis.index(states)])
+
     def get_cache_params(self) -> dict[str, Any]:
         return {
             "basis.number_sites": self.basis.number_sites,
@@ -167,13 +179,6 @@ class SpinSystem:
             self.get_eigenstates(1)
         assert self.eigenvalues is not None
         return self.eigenvalues[0]
-
-    def unpack_configurations(self):
-        """
-        Unpacks all configurations in the basis into an np.array
-        of one-dimensional np.arrays with 0's and 1's
-        """
-        return self.lattice.unpack_configurations(self.basis.states)
 
     def _find_cached_eigenstate(self, k) -> tuple[np.ndarray, np.ndarray] | None:
         if self.ground_state_cache is None:
@@ -236,6 +241,51 @@ class SpinSystem:
 
         return eigenvalues, eigenstates
 
+    def to_ground_state_sector(self) -> "SpinSystem":
+        """
+        Returns a new SpinSystem with the same lattice and expression,
+        with basis taken from self.hamiltonian.expression.ground_state_sectors, whose
+        ground state energy is the same as self.ground_state_energy
+
+        If self.basis.hamming_weight or self.basis.spin_inversion is not None,
+        only sectors with the same hamming_weight or spin_inversion are considered
+
+        Returns
+        -------
+        SpinSystem
+            SpinSystem with the same lattice and expression, but different basis
+
+        Raises
+        ------
+        ValueError
+            If ground state sector with the same energy is not found
+        """
+        for basis in self.hamiltonian.expression.ground_state_sectors():
+            if (
+                self.basis.hamming_weight is not None
+                and basis.hamming_weight != self.basis.hamming_weight
+            ):
+                continue
+            if (
+                self.basis.spin_inversion is not None
+                and basis.spin_inversion != self.basis.spin_inversion
+            ):
+                continue
+
+            new_hamiltonian = ls.Operator(self.hamiltonian.expression, basis)
+            new_system = SpinSystem(
+                lattice=self.lattice,
+                hamiltonian=new_hamiltonian,
+                ground_state_cache_dir=(
+                    self.ground_state_cache.cache_dir
+                    if self.ground_state_cache
+                    else None
+                ),
+            )
+            if np.isclose(new_system.ground_energy, self.ground_energy):
+                return new_system
+        raise ValueError("Ground state sector not found")
+
 
 class LatticeExpr:
     def __init__(self, lattice: SpinLattice, expr_str: str, params: dict[int, float]):
@@ -251,13 +301,16 @@ class LatticeExpr:
         )
 
 
+heisenberg_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
+
+
 def heisenberg(lattice: SpinLattice, J1: float = 1.0, J2: float = 0.0) -> LatticeExpr:
     """
     Two-parametric Heisenberg Hamiltonian
     """
     return LatticeExpr(
         lattice,
-        expr_str="2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁",
+        expr_str=heisenberg_str,
         params={1: J1, 2: J2},
     )
 
@@ -274,7 +327,7 @@ def spin_system(
 
 def basis_factory(
     symmetries_factory: Callable[[LatticeExpr], list[tuple[Permutation, Rational]]],
-    hamming_weight: int | Literal["half"] = "half",
+    hamming_weight: int | None | Literal["half"] = "half",
     spin_inversion: int | None = None,
 ) -> Callable[[LatticeExpr], ls.Basis]:
     """
@@ -300,7 +353,7 @@ def basis_factory(
 
 
 def zero_sector_basis(
-    hamming_weight: int | Literal["half"] = "half",
+    hamming_weight: int | None | Literal["half"] = "half",
     spin_inversion: int | None = None,
     get_permutations: Callable[
         [LatticeExpr], Iterable[Permutation]
@@ -330,3 +383,18 @@ def no_symmetries_basis(
     return basis_factory(
         lambda expr: [], hamming_weight=hamming_weight, spin_inversion=spin_inversion
     )
+
+
+def ground_state_basis(
+    hamming_weight: int | Literal["half"] = "half",
+    spin_inversion: int | None = None,
+) -> Callable[[LatticeExpr], ls.Basis]:
+    def wrapper(expr: LatticeExpr) -> ls.Basis:
+        system = spin_system(
+            expr,
+            no_symmetries_basis(
+                hamming_weight=hamming_weight, spin_inversion=spin_inversion
+            ),
+        )
+        return system.to_ground_state_sector().basis
+    return wrapper

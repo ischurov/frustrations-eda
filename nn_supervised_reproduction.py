@@ -15,11 +15,13 @@ from torch import Tensor, nn
 from conv2d_circular import InvariantSpinCNNRegression
 from fourier_supervised_cleanroom import fit_fourier_series, mk_train_test, sign_signal
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from heisenberg_hamiltonians import (
-    HeisenbergJ1J2,
+from spin_systems import (
+    heisenberg,
+    no_symmetries_basis,
+    spin_system,
     SpinSystem,
-    heisenberg_expr,
-    heisenberg_expr_hadamard,
+    heisenberg_str,
+    zero_sector_basis,
 )
 from misc_utils import keep_serializable, make_unpacked_configurations
 from parity import parity, popcount
@@ -1589,6 +1591,11 @@ def main(task_id: int):
     lattice = get_lattice(config["lattice"])
     J2s = config["J2s"]
 
+    if config["hadamard_basis"]:
+        raise ValueError(
+            "Heisenberg Hamiltonian commutes with Hadamard transoform, so hadamard_basis should be False."
+        )
+
     (output_dir / str(task_id)).mkdir(parents=True, exist_ok=True)
     signal_factory = sign_signal
 
@@ -1600,17 +1607,13 @@ def main(task_id: int):
 
         for J2 in J2s:
             logger.debug(f"Running {task_id=} {J2=}. Creating system...")
-            system = HeisenbergJ1J2(
-                lattice=lattice,
-                J1=1,
-                J2=J2,
-                use_symmetries=config["use_symmetries"],
-                spin_inversion=config["spin_inversion"],
-                skip_symmetries_whitelist=config["skip_symmetries_whitelist"],
-                hamming_weight=None if config["hadamard_basis"] else "half",
-                expr_str=heisenberg_expr_hadamard
-                if config["hadamard_basis"]
-                else heisenberg_expr,
+            system = spin_system(
+                heisenberg(lattice=lattice, J1=1, J2=J2),
+                basis=(
+                    no_symmetries_basis(spin_inversion=config["spin_inversion"])
+                    if config["use_symmetries"]
+                    else zero_sector_basis(spin_inversion=config["spin_inversion"])
+                ),
             )
             system.get_eigenstates(1)
 

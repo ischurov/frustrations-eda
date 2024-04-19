@@ -13,7 +13,7 @@ from boolean_analysis import (
     SignSignalKind,
     ValueSignalKind,
 )
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from spin_lattices import KagomeLattice
 
 batch_size = 1000

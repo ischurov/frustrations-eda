@@ -8,7 +8,13 @@ import torch
 from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import (
+    SpinSystem,
+    spin_system,
+    heisenberg,
+    zero_sector_basis,
+    no_symmetries_basis,
+)
 from misc_utils import differentiable_safe_exp
 from misc_utils import torch_overlap as find_overlap
 from my_stopwatch import Stopwatch, stopwatch
@@ -149,13 +155,12 @@ def get_device(config):
     return device
 
 
-def get_eval_set(system: SpinSystem, max_size: int):
-    if len(system.canonical_basis.states) > max_size:
-        eval_set = np.random.choice(
-            system.canonical_basis.states, max_size, replace=False
-        )
+def get_eval_set(system: SpinSystem, max_size: int, canonical_basis=True):
+    basis = system.canonical_basis.states if canonical_basis else system.basis.states
+    if len(basis) > max_size:
+        eval_set = np.random.choice(basis, max_size, replace=False)
     else:
-        eval_set = system.canonical_basis.states
+        eval_set = basis
     return eval_set
 
 
@@ -191,13 +196,13 @@ def main(task_id: int):
     # lattice = TriangleLattice(6, 4)
     lattice = get_lattice(config["lattice"])
     # lattice = ChainLattice(10)
-    system = HeisenbergJ1J2(
-        lattice=lattice,
-        J1=1,
-        J2=config["J2"],
-        ground_state_cache_dir=Path("groundstates"),
-        use_symmetries=config["use_symmetries"],
-        spin_inversion=config["spin_inversion"],
+    system = spin_system(
+        heisenberg(lattice=lattice, J1=1, J2=config["J2"]),
+        basis=(
+            zero_sector_basis(spin_inversion=config["spin_inversion"])
+            if config["use_symmetries"]
+            else no_symmetries_basis(spin_inversion=config["spin_inversion"])
+        ),
     )
     true_energy, _ = system.get_eigenstates(1)
     true_energy = true_energy[0]

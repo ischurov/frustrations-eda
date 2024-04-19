@@ -9,7 +9,16 @@ import torch
 from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import (
+    ground_state_basis,
+    heisenberg,
+    SpinSystem,
+    spin_system,
+    no_symmetries_basis,
+    zero_sector_basis,
+    LatticeExpr,
+)
+from typing import Callable
 from misc_utils import differentiable_safe_exp
 from misc_utils import torch_overlap as find_overlap, get_git_revision_hash
 from my_stopwatch import Stopwatch, stopwatch
@@ -54,6 +63,7 @@ default_config = {
     "lattice": "kagome2x3",
     "J2": 1,
     "use_symmetries": False,
+    "use_symmetries.basis": "zero_sector",
     "spin_inversion": None,
     "eval_set_max_size": 50000,
     "device": "auto",
@@ -327,6 +337,37 @@ configs = {
         "max_iter": 200000,
         "J2": 0.7,
     },
+    66: {
+        "_inherit": 0,
+        "sign_reconstruction.use_true_if_true_energy_is_better": False,
+        "lattice": "kagome2x4",
+        "max_iter": 200000,
+        "sign_update_period": 10000,
+        "warm_up_overlap": 0.7,
+        "sign_reconstruction.method": "greedy_solve",
+        "use_symmetries": True,
+    },
+    67: {"_inherit": 66, "J2": 0.7},
+    68: {
+        "_inherit": 66,
+        "sign_reconstruction.use_true_if_true_energy_is_better": True,
+    },
+    69: {
+        "_inherit": 67,
+        "sign_reconstruction.use_true_if_true_energy_is_better": True,
+    },
+    70: {
+        "_inherit": 66,
+        "use_symmetries": False,
+        "max_iter": 10,
+    },
+    71: {
+        "_inherit": 66,
+        "sign_update_period": 1000,
+    },
+    72: {"_inherit": 66, "sign_update_period": 100},
+    73: {"_inherit": 66},
+    74: {"_inherit": 66, "use_symmetries.basis": "ground_state"},
 }
 
 
@@ -357,16 +398,23 @@ def get_config(task_id: int):
     return default_config | resolve_config_inheritance(task_id, configs=configs)
 
 
-def get_system(config):
+def get_basis(config) -> Callable[[LatticeExpr], ls.Basis]:
+    if not config["use_symmetries"]:
+        return no_symmetries_basis(spin_inversion=config["spin_inversion"])
+    if config["use_symmetries.basis"] == "zero_sector":
+        return zero_sector_basis(spin_inversion=config["spin_inversion"])
+    if config["use_symmetries.basis"] == "ground_state":
+        return ground_state_basis(spin_inversion=config["spin_inversion"])
+    raise ValueError(f"Unknown basis: {config['use_symmetries.basis']}")
+
+
+def get_system(
+    config: dict[str, Any], basis: Callable[[LatticeExpr], ls.Basis] | None = None
+):
+    if basis is None:
+        basis = get_basis(config)
     lattice = get_lattice(config["lattice"])
-    return HeisenbergJ1J2(
-        lattice=lattice,
-        J1=1,
-        J2=config["J2"],
-        ground_state_cache_dir=Path("groundstates"),
-        use_symmetries=config["use_symmetries"],
-        spin_inversion=config["spin_inversion"],
-    )
+    return spin_system(heisenberg(lattice=lattice, J1=1, J2=config["J2"]), basis=basis)
 
 
 def main(task_id: int):
@@ -401,16 +449,15 @@ def main(task_id: int):
     # lattice = ChainLattice(10)
     system = get_system(config)
     if config["sign_reconstruction.full_spin_regularization"] is not None:
-        full_spin_system = HeisenbergJ1J2(
-            lattice=all_to_all_lattice,
-            use_symmetries=system.use_symmetries,
-            spin_inversion=system.spin_inversion,
+        full_spin_system = spin_system(
+            heisenberg(lattice=all_to_all_lattice),
+            basis=get_basis(config),
         )
         full_spin_matrix = get_csr_hamiltonian(full_spin_system)
 
     true_energy = system.get_eigenstates(1)[0][0]
 
-    eval_set = get_eval_set(system, config["eval_set_max_size"])
+    eval_set = get_eval_set(system, config["eval_set_max_size"], canonical_basis=False)
 
     log_prob_fn = get_network(config, system)
     log_prob_fn.to(device)
@@ -420,12 +467,14 @@ def main(task_id: int):
     )
 
     true_amplitudes = torch.from_numpy(
-        np.abs(system.get_ground_state_coeffs(eval_set)).astype(np.float32)
+        np.abs(system.get_ground_state_coeffs(eval_set, apply_symmetries=False)).astype(
+            np.float32
+        )
     ).to(device)
 
     start_timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     writer = SummaryWriter(log_dir=(f"{output_dir}/{task_id}/logs/{start_timestamp}"))
-    relsigns_fn = almost_true_relsigns(system, eps=sign_noise)
+    relsigns_fn = almost_true_relsigns(system, eps=sign_noise, apply_symmetries=False)
     warm_up = True
     warm_up_finished_at = 0
     signs_updated_at = 0
@@ -486,7 +535,7 @@ def main(task_id: int):
             )
 
             if config["sign_reconstruction.use_true_if_true_energy_is_better"]:
-                true_signs = np.sign(system.get_ground_state())
+                true_signs = np.sign(system.ground_state)
                 energy_with_true_signs = get_energy(
                     true_signs,
                     system.basis,
@@ -671,9 +720,9 @@ def main(task_id: int):
                     "device": str(device),
                     "warm_up": warm_up,
                     "sign_overlap": sign_overlap,
-                    "step_since_warm_up": step - warm_up_finished_at
-                    if not warm_up
-                    else np.nan,
+                    "step_since_warm_up": (
+                        step - warm_up_finished_at if not warm_up else np.nan
+                    ),
                     "signs_updated": signs_updated,
                     "signs_updated_at": signs_updated_at,
                     "step_since_signs_updated": step - signs_updated_at,

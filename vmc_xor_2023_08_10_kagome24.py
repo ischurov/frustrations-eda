@@ -8,7 +8,7 @@ import torch
 from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from misc_utils import differentiable_safe_exp
 from misc_utils import torch_overlap as find_overlap
 from my_stopwatch import Stopwatch, stopwatch

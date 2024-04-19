@@ -16,7 +16,7 @@ from torchmetrics.classification import BinaryF1Score
 from tqdm import tqdm
 
 from fast_boolean_analysis import FourierSeries, fourier_expand
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from lattice_boolean_analysis import (
     AmplitudeMedianBinSignalKind,
     LBFFromNN,

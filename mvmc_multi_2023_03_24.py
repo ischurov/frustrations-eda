@@ -8,7 +8,7 @@ import pandas as pd
 import seaborn as sns
 
 from fast_boolean_analysis import fourier_expand
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from lattice_boolean_analysis import LBFFromEigenstateSeries
 from misc_utils import get_abslargest_terms
 from mvmc_configs import MVMCConfig

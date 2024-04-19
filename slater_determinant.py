@@ -17,7 +17,7 @@ from scipy.linalg import schur
 from scipy.optimize import minimize
 from sympy.combinatorics import Permutation
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from misc_utils import make_unpacked_configurations
 from spin_lattices import (
     KagomeLattice,

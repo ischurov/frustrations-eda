@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 
 # FROM: https://github.com/python/cpython/blob/b3722ca058f6a6d6505cf2ea9ffabaf7fb6b6e19/Lib/contextlib.py#L767-L779
 

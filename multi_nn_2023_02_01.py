@@ -15,7 +15,7 @@ import torch.utils.data
 from scipy.optimize import bisect
 from tqdm import tqdm
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from lattice_boolean_analysis import (
     AmplitudeMedianBinSignalKind,
     AmplitudeSignalKind,

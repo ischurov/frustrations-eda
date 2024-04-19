@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from mvmc_configs import MVMCConfig
 from spin_lattices import KagomeLattice, SquareLattice
 

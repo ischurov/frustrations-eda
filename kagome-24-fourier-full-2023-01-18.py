@@ -4,7 +4,7 @@ from itertools import product
 from pathlib import Path
 
 from boolean_analysis import BooleanFourierAnalyser
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from spin_lattices import KagomeLattice
 from tqdm import tqdm
 

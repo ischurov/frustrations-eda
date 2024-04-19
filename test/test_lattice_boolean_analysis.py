@@ -9,7 +9,7 @@ import pandas.testing as pdt
 import torch
 import torch.nn as nn
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from lattice_boolean_analysis import (
     AmplitudeMedianBinSignalKind,
     AmplitudeSignalKind,

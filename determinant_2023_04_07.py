@@ -16,7 +16,7 @@ from loguru import logger
 from scipy.optimize import dual_annealing
 from sympy.combinatorics import permutations
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from spin_lattices import SquareLattice1Diag, TriangularLattice
 
 self_name = Path(__file__).name

@@ -9,7 +9,7 @@ from fourier_supervised_cleanroom import (
     keep_largest_n,
     thresholded_sign,
 )
-from heisenberg_hamiltonians import SpinSystem
+from spin_systems import SpinSystem
 from spin_lattices import SpinLattice
 
 

@@ -18,7 +18,7 @@ from sklearn.metrics import accuracy_score
 from tqdm import tqdm
 
 from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
+from spin_systems import (
     SpinSystem,
     batched_state_info_df,
     make_unpacked_configurations,
@@ -355,7 +355,7 @@ class BooleanFourierAnalyzer:
                 print("Making Fourier basis state info without symmetries...")
 
             canonical_fourier_basis = ls.SpinBasis(
-                symmetries=ls.Symmetries([]),
+                symmetries=[],
                 number_spins=number_spins,
                 hamming_weight=None,
                 spin_inversion=None,

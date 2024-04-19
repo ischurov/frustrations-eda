@@ -6,7 +6,7 @@ import numpy.typing as npt
 from loguru import logger
 from scipy.sparse import diags
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from nqs_playground_helpers import forward_with_batches
 from spin_lattices import KagomeLattice
 from vmc_amplitude import find_nbd, safe_exp_numpy, transfer_signs_to_H, true_relsigns

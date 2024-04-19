@@ -22,7 +22,7 @@ from torch import Tensor
 from torch.nn.utils.convert_parameters import parameters_to_vector, vector_to_parameters
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from kagome_cnn import KagomeCNNRegression
 from misc_utils import make_unpacked_configurations
 from my_stopwatch import stopwatch

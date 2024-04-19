@@ -3,7 +3,7 @@ from pathlib import Path
 import numpy as np
 
 from fast_boolean_analysis import fourier_expand, keep_largest_n
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from lattice_boolean_analysis import LBFFromSpinSystem, SignSignalKind
 from spin_lattices import KagomeLattice
 

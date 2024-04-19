@@ -20,7 +20,7 @@ from fourier_xor_shuffle_2023_07_24 import (
     shuffle_xors,
     train,
 )
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from lattice_boolean_analysis import LBFFromSpinSystem
 from nn_xors_2023_07_18 import MLPBinaryClassifier, make_dataset
 from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice

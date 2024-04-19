@@ -14,7 +14,7 @@ from fourier_supervised_cleanroom import (
     sign_signal,
 )
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from misc_utils import keep_serializable
 from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice
 

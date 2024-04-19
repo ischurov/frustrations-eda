@@ -1,4 +1,4 @@
-from heisenberg_hamiltonians import SpinSystem
+from spin_systems import SpinSystem
 import numpy as np
 from vmc_amplitude import get_csr_hamiltonian, safe_exp_numpy
 from scipy.sparse import diags

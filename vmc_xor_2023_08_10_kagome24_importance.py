@@ -22,7 +22,7 @@ from torch import Tensor
 from torch.nn.utils import parameters_to_vector
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from kagome_cnn import KagomeCNNRegression
 from misc_utils import differentiable_safe_exp, make_unpacked_configurations
 from misc_utils import torch_overlap as find_overlap

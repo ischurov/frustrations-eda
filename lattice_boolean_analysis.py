@@ -23,7 +23,7 @@ from sklearn.metrics import accuracy_score, f1_score
 from tqdm import tqdm
 
 from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import (
+from spin_systems import (
     SpinSystem,
     batched_state_info_df,
     make_unpacked_configurations,

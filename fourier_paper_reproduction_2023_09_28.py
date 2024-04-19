@@ -25,7 +25,7 @@ from fourier_supervised_cleanroom import (
     sign_signal as thresholded_sign_signal,
 )
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name

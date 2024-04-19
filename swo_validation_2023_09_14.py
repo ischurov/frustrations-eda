@@ -11,7 +11,7 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from gcnn_naive import SplitGroupResConvNet
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from kagome_round import get_kagome27, get_kagome36
 from misc_utils import torch_overlap as overlap
 from my_stopwatch import stopwatch

@@ -17,6 +17,7 @@ from spin_systems import (
     zero_sector_basis,
     no_symmetries_basis,
     heisenberg,
+    ground_state_basis,
 )
 from spin_lattices import (
     ChainLattice,
@@ -190,6 +191,42 @@ class TestDiagonalization(TestCase):
             expr, basis=no_symmetries_basis(), ground_state_cache_dir=None
         )
         self.assertAlmostEqual(system_sym.ground_energy, system_nosym.ground_energy)
+
+    def test_to_ground_state_sector(self):
+        lattice = KagomeLattice(2, 2)
+        system = spin_system(
+            heisenberg(lattice, J1=1, J2=1),
+            basis=no_symmetries_basis(),
+            ground_state_cache_dir=None,
+        )
+        system_ground_state_sector = system.to_ground_state_sector()
+        self.assertAlmostEqual(
+            system.ground_energy,
+            system_ground_state_sector.ground_energy,
+        )
+        self.assertTrue(
+            any(
+                moment != 0
+                for permutation, moment in system_ground_state_sector.basis.symmetries
+            )
+        )
+
+    def test_ground_state_basis(self):
+        lattice = KagomeLattice(2, 2)
+        system_nosym = spin_system(
+            heisenberg(lattice, J1=1, J2=1),
+            basis=no_symmetries_basis(),
+            ground_state_cache_dir=None,
+        )
+        system_ground_state_basis = spin_system(
+            heisenberg(lattice, J1=1, J2=1),
+            basis=ground_state_basis(),
+            ground_state_cache_dir=None,
+        )
+        self.assertAlmostEqual(
+            system_nosym.ground_energy,
+            system_ground_state_basis.ground_energy,
+        )
 
     # def test_get_eigenstate_in_full_basis(self):
     #     J2 = 0.5

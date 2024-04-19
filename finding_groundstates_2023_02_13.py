@@ -3,7 +3,7 @@ from pathlib import Path
 import fire
 from loguru import logger
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from spin_lattices import KagomeLattice, SpinLattice, SquareLattice, TriangularLattice
 
 ground_state_cache_dir = Path("groundstates")

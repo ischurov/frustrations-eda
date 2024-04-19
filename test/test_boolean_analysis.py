@@ -24,7 +24,7 @@ from boolean_analysis import (
     keep_everything,
     keep_largest_n,
 )
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from parity import popcount
 from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice
 from misc_utils import make_unpacked_configurations

@@ -13,112 +13,9 @@ from scipy.special import logsumexp
 from torch import Tensor
 
 from gcnn_naive import SplitGroupResConvNet
-from heisenberg_hamiltonians import SpinSystem
+from spin_systems import SpinSystem
 from misc_utils import make_unpacked_configurations
 from my_stopwatch import stopwatch
-
-
-def apply_off_diag_to_basis_states_reference(
-    op: ls.Operator, alphas: npt.NDArray[np.uint64]
-) -> tuple[npt.NDArray[np.uint64], npt.NDArray[np.complex128], npt.NDArray[np.int64]]:
-    alphas = np.asarray(alphas, order="C", dtype=np.uint64)
-    alphas_ptr = ls.ffi.from_buffer("uint64_t[]", alphas, require_writable=False)
-
-    betas = ls.ffi.new("chpl_external_array *")
-    coeffs = ls.ffi.new("chpl_external_array *")
-    offsets = ls.ffi.new("chpl_external_array *")
-    kernels = ls.lib.ls_hs_internal_get_chpl_kernels()
-    kernels.operator_apply_off_diag(
-        op._payload, alphas.size, alphas_ptr, betas, coeffs, offsets, 0
-    )
-
-    offsets_arr = ls._chpl_external_array_as_ndarray(offsets, np.int64)
-    betas_arr = ls._chpl_external_array_as_ndarray(betas, np.uint64)[: offsets_arr[-1]]
-    coeffs_arr = ls._chpl_external_array_as_ndarray(coeffs, np.complex128)[
-        : offsets_arr[-1]
-    ]
-    return betas_arr, coeffs_arr, offsets_arr
-
-
-def apply_diag_to_basis_states_reference(
-    op: ls.Operator, alphas: npt.NDArray[np.uint64]
-) -> npt.NDArray[np.float64]:
-    alphas = np.asarray(alphas, order="C", dtype=np.uint64)
-    alphas_ptr = ls.ffi.from_buffer("uint64_t[]", alphas, require_writable=False)
-
-    coeffs = ls.ffi.new("chpl_external_array *")
-    kernels = ls.lib.ls_hs_internal_get_chpl_kernels()
-    kernels.operator_apply_diag(op._payload, alphas.size, alphas_ptr, coeffs, 0)
-
-    coeffs_arr = ls._chpl_external_array_as_ndarray(coeffs, np.float64)
-    return coeffs_arr
-
-
-def find_nbd_reference(
-    hamiltonian: ls.Operator,
-    states: npt.NDArray[np.uint64],
-    energy_baseline: float = 0.0,
-) -> tuple[csr_matrix, npt.NDArray[np.uint64]]:
-    """
-    Constructs a sparse matrix that is a slice of the Hamiltonian matrix.
-    Included rows are determined by ``states``, included columns
-
-    Parameters
-    ----------
-    system : SpinSystem
-        The system to construct the matrix for.
-
-    states : npt.NDArray[np.uint64]
-        The states whose neighbors to include in the matrix.
-
-    energy_baseline : float
-        The energy to subtract from the Hamiltonian before constructing the matrix.
-
-    Returns
-    -------
-    M : csr_matrix
-        The sparse matrix.
-
-    nbd_states : npt.NDArray[np.uint64]
-        The sorted array of neighbors.
-
-        The following holds:
-
-        ``M[i, j] = <states[i] | (H - energy_baseline) | nbd_states[j]>``
-    """
-    coeff_rows = []
-    nbd_states_rows = []
-    row_indices = [0]
-    for state in states:
-        # process neighbors
-        cur_coeffs, cur_nbd_states = map(
-            list, zip(*hamiltonian.apply_off_diag_to_basis_state(state))
-        )
-
-        # process self
-        cur_coeffs.append(
-            hamiltonian.apply_diag_to_basis_state(state) - energy_baseline
-        )
-        cur_nbd_states.append(state)
-
-        # make rows
-        coeff_rows.append(cur_coeffs)
-        nbd_states_rows.append(cur_nbd_states)
-        row_indices.append(row_indices[-1] + len(cur_coeffs))
-
-    coeffs_data = np.concatenate(coeff_rows).astype(np.float64)
-    nbd_states_data = np.concatenate(nbd_states_rows)
-    nbd_states = np.unique(nbd_states_data).astype(np.uint64)
-    nbd_indices = np.searchsorted(nbd_states, nbd_states_data)
-    row_indices = np.array(row_indices)
-
-    return (
-        csr_matrix(
-            (coeffs_data, nbd_indices, row_indices),
-            shape=(len(states), len(nbd_states)),
-        ),
-        nbd_states,
-    )
 
 
 def find_nbd(
@@ -153,42 +50,9 @@ def find_nbd(
 
         ``M[i, j] = <states[i] | (H - energy_baseline) | nbd_states[j]>``
     """
-    with stopwatch("vmc_amplitude/find_nbd/apply_off_diag"):
-        (
-            nbd_states_data,
-            coeffs_data,
-            offsets_data,
-        ) = hamiltonian.apply_off_diag_to_basis_state(states)
-    with stopwatch("vmc_amplitude/find_nbd/nbd_states"):
-        nbd_states = np.unique(np.concatenate([nbd_states_data, states])).astype(
-            np.uint64
-        )
-        # TODO: optimize this
-    with stopwatch("vmc_amplitude/find_nbd/nbd_indices"):
-        nbd_indices = np.searchsorted(nbd_states, nbd_states_data)
-        # TODO: optimize this
-
-    with stopwatch("vmc_amplitude/find_nbd/matrix_without_diag"):
-        matrix_without_diag = csr_matrix(
-            (coeffs_data, nbd_indices, offsets_data),
-            shape=(len(states), len(nbd_states)),
-        )
-
-    with stopwatch("vmc_amplitude/find_nbd/apply_diag"):
-        # Add diagonal elements
-        diag_coeffs = hamiltonian.apply_diag_to_basis_state(states) - energy_baseline
-    with stopwatch("vmc_amplitude/find_nbd/diag_indices"):
-        diag_indices = np.searchsorted(nbd_states, states)
-    with stopwatch("vmc_amplitude/find_nbd/matrix_with_diag"):
-        matrix_with_diag = (
-            matrix_without_diag
-            + csr_matrix(
-                (diag_coeffs, diag_indices, np.arange(len(states) + 1)),
-                shape=(len(states), len(nbd_states)),
-            ).tocsr()
-        )
-
-    matrix_with_diag.sum_duplicates()
+    if energy_baseline != 0.0:
+        raise NotImplementedError("energy_baseline != 0.0 not implemented")
+    matrix_with_diag, nbd_states = hamiltonian.to_partial_csr(states)
 
     return matrix_with_diag, nbd_states
 
@@ -263,12 +127,12 @@ def true_relsigns(system: SpinSystem) -> Callable[[npt.NDArray], npt.NDArray]:
 
 
 def almost_true_relsigns(
-    system: SpinSystem, eps: float
+    system: SpinSystem, eps: float, apply_symmetries=True
 ) -> Callable[[npt.NDArray], npt.NDArray]:
     def relsigns(cluster: npt.NDArray) -> npt.NDArray:
-        return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
-            [1, -1], p=[1 - eps, eps], size=len(cluster)
-        )
+        return np.sign(
+            system.get_ground_state_coeffs(cluster, apply_symmetries=apply_symmetries)
+        ) * np.random.choice([1, -1], p=[1 - eps, eps], size=len(cluster))
 
     return relsigns
 
@@ -347,7 +211,10 @@ def compute_log_local_energies(
     override_state_indices: npt.NDArray[np.int64] | None = None,
     override_nbd_matrix: csr_matrix | None = None,
     override_nbd_matrix_w_signs: csr_matrix | None = None,
-) -> tuple[npt.NDArray[np.complex128], LocalEnergiesExtras,]:
+) -> tuple[
+    npt.NDArray[np.complex128],
+    LocalEnergiesExtras,
+]:
     """
     Computes the logarithms of local energies of the given states.
 
@@ -536,14 +403,9 @@ class LogProbFn(nn.Module):
 
 
 def get_csr_hamiltonian(system: SpinSystem):
-    states, coeffs, row_idxs = system.hamiltonian.apply_off_diag_to_basis_state(
-        system.basis.states
-    )
-
-    columns = system.basis.index(states)
-    off_diagonal_matrix = csr_matrix(
-        (coeffs, columns, row_idxs),
-        shape=(system.basis.states.shape[0], system.basis.states.shape[0]),
-    )
-    diagonal = diags(system.hamiltonian.apply_diag_to_basis_state(system.basis.states))
+    """
+    Warning: only real matrices!
+    """
+    off_diagonal_matrix = system.hamiltonian.off_diag_to_csr()
+    diagonal = diags(system.hamiltonian.diag_to_array())
     return (off_diagonal_matrix + diagonal).real

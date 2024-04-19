@@ -8,13 +8,13 @@
   };
 
   inputs = {
-    nixpkgs.follows = "lattice-symmetries/nixpkgs";
+    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     flake-utils.follows = "lattice-symmetries/flake-utils";
-    lattice-symmetries.url = "github:twesterhout/lattice-symmetries/nikita";
+    lattice-symmetries.url = "github:twesterhout/lattice-symmetries/wip";
     nix-on-the-cluster.url = "github:twesterhout/nix-on-the-cluster";
     ising-glass-annealer = {
       url = "github:twesterhout/ising-glass-annealer";
-      inputs.nixpkgs.follows = "lattice-symmetries/nixpkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "lattice-symmetries/flake-utils";
     };
   };
@@ -58,9 +58,9 @@
       # Our Python dependencies
       my-python-packages = ps:
         with ps; [
-          HolisticTraceAnalysis
+          # HolisticTraceAnalysis
           bitarray
-          combinadics
+          # combinadics
           fire
           gitpython
           igraph

@@ -11,6 +11,7 @@ export PATH="/home/ishchurov/.local/bin:$PATH"
 
 cd /home/ishchurov/frustrations-eda
 
-apptainer exec --nv singularity-image-frustrations-eda.img  \
-          python ./vmc_ising.py $SLURM_ARRAY_TASK_ID
+apptainer exec --bind /usr/lib64:/usr/lib64 \
+	       --bind /sw/arch/RHEL8/EB_production/2023/software/CUDA/12.1.1/lib/:/sw/arch/RHEL8/EB_production/2023/software/CUDA/12.1.1/lib/ \
+	       singularity-image-frustrations-eda.img sh -c 'LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH python ./vmc_ising.py $SLURM_ARRAY_TASK_ID'
 

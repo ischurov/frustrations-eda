@@ -12,7 +12,7 @@ import pandas as pd
 import yaml
 
 from boolean_fourier_learner import BooleanFourierLearner
-from heisenberg_hamiltonians import HeisenbergJ1J2, make_unpacked_configurations
+from spin_systems import HeisenbergJ1J2, make_unpacked_configurations
 from spin_lattices import ChainLattice, KagomeLattice, SpinLattice, SquareLattice
 
 
@@ -33,7 +33,7 @@ def main():
         number_spins = system.number_spins
 
         fourier_basis = ls.SpinBasis(
-            system.symmetries,
+            symmetries=system.symmetries,
             number_spins=number_spins,
             hamming_weight=None,
             spin_inversion=None,

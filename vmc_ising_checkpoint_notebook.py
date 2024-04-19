@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from vmc_ising import get_energy
 from spin_lattices import AllToAllLattice
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 import fire
 
 

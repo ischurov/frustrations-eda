@@ -15,7 +15,7 @@ from fourier_supervised_cleanroom import (
     mk_train_test,
     sign_signal,
 )
-from heisenberg_hamiltonians import HeisenbergJ1J2, heisenberg_expr
+from spin_systems import spin_system, LatticeExpr, no_symmetries_basis, heisenberg_str
 from misc_utils import keep_serializable
 from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice
 
@@ -30,7 +30,7 @@ default_config = {
     "sampling_power_train": 2.0,
     "runs": 1,
     "hamming_weight": "half",
-    "expr": heisenberg_expr,
+    "expr": heisenberg_str,
     "signal_train": "sign",
     "signal_test": "sign",
 }
@@ -118,14 +118,11 @@ def main(task_id: int):
 
         for J2 in J2s:
             logger.debug(f"Running {task_id=} {J2=}. Creating system...")
-            system = HeisenbergJ1J2(
+            system = spin_system(LatticeExpr(
                 lattice=lattice,
-                J1=1,
-                J2=J2,
-                use_symmetries=False,
-                spin_inversion=None,
-                hamming_weight=config["hamming_weight"],
                 expr_str=config["expr"],
+                params={1: 1.0, 2: J2}),
+                basis=no_symmetries_basis(hamming_weight=config['hamming_weight'])
             )
             system.get_eigenstates(1)
             # if config["signal_train"] == "groundstate":
@@ -139,7 +136,7 @@ def main(task_id: int):
 
             for eps_train in config["eps_train"]:
                 logger.debug(f"{eps_train=}. Making train and test states...")
-                n_train = int(system.canonical_basis.states.shape[0] * eps_train)
+                n_train = int(system.basis.states.shape[0] * eps_train)
                 n_test = config["n_test"]
                 train_states, test_states = mk_train_test(
                     system,

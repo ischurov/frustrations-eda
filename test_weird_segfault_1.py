@@ -2,7 +2,7 @@ import lattice_symmetries as ls
 import scipy
 import scipy.sparse.linalg
 from spin_lattices import ChainLattice
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 
 def test_weird_segfault_1():
     lattice = ChainLattice(8)

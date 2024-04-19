@@ -8,7 +8,7 @@ import torch.nn as nn
 from loguru import logger
 from torch.utils.tensorboard import SummaryWriter
 
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from slater_determinant import SlaterDeterminant
 from spin_lattices import KagomeLattice, SquareLattice1Diag, TriangularLattice
 

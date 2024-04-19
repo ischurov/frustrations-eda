@@ -6,7 +6,7 @@ import numpy.typing as npt
 from nn_xors_2023_07_18 import FourierSeries
 from nn_supervised_reproduction import train, SpinDataset, get_predicted_signs
 from conv2d_circular import InvariantSpinCNNRegression, EquivariantConv2d
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import spin_system, heisenberg, zero_sector_basis
 from fourier_supervised_cleanroom import mk_train_test, thresholded_sign
 import torch
 from pathlib import Path
@@ -288,11 +288,8 @@ def main(task_id: int):
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     logger.debug(f"Torch will use device: {device}")
-    system = HeisenbergJ1J2(
-        lattice,
-        use_symmetries=True,
-        skip_symmetries_whitelist=True,
-        hamming_weight=None,
+    system = spin_system(
+        heisenberg(lattice), basis=zero_sector_basis(hamming_weight=None)
     )
     # we don't actually need Heisenberg model here
     # this is just a convenient way to make other helper functions work

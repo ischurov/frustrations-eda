@@ -6,7 +6,7 @@ import numpy.typing as npt
 import torch
 from sympy.combinatorics import Permutation, PermutationGroup
 
-from heisenberg_hamiltonians import HeisenbergJ1J2, SpinSystem
+from spin_systems import HeisenbergJ1J2, SpinSystem
 from misc_utils import make_packed_configurations, make_unpacked_configurations, one
 from spin_lattices import FactorLattice, KagomeLattice, SpinLattice
 

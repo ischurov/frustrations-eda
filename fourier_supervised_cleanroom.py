@@ -5,7 +5,7 @@ import numpy.typing as npt
 import torch
 from loguru import logger
 
-from heisenberg_hamiltonians import SpinSystem
+from spin_systems import SpinSystem
 from misc_utils import (
     hadamard_transform_pytorch_inplace,
     make_packed_configurations,
@@ -228,7 +228,7 @@ def amplitude_signal(system: SpinSystem):
 
 def do_apply_random_symmetries(reprs: npt.NDArray[np.uint64], system: SpinSystem):
     logger.debug("Unpacking")
-    reprs_unpacked = system.make_unpacked_configurations(
+    reprs_unpacked = system.lattice.unpack_configurations(
         reprs,
     )
     logger.debug("Applying random permutations")
@@ -237,7 +237,7 @@ def do_apply_random_symmetries(reprs: npt.NDArray[np.uint64], system: SpinSystem
     )
 
     logger.debug("Packing")
-    states = system.make_packed_configurations(
+    states = system.lattice.pack_configurations(
         states_unpacked,
     )
 

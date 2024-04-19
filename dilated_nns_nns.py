@@ -4,7 +4,7 @@ import numpy.typing as npt
 from nn_xors_2023_07_18 import FourierSeries
 from nn_supervised_reproduction import train, SpinDataset, get_predicted_signs
 from conv2d_circular import InvariantSpinCNNRegression, EquivariantConv2d
-from heisenberg_hamiltonians import HeisenbergJ1J2
+from spin_systems import HeisenbergJ1J2
 from fourier_supervised_cleanroom import mk_train_test, thresholded_sign
 import torch
 from pathlib import Path
