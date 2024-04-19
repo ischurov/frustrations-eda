@@ -379,6 +379,15 @@ configs = {
         "_inherit": 75,
         "warm_up_overlap": 0.6,
     },
+    77: {
+        "_inherit": 75,
+        "warm_up_overlap": 0.5,
+    },
+    78: {
+        "_inherit": 73,
+        "max_iter": 300,
+        "runs": 10,
+    },
 }
 
 

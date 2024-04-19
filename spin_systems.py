@@ -318,8 +318,26 @@ def heisenberg(lattice: SpinLattice, J1: float = 1.0, J2: float = 0.0) -> Lattic
 def spin_system(
     expr: LatticeExpr,
     basis: Callable[[LatticeExpr], ls.Basis],
-    ground_state_cache_dir: Path | None = Path("groundstates_cache"),
+    ground_state_cache_dir: Path | None | Literal[False] = None,
 ) -> SpinSystem:
+    """
+    Create a spin system based on the given lattice expression and basis.
+
+    Args:
+        expr (LatticeExpr): The lattice expression representing the spin system.
+        basis (Callable[[LatticeExpr], ls.Basis]): A function that returns the basis for the spin system.
+        ground_state_cache_dir (Path | None | Literal[False], optional): The directory to cache ground states.
+            If set to False, caching is disabled. If not provided, a default directory "groundstates_cache"
+            will be used.
+
+    Returns:
+        SpinSystem: The created spin system.
+
+    """
+    if ground_state_cache_dir == False:
+        ground_state_cache_dir = None
+    elif ground_state_cache_dir is None:
+        ground_state_cache_dir = Path("groundstates_cache")
     lattice = expr.lattice
     hamiltonian = ls.Operator(expr.expr, basis(expr))
     return SpinSystem(lattice, hamiltonian, ground_state_cache_dir)
@@ -388,13 +406,33 @@ def no_symmetries_basis(
 def ground_state_basis(
     hamming_weight: int | Literal["half"] = "half",
     spin_inversion: int | None = None,
+    ground_state_cache_dir: Path | None | Literal[False] = None,
 ) -> Callable[[LatticeExpr], ls.Basis]:
+    """
+    Creates a basis with symmetries that contains the ground state
+
+    Parameters
+    ----------
+    hamming_weight : int | Literal["half"]
+        Hamming weight
+
+    spin_inversion : int | None
+        Spin inversion
+
+    ground_state_cache_dir : Path | None
+        Directory where the ground state of the temporary system is stored
+        If None, default directory is used (groundstates_cache)
+        If False, no cache is used
+    """
+
     def wrapper(expr: LatticeExpr) -> ls.Basis:
         system = spin_system(
             expr,
             no_symmetries_basis(
                 hamming_weight=hamming_weight, spin_inversion=spin_inversion
             ),
+            ground_state_cache_dir=ground_state_cache_dir,
         )
         return system.to_ground_state_sector().basis
+
     return wrapper
