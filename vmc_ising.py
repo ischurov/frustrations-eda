@@ -327,6 +327,16 @@ configs = {
         "max_iter": 200000,
         "J2": 0.7,
     },
+    66: {
+        "_inherit": 0,
+        "sign_reconstruction.use_true_if_true_energy_is_better": False,
+        "lattice": "kagome2x4",
+        "max_iter": 200000,
+        "sign_update_period": 10000,
+        "warm_up_overlap": 0.7,
+        "sign_reconstruction.method": "greedy_solve",
+        "use_symmetries": True,
+    },
 }
 
 
@@ -671,9 +681,9 @@ def main(task_id: int):
                     "device": str(device),
                     "warm_up": warm_up,
                     "sign_overlap": sign_overlap,
-                    "step_since_warm_up": step - warm_up_finished_at
-                    if not warm_up
-                    else np.nan,
+                    "step_since_warm_up": (
+                        step - warm_up_finished_at if not warm_up else np.nan
+                    ),
                     "signs_updated": signs_updated,
                     "signs_updated_at": signs_updated_at,
                     "step_since_signs_updated": step - signs_updated_at,
