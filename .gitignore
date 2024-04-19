@@ -49,3 +49,8 @@ libcuda.so
 libcuda.so.1
 result
 singularity-image-frustrations-eda.img
+nn_supervised_reproduction_dilations_triangular6x6.png
+*.a
+*.so.*
+*.so
+libnvrtc*

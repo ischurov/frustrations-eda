@@ -87,7 +87,7 @@ def custom_signs(system: SpinSystem, signs: npt.NDArray):
 def find_sign_overlap(
     system: SpinSystem, reconstructed_signs: npt.NDArray
 ) -> float | np.floating:
-    ground_state = system.get_ground_state()
+    ground_state = system.ground_state
     reconstructed_sign_overlap = (
         (reconstructed_signs * (np.sign(ground_state))) * ground_state**2
     ).sum()
