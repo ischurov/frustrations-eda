@@ -11,6 +11,7 @@
     nixpkgs.follows = "lattice-symmetries/nixpkgs";
     flake-utils.follows = "lattice-symmetries/flake-utils";
     lattice-symmetries.url = "github:twesterhout/lattice-symmetries/nikita";
+    lattice-symmetries-wip.url = "github:twesterhout/lattice-symmetries/wip";
     nix-on-the-cluster.url = "github:twesterhout/nix-on-the-cluster";
     ising-glass-annealer = {
       url = "github:twesterhout/ising-glass-annealer";
@@ -41,14 +42,14 @@
         ];
       });
 
-      pkgs-for = system:
+      pkgs-for = system: lattice_symmetries:
         import inputs.nixpkgs {
           inherit system;
           config.allowUnfree = true;
           config.cudaSupport = true;
           config.nvidia.acceptLicense = true;
           overlays = [
-            inputs.lattice-symmetries.overlays.default
+            lattice_symmetries.overlays.default
             inputs.ising-glass-annealer.overlays.default
             inputs.nix-on-the-cluster.overlays.lilo
             torch-bin-overlay
@@ -89,44 +90,55 @@
           torchvision
           tqdm
         ];
-    in {
-      packages = inputs.flake-utils.lib.eachDefaultSystemMap (system:
-        with (pkgs-for system); {
-          default = singularity-tools.buildImage {
-            name = "frustrations-eda";
-            contents = [ (python3.withPackages my-python-packages) coreutils ];
-            diskSize = 20480;
-            memSize = 5120;
-          };
-        });
-      devShells = inputs.flake-utils.lib.eachDefaultSystemMap (system:
-        with (pkgs-for system); {
-          default = mkShell {
-            nativeBuildInputs = [
-              ffmpeg
-              (python3.withPackages my-python-packages)
-              # LSP support for Python
-              python3Packages.black
-              py-spy
-              nodePackages.pyright
-              # Nix stuff
-              nil
-              nixpkgs-fmt
-              nixfmt
-              # direnv
-              direnv
-              nvtop
-              nvtop-nvidia
-            ];
-            shellHook = ''
-                            export PROMPT_COMMAND=""
-                            export PS1='🐍 Python ${python3.version} \w $ '
-                            export LS_PATH=${lattice-symmetries.python}
-              	            export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH
-            '';
-            # LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH
 
-          };
-        });
+      buildSingularity = ps:
+        with ps;
+        singularity-tools.buildImage {
+          name = "frustrations-eda";
+          contents = [ (python3.withPackages my-python-packages) coreutils ];
+          diskSize = 20480;
+          memSize = 5120;
+
+        };
+
+      buildDevShell = ps:
+        with ps;
+        mkShell {
+          nativeBuildInputs = [
+            ffmpeg
+            (python3.withPackages my-python-packages)
+            # LSP support for Python
+            python3Packages.black
+            py-spy
+            nodePackages.pyright
+            # Nix stuff
+            nil
+            nixpkgs-fmt
+            nixfmt
+            # direnv
+            direnv
+            nvtop
+            nvtop-nvidia
+          ];
+          shellHook = ''
+                          export PROMPT_COMMAND=""
+                          export PS1='🐍 Python ${python3.version} \w $ '
+                          export LS_PATH=${lattice-symmetries.python}
+            	            export LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH
+          '';
+          # LD_LIBRARY_PATH=$PWD:$LD_LIBRARY_PATH
+
+        };
+
+    in {
+      packages = inputs.flake-utils.lib.eachDefaultSystemMap (system: {
+        default = buildSingularity (pkgs-for system inputs.lattice-symmetries);
+        wip = buildSingularity (pkgs-for system inputs.lattice-symmetries-wip); 
+      });
+
+      devShells = inputs.flake-utils.lib.eachDefaultSystemMap (system: {
+        default = buildDevShell (pkgs-for system inputs.lattice-symmetries);
+        wip = buildDevShell (pkgs-for system inputs.lattice-symmetries-wip);
+      });
     };
 }
