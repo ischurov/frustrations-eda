@@ -388,6 +388,45 @@ configs = {
         "max_iter": 300,
         "runs": 10,
     },
+    79: {
+        "_inherit": 66,
+        "J2": 0.99,
+    },
+    80: {
+        "_inherit": 0,
+        "sign_reconstruction.use_true_if_true_energy_is_better": False,
+        "lattice": "kagome2x4",
+        "max_iter": 20000,
+        "sign_update_period": 1000,
+        "warm_up_overlap": 0.7,
+        "sign_reconstruction.method": "greedy_solve",
+        "use_symmetries": True,
+        "use_symmetries.basis": "ground_state",
+        "runs": 10,
+        "J2": 0.99,
+    },
+    81: {
+        "_inherit": 80,
+        "use_symmetries.basis": "zero_sector",
+    },
+    82: {
+        "_inherit": 81,
+        "max_iter": 100,
+    },
+    83: {
+        "_inherit": 82,
+        "use_symmetries.basis": "ground_state",
+    },
+    84: {
+        "_inherit": 80,
+        "max_iter": 200000,
+        "sign_update_period": 10000,
+        "warm_up_overlap": 0.7,
+        "runs": 5,
+    },
+    85: {"_inherit": 84, "warm_up_overlap": 0.6},
+    86: {"_inherit": 84, "sign_update_period": 1000},
+    87: {"_inherit": 84, "warm_up_overlap": 0.6, "sign_update_period": 1000},
 }
 
 
@@ -451,6 +490,8 @@ def main(task_id: int):
     warm_up_overlap = config["warm_up_overlap"]
 
     output_dir_task = output_dir / str(task_id)
+
+    logger.add(output_dir_task / "log.log", backtrace=True, diagnose=True)
 
     if config["random_seed"] is not None:
         torch.manual_seed(config["random_seed"])
