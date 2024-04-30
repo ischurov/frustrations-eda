@@ -1,0 +1,35 @@
+default_config = {
+    "vmc.n_samples": 10000,
+    "vmc.lr": 1e-3,
+    "vmc.batch_size": 10000,
+    "vmc.weight_decay": 0,
+    "vmc.eval_set_max_size": 50000,
+    "vmc.device": "auto",
+    "max_iter": 15000,
+    "system.lattice": "kagome2x4",
+    "system.J2": 1,
+    "system.symmetry_basis": None,
+    "system.spin_inversion": None,
+    "random_seed": None,
+    "log_prob_fn": "invariant_cnn",
+    "log_prob_fn.invariant_cnn.dilations": None,
+    "log_prob_fn.invariant_cnn.hidden_channels": None,
+    "warm_up": "vmc_true_signs",
+    "warm_up.vmc_true_signs.overlap": 0.7,
+    "sign_reconstruction": "annealing",
+    "sign_reconstruction.update_period": 100,
+    "sign_reconstruction.annealing.number_sweeps": 100,
+    "sign_reconstruction.annealing.repetitions": 18,
+    "sign_reconstruction.full_spin_regularization": None,
+    "runs": 1,
+    "vmc.importance_sampling_iterations": 1,
+}
+
+configs = {
+    0: {
+        "log_prob_fn.invariant_cnn.hidden_channels": [32, 32, 32],
+        "log_prob_fn.invariant_cnn.kernel_size": 2,
+        "warm_up.vmc_true_signs.warm_up_overlap": 0.4,
+        "sign_reconstruction.update_period": 5,
+    },
+}

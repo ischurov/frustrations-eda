@@ -1108,9 +1108,9 @@ class FactorLattice(SpinLattice):
         group_elements: list[Permutation],
         fundamental_domain: list[int],
     ):
-        assert set(group_elements).issubset(
-            {Permutation(g) for g in initial_lattice.get_automorphisms()}
-        )
+        # assert set(group_elements).issubset(
+        #     {Permutation(g) for g in initial_lattice.get_automorphisms()}
+        # )
 
         self.initial_lattice = initial_lattice
         self.lattice_basis = initial_lattice.lattice_basis

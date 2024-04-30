@@ -94,15 +94,13 @@ def make_unpacked_configurations_torch(states: torch.Tensor, number_spins: int):
 @overload
 def make_unpacked_configurations(
     states: torch.Tensor, number_spins: int
-) -> torch.Tensor:
-    ...
+) -> torch.Tensor: ...
 
 
 @overload
 def make_unpacked_configurations(
     states: npt.NDArray, number_spins: int
-) -> npt.NDArray[np.uint64]:
-    ...
+) -> npt.NDArray[np.uint64]: ...
 
 
 def make_unpacked_configurations(
@@ -267,7 +265,9 @@ class Compose:
 
 # @torch.no_grad()
 def torch_overlap(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-    return torch.dot(x, y) / (torch.norm(x) * torch.norm(y))
+    if x.dim() != 1 or y.dim() != 1:
+        raise ValueError("Input tensors must be 1D")
+    return (x @ y) / (torch.norm(x) * torch.norm(y))
 
 
 def differentiable_safe_exp(x: torch.Tensor, normalise: bool = True) -> torch.Tensor:

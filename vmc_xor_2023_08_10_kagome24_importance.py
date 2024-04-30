@@ -96,7 +96,9 @@ def main(task_id: int):
     else:
         eval_set = system.canonical_basis.states
 
-    pairs = tuple(map(np.array, zip(*itertools.combinations(range(system.number_spins), 2))))
+    pairs = tuple(
+        map(np.array, zip(*itertools.combinations(range(system.number_spins), 2)))
+    )
     # pairs = tuple(map(np.array, zip(*system.lattice.edges_to_kind.keys())))
 
     log_prob_fn = LogProbDenseNetPairwiseXor(
@@ -111,7 +113,9 @@ def main(task_id: int):
 
     # log_prob_fn = KagomeCNNRegression(system.lattice, hidden_channels1=32, hidden_channels2=64)
     # optimizer = torch.optim.SGD(log_prob_fn.parameters(), lr=lr, momentum=momentum)
-    optimizer = torch.optim.Adam(log_prob_fn.parameters(), lr=lr, weight_decay=weight_decay)
+    optimizer = torch.optim.Adam(
+        log_prob_fn.parameters(), lr=lr, weight_decay=weight_decay
+    )
 
     true_amplitudes = torch.from_numpy(
         np.abs(system.get_ground_state_coeffs(eval_set)).astype(np.float32)
@@ -176,7 +180,9 @@ def main(task_id: int):
                     system.hamiltonian,
                     states.detach().numpy(),
                     relsigns_fn=relsigns_fn,
-                    log_prob_fn=lambda s: log_prob_fn(torch.from_numpy(s.astype(np.int64)))
+                    log_prob_fn=lambda s: log_prob_fn(
+                        torch.from_numpy(s.astype(np.int64))
+                    )
                     .view(-1)
                     .detach()
                     .numpy(),
@@ -192,9 +198,9 @@ def main(task_id: int):
             with torch.no_grad():
                 with local_sw("reweighting"):
                     new_log_probs = log_prob_fn(states).view(-1).to(torch.float64)
-                    weights = safe_exp(initial_log_weights + new_log_probs - initial_log_probs).to(
-                        torch.float32
-                    )
+                    weights = safe_exp(
+                        initial_log_weights + new_log_probs - initial_log_probs
+                    ).to(torch.float32)
                 with local_sw("energy grad"):
                     weighted_E_loc = torch.exp(log_E_loc + torch.log(weights)).real
                     grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
@@ -213,7 +219,9 @@ def main(task_id: int):
                     # Calculate full energy
                     # if sampling_mode == "exact":
                     E = torch.exp(log_E_loc).real
-                    E_full = E @ safe_exp(new_log_probs.to(torch.float32).view(-1), normalise=True)
+                    E_full = E @ safe_exp(
+                        new_log_probs.to(torch.float32).view(-1), normalise=True
+                    )
                     writer.add_scalar(
                         "loss/E_full_delta", E_full - torch.tensor(true_energy), step
                     )

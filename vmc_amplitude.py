@@ -117,11 +117,13 @@ def nbd_matrix_to_graph(
     return graph_matrix
 
 
-def true_relsigns(system: SpinSystem) -> Callable[[npt.NDArray], npt.NDArray]:
+def true_relsigns(
+    system: SpinSystem, apply_symmetries=True
+) -> Callable[[npt.NDArray], npt.NDArray]:
     def relsigns(cluster: npt.NDArray) -> npt.NDArray:
-        return np.sign(system.get_ground_state_coeffs(cluster)) * np.random.choice(
-            [-1, 1]
-        )
+        return np.sign(
+            system.get_ground_state_coeffs(cluster, apply_symmetries=apply_symmetries)
+        ) * np.random.choice([-1, 1])
 
     return relsigns
 
@@ -393,16 +395,10 @@ class LogProbFn(nn.Module):
         self.net = net
 
     def forward(self, x: Tensor) -> Tensor:
-        return self.net(
-            torch.from_numpy(
-                make_unpacked_configurations(x, self.system.number_spins).astype(
-                    np.float32
-                )
-            )
-        )
+        return self.net(self.system.lattice.unpack_configurations(x).to(torch.float32))
 
 
-def get_csr_hamiltonian(system: SpinSystem):
+def get_csr_hamiltonian(system: SpinSystem) -> csr_matrix:
     """
     Warning: only real matrices!
     """

@@ -78,7 +78,7 @@ def reconstruct_signs(
 
 
 def custom_signs(system: SpinSystem, signs: npt.NDArray):
-    def get_signs(s):
+    def get_signs(s: npt.NDArray[np.uint64]) -> npt.NDArray:
         return signs[system.basis.index(s)]
 
     return get_signs

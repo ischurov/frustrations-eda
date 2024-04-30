@@ -6,12 +6,14 @@ import numpy.typing as npt
 import torch
 from sympy.combinatorics import Permutation, PermutationGroup
 
-from spin_systems import HeisenbergJ1J2, SpinSystem
+from spin_systems import SpinSystem
 from misc_utils import make_packed_configurations, make_unpacked_configurations, one
 from spin_lattices import FactorLattice, KagomeLattice, SpinLattice
 
 
-def sample_spin_configs(number_spins: int, size: int, hamming_weight: int | None = None):
+def sample_spin_configs(
+    number_spins: int, size: int, hamming_weight: int | None = None
+):
     from combinadics import Combination
 
     def unique_sample(N, k):
@@ -33,7 +35,9 @@ def sample_spin_configs(number_spins: int, size: int, hamming_weight: int | None
             "number_spins is too large and size is too close to the number of combinations"
         )
 
-    combinations = [Combination(number_spins, hamming_weight).Element(idx).data for idx in idxs]
+    combinations = [
+        Combination(number_spins, hamming_weight).Element(idx).data for idx in idxs
+    ]
     bitstrings = np.array([np.eye(number_spins)[c].sum(axis=0) for c in combinations])
     return bitstrings
 
@@ -51,9 +55,9 @@ def get_hamming_weight(system: SpinSystem):
 def get_X_Y(system: SpinSystem, sample: int | None = None):
     if sample is None:
         states = system.basis.states
-        states_unpacked = make_unpacked_configurations(states, system.number_spins).astype(
-            np.float32
-        )
+        states_unpacked = make_unpacked_configurations(
+            states, system.number_spins
+        ).astype(np.float32)
     else:
         states_unpacked = sample_spin_configs(
             number_spins=system.number_spins,
@@ -64,19 +68,25 @@ def get_X_Y(system: SpinSystem, sample: int | None = None):
 
     X = torch.from_numpy(states_unpacked).float()
     Y = torch.log(
-        torch.from_numpy(np.real_if_close(system.get_ground_state_coeffs(states))).float().abs()
+        torch.from_numpy(np.real_if_close(system.get_ground_state_coeffs(states)))
+        .float()
+        .abs()
     )
     return X, Y
 
 
 def is_inside_starry_region(site, center, starry_region):
     # get polar coordinates of site - center:
-    r, phi = np.linalg.norm(site - center), np.arctan2(site[1] - center[1], site[0] - center[0])
+    r, phi = np.linalg.norm(site - center), np.arctan2(
+        site[1] - center[1], site[0] - center[0]
+    )
     return r <= starry_region(phi)
 
 
 def is_inside_starry_region_row(row, center, starry_region):
-    return is_inside_starry_region(row[["emb_x", "emb_y"]].to_numpy(), center, starry_region)
+    return is_inside_starry_region(
+        row[["emb_x", "emb_y"]].to_numpy(), center, starry_region
+    )
 
 
 def circle_starry_region(radius):
@@ -152,7 +162,9 @@ def overlap(x, y):
     return torch.sum(x * y) / torch.sqrt(torch.sum(x**2) * torch.sum(y**2))
 
 
-def get_generators_dict(lattice: SpinLattice, conditions: dict[str, tuple[list[int], list[int]]]):
+def get_generators_dict(
+    lattice: SpinLattice, conditions: dict[str, tuple[list[int], list[int]]]
+):
     automorphisms = set(Permutation(g) for g in lattice.get_automorphisms())
     generators = {
         name: one(filter_permutations(automorphisms, preimage, image))
@@ -171,9 +183,11 @@ def get_generators_dict(lattice: SpinLattice, conditions: dict[str, tuple[list[i
 
 
 def get_kagome27() -> tuple[SpinLattice, dict[str, Permutation]]:
-    kagome12x12 = KagomeLattice(12, 12, isotropic=True)
+    kagome12x12 = KagomeLattice(12, 12, isotropic=True, enumerate_along=None)
     u, v = kagome12x12.lattice_basis.T
-    hexagonal_center = kagome12x12.sites_df[["emb_x", "emb_y"]].mean().to_numpy() - u - v
+    hexagonal_center = (
+        kagome12x12.sites_df[["emb_x", "emb_y"]].mean().to_numpy() - u - v
+    )
 
     tx = Permutation(kagome12x12.get_translation("x"))
     ty = Permutation(kagome12x12.get_translation("y"))
@@ -204,9 +218,11 @@ def get_kagome27() -> tuple[SpinLattice, dict[str, Permutation]]:
 
 
 def get_kagome36() -> tuple[SpinLattice, dict[str, Permutation]]:
-    kagome12x12 = KagomeLattice(12, 12, isotropic=True)
+    kagome12x12 = KagomeLattice(12, 12, isotropic=True, enumerate_along=None)
     u, v = kagome12x12.lattice_basis.T
-    hexagonal_center = kagome12x12.sites_df[["emb_x", "emb_y"]].mean().to_numpy() - u - v
+    hexagonal_center = (
+        kagome12x12.sites_df[["emb_x", "emb_y"]].mean().to_numpy() - u - v
+    )
 
     tx = Permutation(kagome12x12.get_translation("x"))
     ty = Permutation(kagome12x12.get_translation("y"))

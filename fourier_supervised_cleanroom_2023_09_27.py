@@ -17,7 +17,7 @@ from fourier_supervised_cleanroom import (
 )
 from spin_systems import spin_system, LatticeExpr, no_symmetries_basis, heisenberg_str
 from misc_utils import keep_serializable
-from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice
+from spin_lattices import KagomeLattice, SquareLattice, TriangularLattice, SpinLattice
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -83,7 +83,17 @@ def get_config(task_id: int):
     return default_config | configs[task_id]
 
 
-def get_lattice(lattice_name):
+def get_lattice(lattice_name: str) -> SpinLattice:
+    if lattice_name == "kagome36round":
+        from kagome_round import get_kagome36
+
+        return get_kagome36()[0]
+
+    if lattice_name == "kagome27round":
+        from kagome_round import get_kagome27
+
+        return get_kagome27()[0]
+
     re_match = re.match(r"([a-z]+)(\d+)x(\d+)", lattice_name)
     if re_match is None:
         raise ValueError(f"Unknown lattice name {lattice_name}")
@@ -118,11 +128,11 @@ def main(task_id: int):
 
         for J2 in J2s:
             logger.debug(f"Running {task_id=} {J2=}. Creating system...")
-            system = spin_system(LatticeExpr(
-                lattice=lattice,
-                expr_str=config["expr"],
-                params={1: 1.0, 2: J2}),
-                basis=no_symmetries_basis(hamming_weight=config['hamming_weight'])
+            system = spin_system(
+                LatticeExpr(
+                    lattice=lattice, expr_str=config["expr"], params={1: 1.0, 2: J2}
+                ),
+                basis=no_symmetries_basis(hamming_weight=config["hamming_weight"]),
             )
             system.get_eigenstates(1)
             # if config["signal_train"] == "groundstate":
@@ -154,7 +164,9 @@ def main(task_id: int):
                     raise NotImplementedError
 
                 ground_truth = signal_test(test_states)
-                ground_truth_amplitude = np.abs(system.get_ground_state_coeffs(test_states))
+                ground_truth_amplitude = np.abs(
+                    system.get_ground_state_coeffs(test_states)
+                )
                 probs_test = ground_truth_amplitude**2
 
                 previous_prediction = None
@@ -165,13 +177,17 @@ def main(task_id: int):
 
                     series_truncated = keep_largest_n(series, keep_terms)
                     weight_kept = (series_truncated**2).sum() / (series**2).sum()
-                    reconstructed_signal = hadamard_transform(series_truncated, inplace=True)
+                    reconstructed_signal = hadamard_transform(
+                        series_truncated, inplace=True
+                    )
                     prediction = np.sign(reconstructed_signal[test_states])
                     # prediction_amplitude = np.abs(reconstructed_signal[test_states]) ** (
                     #     1 / config["sampling_power_train"]
                     # )
                     accuracy = np.mean(prediction == ground_truth)
-                    overlap = (prediction * ground_truth * probs_test).sum() / probs_test.sum()
+                    overlap = (
+                        prediction * ground_truth * probs_test
+                    ).sum() / probs_test.sum()
                     # overlap_amplitude = (
                     #     prediction_amplitude
                     #     @ ground_truth_amplitude
@@ -181,7 +197,9 @@ def main(task_id: int):
                     logger.debug(f"{accuracy=}, {overlap=}, {weight_kept=}")
 
                     if previous_prediction is not None:
-                        accuracy_predicted_vs_previous = np.mean(previous_prediction == prediction)
+                        accuracy_predicted_vs_previous = np.mean(
+                            previous_prediction == prediction
+                        )
                         overlap_predicted_vs_previous = (
                             previous_prediction * prediction * probs_test
                         ).sum() / probs_test.sum()

@@ -85,6 +85,14 @@ default_config = {
     "checkpoint_amplitudes_all_states_on_sign_update": False,
     "sign_reconstruction.full_spin_regularization": None,
     "runs": 1,
+    "importance_sampling_iterations": 1,
+    "resnet_block_depth": None,
+    "resnet_blocks": None,
+    "gcnn_additional_generators": ["rotation", "flip"],
+    "gcnn_extend_filter1": (1, 1),
+    "gcnn_filter_size": (2, 2),
+    "gcnn_channels": 16,
+    "gcnn_res_blocks": 4,
 }
 
 configs = {
@@ -427,6 +435,108 @@ configs = {
     85: {"_inherit": 84, "warm_up_overlap": 0.6},
     86: {"_inherit": 84, "sign_update_period": 1000},
     87: {"_inherit": 84, "warm_up_overlap": 0.6, "sign_update_period": 1000},
+    88: {
+        "_inherit": 84,
+        "lattice": "kagome3x3",
+    },
+    89: {
+        "_inherit": 88,
+        "warm_up_overlap": 0.6,
+    },
+    90: {"_inherit": 88, "sign_update_period": 1000},
+    91: {"_inherit": 88, "warm_up_overlap": 0.6, "sign_update_period": 1000},
+    92: {
+        "_inherit": 88,
+        "hidden_channels": [64, 64, 64],
+        "kernel_size": 3,
+        "batch_size": 10000,
+    },
+    93: {
+        "_inherit": 92,
+        "n_samples": 100_000,
+    },
+    94: {
+        "_inherit": 93,
+        "batch_size": 1000,
+    },
+    95: {
+        "_inherit": 93,
+        "lr": 1e-4,
+    },
+    96: {
+        "_inherit": 92,
+        "use_symmetries.basis": "zero_sector",
+    },
+    97: {
+        "_inherit": 92,
+        "lattice": "kagome2x5",
+        "use_symmetries.basis": "zero_sector",
+    },
+    98: {
+        "_inherit": 96,
+        "hidden_channels": [64, 64],
+        "kernel_size": 3,
+    },
+    99: {
+        "_inherit": 96,
+        "hidden_channels": [64, 64, 64, 64],
+        "kernel_size": 3,
+    },
+    100: {
+        "_inherit": 98,
+        "warm_up_overlap": 0.99,
+    },
+    101: {
+        "_inherit": 99,
+        "warm_up_overlap": 0.99,
+    },
+    102: {
+        "_inherit": 96,
+        "log_prob_fn": "invariant_res_cnn",
+        "resnet_blocks": 4,
+        "resnet_block_depth": 1,
+        "hidden_channels": 64,
+        "runs": 1,
+        "max_iter": 200000,
+        "warm_up_overlap": 0.99,
+    },
+    103: {
+        "_inherit": 102,
+        "resnet_blocks": 16,
+    },
+    104: {
+        "_inherit": 102,
+        "resnet_block_depth": 4,
+    },
+    105: {
+        "_inherit": 102,
+        "resnet_blocks": 16,
+        "resnet_block_depth": 4,
+    },
+    106: {
+        "_inherit": 102,
+        "warm_up_overlap": 0.7,
+        "max_iter": 50000,
+    },
+    107: {
+        "_inherit": 106,
+        "warm_up_overlap": 0.6,
+    },
+    108: {
+        "use_correct_E_full": True,
+        "sign_reconstruction.use_true_if_true_energy_is_better": False,
+        "lattice": "kagome27round",
+        "use_symmetries": True,
+        "use_symmetries.basis": "zero_sector",
+        "max_iter": 20000,
+        "sign_update_period": 1000,
+        "warm_up_overlap": 0.99,
+        "log_prob_fn": "split_group_res_conv_net",
+    },
+    109: {
+        "_inherit": 108,
+        "lattice": "kagome36round",
+    },
 }
 
 
@@ -435,11 +545,18 @@ def get_energy(
     basis: ls.Basis,
     hamiltonian: ls.Operator,
     log_prob_fn,
+    batch_size: int,
     device=torch.device("cpu"),
 ):
     probs = (
         safe_exp(
-            (log_prob_fn(torch.from_numpy(basis.states.astype(np.int64)).to(device))),
+            (
+                forward_with_batches(
+                    log_prob_fn,
+                    torch.from_numpy(basis.states.astype(np.int64)).to(device),
+                    batch_size=batch_size,
+                )
+            ),
             normalise=True,
         )
         .cpu()
@@ -551,114 +668,121 @@ def main(task_id: int):
         for step in range(max_iter):
             energy_with_true_signs = np.nan
             energy_with_reconstructed_signs = np.nan
-            if (
-                not warm_up
-                and (step - warm_up_finished_at) % config["sign_update_period"] == 0
-            ):
-                if config["checkpoint_amplitudes_all_states_on_sign_update"]:
-                    probs = (
-                        safe_exp(
-                            forward_with_batches(
-                                log_prob_fn,
-                                torch.from_numpy(
-                                    system.basis.states.astype(np.int64)
-                                ).to(device),
-                                batch_size=config["batch_size"],
-                            ),
-                            normalise=True,
+            with torch.no_grad():
+                if (
+                    not warm_up
+                    and (step - warm_up_finished_at) % config["sign_update_period"] == 0
+                ):
+                    if config["checkpoint_amplitudes_all_states_on_sign_update"]:
+
+                        probs = (
+                            safe_exp(
+                                forward_with_batches(
+                                    log_prob_fn,
+                                    torch.from_numpy(
+                                        system.basis.states.astype(np.int64)
+                                    ).to(device),
+                                    batch_size=config["batch_size"],
+                                ),
+                                normalise=True,
+                            )
+                            .cpu()
+                            .view(-1)
+                            .detach()
+                            .numpy()
                         )
-                        .cpu()
-                        .view(-1)
-                        .detach()
-                        .numpy()
-                    )
-                    amplitudes = np.sqrt(probs)
-                    torch.save(
-                        amplitudes,
-                        output_dir_task / f"amplitudes_all_states_{step-1}.pt",
-                    )
-
-                using_true_signs = False
-                logger.debug("Updating signs")
-                if config["sign_reconstruction.full_spin_regularization"] is not None:
-                    logger.debug("Using full spin regularization")
-                    matrix = (
-                        get_csr_hamiltonian(system)
-                        + config["sign_reconstruction.full_spin_regularization"]
-                        * full_spin_matrix
-                    )
-                    assert (matrix != matrix.transpose()).nnz == 0
-                else:
-                    matrix = get_csr_hamiltonian(system)
-
-                reconstructed_signs = reconstruct_signs(
-                    system.basis,
-                    matrix,
-                    log_prob_fn,
-                    how=config["sign_reconstruction.method"],
-                    number_sweeps=config["sign_reconstruction.number_sweeps"],
-                    repetitions=config["sign_reconstruction.repetitions"],
-                    device=device,
-                    force_symmetry=True,
-                )
-
-                if config["sign_reconstruction.use_true_if_true_energy_is_better"]:
-                    true_signs = np.sign(system.ground_state)
-                    energy_with_true_signs = get_energy(
-                        true_signs,
-                        system.basis,
-                        system.hamiltonian,
-                        log_prob_fn,
-                        device=device,
-                    )
-                    energy_with_reconstructed_signs = get_energy(
-                        reconstructed_signs,
-                        system.basis,
-                        system.hamiltonian,
-                        log_prob_fn,
-                        device=device,
-                    )
-                    if energy_with_true_signs < energy_with_reconstructed_signs:
-                        logger.info(
-                            "True energy is better than reconstructed, using true signs"
+                        amplitudes = np.sqrt(probs)
+                        torch.save(
+                            amplitudes,
+                            output_dir_task / f"amplitudes_all_states_{step-1}.pt",
                         )
-                        using_true_signs = True
+
+                    using_true_signs = False
+                    logger.debug("Updating signs")
+                    if (
+                        config["sign_reconstruction.full_spin_regularization"]
+                        is not None
+                    ):
+                        logger.debug("Using full spin regularization")
+                        matrix = (
+                            get_csr_hamiltonian(system)
+                            + config["sign_reconstruction.full_spin_regularization"]
+                            * full_spin_matrix
+                        )
+                        assert (matrix != matrix.transpose()).nnz == 0
                     else:
-                        logger.info(
-                            "Reconstructed energy is better than true, using reconstructed signs"
-                        )
+                        matrix = get_csr_hamiltonian(system)
 
-                relsigns_fn = custom_signs(
-                    system,
-                    true_signs if using_true_signs else reconstructed_signs,
-                )
-                if config["checkpoint_log_prob_fn_on_sign_update"]:
-                    torch.save(
-                        log_prob_fn.state_dict(),
-                        output_dir_task / f"log_prob_fn_{step-1}.pt",
-                    )
-                if config["checkpoint_signs_greedy"]:
-                    reconstructed_signs_greedy = reconstruct_signs(
+                    reconstructed_signs = reconstruct_signs(
                         system.basis,
-                        get_csr_hamiltonian(system),
+                        matrix,
                         log_prob_fn,
-                        how="greedy_solve",
+                        how=config["sign_reconstruction.method"],
+                        number_sweeps=config["sign_reconstruction.number_sweeps"],
+                        repetitions=config["sign_reconstruction.repetitions"],
                         device=device,
                         force_symmetry=True,
                     )
-                    torch.save(
-                        reconstructed_signs_greedy,
-                        output_dir_task / f"reconstructed_signs_greedy_{step-1}.pt",
+
+                    if config["sign_reconstruction.use_true_if_true_energy_is_better"]:
+                        true_signs = np.sign(system.ground_state)
+                        energy_with_true_signs = get_energy(
+                            true_signs,
+                            system.basis,
+                            system.hamiltonian,
+                            log_prob_fn,
+                            batch_size=batch_size,
+                            device=device,
+                        )
+                        energy_with_reconstructed_signs = get_energy(
+                            reconstructed_signs,
+                            system.basis,
+                            system.hamiltonian,
+                            log_prob_fn,
+                            batch_size=batch_size,
+                            device=device,
+                        )
+                        if energy_with_true_signs < energy_with_reconstructed_signs:
+                            logger.info(
+                                "True energy is better than reconstructed, using true signs"
+                            )
+                            using_true_signs = True
+                        else:
+                            logger.info(
+                                "Reconstructed energy is better than true, using reconstructed signs"
+                            )
+
+                    relsigns_fn = custom_signs(
+                        system,
+                        true_signs if using_true_signs else reconstructed_signs,
                     )
-                if config["checkpoint_signs"]:
-                    torch.save(
-                        reconstructed_signs,
-                        output_dir_task / f"reconstructed_signs_{step-1}.pt",
-                    )
-                signs_updated = True
-                signs_updated_at = step
-            else:
-                signs_updated = False
+                    if config["checkpoint_log_prob_fn_on_sign_update"]:
+                        torch.save(
+                            log_prob_fn.state_dict(),
+                            output_dir_task / f"log_prob_fn_{step-1}.pt",
+                        )
+                    if config["checkpoint_signs_greedy"]:
+                        reconstructed_signs_greedy = reconstruct_signs(
+                            system.basis,
+                            get_csr_hamiltonian(system),
+                            log_prob_fn,
+                            how="greedy_solve",
+                            device=device,
+                            force_symmetry=True,
+                        )
+                        torch.save(
+                            reconstructed_signs_greedy,
+                            output_dir_task / f"reconstructed_signs_greedy_{step-1}.pt",
+                        )
+                    if config["checkpoint_signs"]:
+                        torch.save(
+                            reconstructed_signs,
+                            output_dir_task / f"reconstructed_signs_{step-1}.pt",
+                        )
+                    signs_updated = True
+                    signs_updated_at = step
+                else:
+                    signs_updated = False
 
             with local_sw("sampling"):
                 other_options = {}
@@ -666,6 +790,7 @@ def main(task_id: int):
                     other_options["force_numpy_sampling"] = True
 
                 other_options["prob_to_float64"] = True
+                other_options["batch_size"] = batch_size
 
                 states, log_probs, all_probs = sample_exactly(
                     log_prob_fn,
@@ -684,22 +809,26 @@ def main(task_id: int):
                 states, weights = torch.unique(states.view(-1), return_counts=True)
                 weights: torch.Tensor = weights.float() / torch.sum(weights)
 
-            ipr = torch.sum(all_probs**2)
-            writer.add_scalar("loss/ipr", ipr, step)
+            with torch.no_grad():
+                ipr = torch.sum(all_probs**2)
+                writer.add_scalar("loss/ipr", ipr, step)
 
             with local_sw("local energies"):
-                log_E_loc, *_ = compute_log_local_energies(
-                    system.hamiltonian,
-                    states.cpu().detach().numpy(),
-                    relsigns_fn=relsigns_fn,
-                    log_prob_fn=lambda s: log_prob_fn(
-                        torch.from_numpy(s.astype(np.int64)).to(device)
+                with torch.no_grad():
+                    log_E_loc, *_ = compute_log_local_energies(
+                        system.hamiltonian,
+                        states.cpu().detach().numpy(),
+                        relsigns_fn=relsigns_fn,
+                        log_prob_fn=lambda s: forward_with_batches(
+                            log_prob_fn,
+                            torch.from_numpy(s.astype(np.int64)).to(device),
+                            batch_size=batch_size,
+                        )
+                        .view(-1)
+                        .cpu()
+                        .detach()
+                        .numpy(),
                     )
-                    .view(-1)
-                    .cpu()
-                    .detach()
-                    .numpy(),
-                )
 
                 log_E_loc = torch.from_numpy(log_E_loc).to(
                     device=device, dtype=torch.complex64
@@ -750,22 +879,23 @@ def main(task_id: int):
                 optimizer.step()
 
             with local_sw("evaluation"):
-                predictions = log_prob_fn(
-                    torch.from_numpy(eval_set.astype(np.float32)).to(device)
-                )
-                predicted_amplitudes = safe_exp(predictions * 0.5)
+                with torch.no_grad():
+                    predictions = log_prob_fn(
+                        torch.from_numpy(eval_set.astype(np.float32)).to(device)
+                    )
+                    predicted_amplitudes = safe_exp(predictions * 0.5)
 
-                amplitude_overlap = find_overlap(
-                    true_amplitudes, predicted_amplitudes.view(-1)
-                )
-                sign_overlap = find_sign_overlap(
-                    system, relsigns_fn(system.basis.states)
-                )
+                    amplitude_overlap = find_overlap(
+                        true_amplitudes, predicted_amplitudes.view(-1)
+                    )
+                    sign_overlap = find_sign_overlap(
+                        system, relsigns_fn(system.basis.states)
+                    )
 
-                writer.add_scalar("overlap", amplitude_overlap, step)
-                logger.info(
-                    f"{step}: amplitude_overlap = {amplitude_overlap:.3f}, sign_overlap = {sign_overlap:.3f},  ‖∇E‖₂ = {grad_norm:.3f}"
-                )
+                    writer.add_scalar("overlap", amplitude_overlap, step)
+                    logger.info(
+                        f"{step}: amplitude_overlap = {amplitude_overlap:.3f}, sign_overlap = {sign_overlap:.3f},  ‖∇E‖₂ = {grad_norm:.3f}"
+                    )
 
             if (
                 config["checkpoint_log_prob_fn_each"]

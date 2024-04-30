@@ -30,6 +30,7 @@ from vmc_amplitude import (
     LogProbDenseNetPairwiseXor,
     almost_true_relsigns,
     compute_log_local_energies,
+    LogProbFn,
 )
 from dilated_nns_xors import resolve_config_inheritance
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
@@ -37,7 +38,10 @@ from typing import Any
 import torch
 from torch import nn
 import jsonlines
-from conv2d_circular import InvariantSpinCNNRegression
+from conv2d_circular import InvariantSpinCNNRegression, InvariantSpinCNNResRegression
+from kagome_round import get_kagome36, get_kagome27
+from gcnn_naive import SplitGroupResConvNet
+
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -135,7 +139,7 @@ def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
             hidden_layers=config["hidden_layers"],
             xor_pairs=pairs,
         )
-    elif config["log_prob_fn"] == "invariant_cnn":
+    if config["log_prob_fn"] == "invariant_cnn":
         assert isinstance(system.lattice, ParallelogramSpinLattice)
         return InvariantSpinCNNRegression(
             lattice=system.lattice,
@@ -143,6 +147,50 @@ def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
             dilations=config["dilations"],
             kernel_size=config["kernel_size"],
         )
+    if config["log_prob_fn"] == "invariant_res_cnn":
+        assert isinstance(system.lattice, ParallelogramSpinLattice)
+        return InvariantSpinCNNResRegression(
+            lattice=system.lattice,
+            hidden_channels=config["hidden_channels"],
+            kernel_size=config["kernel_size"],
+            resnet_blocks=config["resnet_blocks"],
+            resnet_block_depth=config["resnet_block_depth"],
+        )
+    if config["log_prob_fn"] == "split_group_res_conv_net":
+        if config["lattice"] == "kagome36round":
+            lattice, generators = get_kagome36()
+            filter1_sites = [10, 19, 20, 21, 22, 12, 13, 11, 9, 18, 31, 23]
+        elif config["lattice"] == "kagome27round":
+            lattice, generators = get_kagome27()
+            filter1_sites = [14, 15, 16, 17, 8, 6, 13, 24, 18, 9, 7, 5]
+        else:
+            raise ValueError(
+                f"Lattice {config['lattice']} not supported with split_group_res_conv_net"
+            )
+        assert lattice.edges_to_kind == system.lattice.edges_to_kind
+
+        additional_generators = config["gcnn_additional_generators"]
+        extend_filter1 = config["gcnn_extend_filter1"]
+        filter_size = config["gcnn_filter_size"]
+        channels = config["gcnn_channels"]
+        blocks = config["gcnn_res_blocks"]
+
+        return LogProbFn(
+            system,
+            SplitGroupResConvNet(
+                tx=generators["tx"],
+                ty=generators["ty"],
+                filter1_sites=filter1_sites,
+                additional_generators=[
+                    generators[gen] for gen in additional_generators
+                ],
+                extend_filter1=extend_filter1,
+                filter_size=filter_size,
+                channels=channels,
+                blocks=blocks,
+            ),
+        )
+
     else:
         raise ValueError(f"Unknown architecture {config['architecture']}")
 

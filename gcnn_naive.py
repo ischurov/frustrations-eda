@@ -52,7 +52,9 @@ class GConvLattice(nn.Module):
         return output
 
     def forward(self, batch: torch.Tensor):
-        filter_extended = torch.zeros((self.out_channels, self.number_spins))
+        filter_extended = torch.zeros(
+            (self.out_channels, self.number_spins), device=self.filter.device
+        )
 
         filter_extended[:, self.filter_idxs] = self.filter
 
@@ -131,11 +133,9 @@ class GConvG(nn.Module):
         return output
 
     def forward(self, batch: torch.Tensor):
-        output = torch.zeros(
-            (batch.size()[0], self.out_channels, len(self.group_elements))
-        )
         filter_extended = torch.zeros(
-            (self.out_channels, self.in_channels, len(self.group_elements))
+            (self.out_channels, self.in_channels, len(self.group_elements)),
+            device=self.filter.device,
         )
         filter_extended[:, :, self.filter_idxs] = self.filter
 

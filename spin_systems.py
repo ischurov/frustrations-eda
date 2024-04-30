@@ -260,6 +260,8 @@ class SpinSystem:
         ValueError
             If ground state sector with the same energy is not found
         """
+        smallest_energy = None
+        ground_state_system = None
         for basis in self.hamiltonian.expression.ground_state_sectors():
             if (
                 self.basis.hamming_weight is not None
@@ -282,9 +284,13 @@ class SpinSystem:
                     else None
                 ),
             )
-            if np.isclose(new_system.ground_energy, self.ground_energy):
-                return new_system
-        raise ValueError("Ground state sector not found")
+            if smallest_energy is None or new_system.ground_energy < smallest_energy:
+                smallest_energy = new_system.ground_energy
+                ground_state_system = new_system
+
+        if ground_state_system is None:
+            raise ValueError("No sectors to consider")
+        return ground_state_system
 
 
 class LatticeExpr:
