@@ -96,4 +96,5 @@ configs = {
         "vmc.inner_sample_size": 10_000,
     },
     7: {"_inherit": 4, "sign_reconstruction.extension_steps": 2},
+    8: {"_inherit": 7, "vmc.outer_sample_size": 10_000, "vmc.inner_sample_size": 1000},
 }

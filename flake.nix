@@ -95,7 +95,7 @@
           default = singularity-tools.buildImage {
             name = "frustrations-eda";
             contents = [ (python3.withPackages my-python-packages) coreutils ];
-            diskSize = 20480;
+            diskSize = 350480;
             memSize = 5120;
           };
         });

@@ -168,11 +168,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1711559871,
-        "narHash": "sha256-3x/F3WcM2n5o/UO7ltv7ZPzTlhDCAazCDJ5BiXIGUtY=",
+        "lastModified": 1713897462,
+        "narHash": "sha256-Qpwu2143jBquNIEFT1L2f3/5Tg7Wl2jEmuGa1CXGQmA=",
         "owner": "twesterhout",
         "repo": "lattice-symmetries",
-        "rev": "baa15f3f820522d1e320e15ae6e6ff99c97d772c",
+        "rev": "15ec834cd164f97483a3c7d2b79c1699ddbab635",
         "type": "github"
       },
       "original": {
@@ -274,11 +274,11 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1711715736,
-        "narHash": "sha256-9slQ609YqT9bT/MNX9+5k5jltL9zgpn36DpFB7TkttM=",
+        "lastModified": 1713805509,
+        "narHash": "sha256-YgSEan4CcrjivCNO5ZNzhg7/8ViLkZ4CB/GrGBVSudo=",
         "owner": "nixos",
         "repo": "nixpkgs",
-        "rev": "807c549feabce7eddbf259dbdcec9e0600a0660d",
+        "rev": "1e1dc66fe68972a76679644a5577828b6a7e8be4",
         "type": "github"
       },
       "original": {
