@@ -13,9 +13,9 @@ from scipy.special import logsumexp
 from torch import Tensor
 
 from gcnn_naive import SplitGroupResConvNet
-from spin_systems import SpinSystem
 from misc_utils import make_unpacked_configurations
 from my_stopwatch import stopwatch
+from spin_systems import SpinSystem
 
 
 def find_nbd(
@@ -57,64 +57,64 @@ def find_nbd(
     return matrix_with_diag, nbd_states
 
 
-def nbd_matrix_to_graph(
-    states: np.ndarray, nbd_matrix: csr_matrix, nbd_states: np.ndarray
-) -> csr_matrix:
-    """
-    Constructs a graph from a neighborhood matrix (see ``find_nbd``):
+# def nbd_matrix_to_graph(
+#     states: np.ndarray, nbd_matrix: csr_matrix, nbd_states: np.ndarray
+# ) -> csr_matrix:
+#     """
+#     Constructs a graph from a neighborhood matrix (see ``find_nbd``):
 
-    - Expands matrix to make it square. Rows are rearranged to align them
-        with columns, indexed by ``nbd_states``. I.e. row ``i`` corresponds to
-        ``nbd_states[i]``.
+#     - Expands matrix to make it square. Rows are rearranged to align them
+#         with columns, indexed by ``nbd_states``. I.e. row ``i`` corresponds to
+#         ``nbd_states[i]``.
 
-    - Symmetrizes the matrix.
+#     - Symmetrizes the matrix.
 
-    - Converts to a graph by thresholding at 0.
-    """
-    # Get the non-zero elements of the nbd_matrix.
-    with stopwatch("vmc_amplitude/nbd_matrix_to_graph/nonzero"):
-        nonzero_row, nonzero_col = nbd_matrix.nonzero()
-        n_nonzero = len(nonzero_row)
-        assert len(nonzero_col) == n_nonzero
+#     - Converts to a graph by thresholding at 0.
+#     """
+#     # Get the non-zero elements of the nbd_matrix.
+#     with stopwatch("vmc_amplitude/nbd_matrix_to_graph/nonzero"):
+#         nonzero_row, nonzero_col = nbd_matrix.nonzero()
+#         n_nonzero = len(nonzero_row)
+#         assert len(nonzero_col) == n_nonzero
 
-    # Map the original indices of the states to the corresponding indices in nbd_states.
-    with stopwatch("vmc_amplitude/nbd_matrix_to_graph/state_indices"):
-        state_indices = np.searchsorted(nbd_states, states)
-        mapped_row_indices = state_indices[nonzero_row]
+#     # Map the original indices of the states to the corresponding indices in nbd_states.
+#     with stopwatch("vmc_amplitude/nbd_matrix_to_graph/state_indices"):
+#         state_indices = np.searchsorted(nbd_states, states)
+#         mapped_row_indices = state_indices[nonzero_row]
 
-    # Create two COO matrices: one for the original non-zero elements, and one for the transposed elements.
+#     # Create two COO matrices: one for the original non-zero elements, and one for the transposed elements.
 
-    with stopwatch("vmc_amplitude/nbd_matrix_to_graph/prepare_coo_data"):
-        data = np.ones(shape=(2 * n_nonzero,), dtype=np.uint8)
-        full_row_indices = np.concatenate([mapped_row_indices, nonzero_col])
-        full_col_indices = np.concatenate([nonzero_col, mapped_row_indices])
+#     with stopwatch("vmc_amplitude/nbd_matrix_to_graph/prepare_coo_data"):
+#         data = np.ones(shape=(2 * n_nonzero,), dtype=np.uint8)
+#         full_row_indices = np.concatenate([mapped_row_indices, nonzero_col])
+#         full_col_indices = np.concatenate([nonzero_col, mapped_row_indices])
 
-    # TODO: sort ?
+#     # TODO: sort ?
 
-    # Add the two COO matrices and convert to a CSR matrix for efficient arithmetic operations.
-    with stopwatch("vmc_amplitude/nbd_matrix_to_graph/symmetric_matrix"):
-        symmetric_matrix = csr_matrix(
-            (data, (full_row_indices, full_col_indices)),
-            shape=(len(nbd_states), len(nbd_states)),
-        )
+#     # Add the two COO matrices and convert to a CSR matrix for efficient arithmetic operations.
+#     with stopwatch("vmc_amplitude/nbd_matrix_to_graph/symmetric_matrix"):
+#         symmetric_matrix = csr_matrix(
+#             (data, (full_row_indices, full_col_indices)),
+#             shape=(len(nbd_states), len(nbd_states)),
+#         )
 
-    # with stopwatch("vmc_amplitude/DEBUG/nbd_matrix_to_graph/half-symmetric-matrix1"):
-    #     half_symmetric_matrix = csr_matrix(
-    #         (np.ones_like(mapped_row_indices), (mapped_row_indices, nonzero_col)),
-    #         shape=(len(nbd_states), len(nbd_states)),
-    #     )
+#     # with stopwatch("vmc_amplitude/DEBUG/nbd_matrix_to_graph/half-symmetric-matrix1"):
+#     #     half_symmetric_matrix = csr_matrix(
+#     #         (np.ones_like(mapped_row_indices), (mapped_row_indices, nonzero_col)),
+#     #         shape=(len(nbd_states), len(nbd_states)),
+#     #     )
 
-    # with stopwatch("vmc_amplitude/DEBUG/nbd_matrix_to_graph/half-symmetric-matrix2"):
-    #     half_symmetric_matrix = csr_matrix(
-    #         (np.ones_like(mapped_row_indices), (nonzero_col, mapped_row_indices)),
-    #         shape=(len(nbd_states), len(nbd_states)),
-    #     )
+#     # with stopwatch("vmc_amplitude/DEBUG/nbd_matrix_to_graph/half-symmetric-matrix2"):
+#     #     half_symmetric_matrix = csr_matrix(
+#     #         (np.ones_like(mapped_row_indices), (nonzero_col, mapped_row_indices)),
+#     #         shape=(len(nbd_states), len(nbd_states)),
+#     #     )
 
-    # Threshold at 0.
-    with stopwatch("vmc_amplitude/nbd_matrix_to_graph/graph_matrix"):
-        graph_matrix = (symmetric_matrix != 0).astype(np.uint8)
+#     # Threshold at 0.
+#     with stopwatch("vmc_amplitude/nbd_matrix_to_graph/graph_matrix"):
+#         graph_matrix = (symmetric_matrix != 0).astype(np.uint8)
 
-    return graph_matrix
+#     return graph_matrix
 
 
 def true_relsigns(
@@ -158,23 +158,9 @@ def transfer_signs_to_H(
     Moves the signs from the relative signs to the Hamiltonian matrix.
     """
 
-    graph = nbd_matrix_to_graph(states, M, nbd_states)
-    with stopwatch("vmc_amplitude/transfer_signs_to_H/connected_components"):
-        _, labels = connected_components(graph, directed=False)
-
-    relsigns = np.empty(len(nbd_states), dtype=np.int8)
-    with stopwatch("vmc_amplitude/transfer_signs_to_H/relsigns"):
-        for component in np.unique(labels):
-            component_mask = labels == component
-            cluster = nbd_states[component_mask]
-            relsigns[component_mask] = relsign_fn(cluster)
-
-    with stopwatch("vmc_amplitude/transfer_signs_to_H/state_indices"):
-        state_indices = np.searchsorted(nbd_states, states)
-
-    with stopwatch("vmc_amplitude/transfer_signs_to_H/M_with_signs"):
-        M_with_signs = diags(relsigns[state_indices]) @ M @ diags(relsigns)
-        # TODO: optimize
+    relsigns = relsign_fn(nbd_states)
+    state_indices = np.searchsorted(nbd_states, states)
+    M_with_signs = diags(relsigns[state_indices]) @ M @ diags(relsigns)
 
     return M_with_signs
 
@@ -289,36 +275,36 @@ def compute_log_local_energies(
     )
 
 
-def compute_local_energies(
-    hamiltonian: ls.Operator,
-    states: npt.NDArray[np.uint64],
-    relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
-    log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
-) -> npt.NDArray[np.float64]:
-    nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
-    nbd_matrix_w_signs = transfer_signs_to_H(
-        states, nbd_matrix, nbd_states, relsigns_fn
-    )
-    abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
-    states_indices = np.searchsorted(nbd_states, states)
-    abs_psi_states = abs_psi_nbd[states_indices]
-    return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
+# def compute_local_energies(
+#     hamiltonian: ls.Operator,
+#     states: npt.NDArray[np.uint64],
+#     relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
+#     log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
+# ) -> npt.NDArray[np.float64]:
+#     nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
+#     nbd_matrix_w_signs = transfer_signs_to_H(
+#         states, nbd_matrix, nbd_states, relsigns_fn
+#     )
+#     abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
+#     states_indices = np.searchsorted(nbd_states, states)
+#     abs_psi_states = abs_psi_nbd[states_indices]
+#     return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
 
 
-def compute_local_energies_reference(
-    hamiltonian: ls.Operator,
-    states: npt.NDArray[np.uint64],
-    relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
-    log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
-) -> npt.NDArray[np.float64]:
-    nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
-    nbd_matrix_w_signs = transfer_signs_to_H(
-        states, nbd_matrix, nbd_states, relsigns_fn
-    )
-    abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
-    states_indices = np.searchsorted(nbd_states, states)
-    abs_psi_states = abs_psi_nbd[states_indices]
-    return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
+# def compute_local_energies_reference(
+#     hamiltonian: ls.Operator,
+#     states: npt.NDArray[np.uint64],
+#     relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
+#     log_prob_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
+# ) -> npt.NDArray[np.float64]:
+#     nbd_matrix, nbd_states = find_nbd_reference(hamiltonian, states)
+#     nbd_matrix_w_signs = transfer_signs_to_H(
+#         states, nbd_matrix, nbd_states, relsigns_fn
+#     )
+#     abs_psi_nbd = safe_exp_numpy(log_prob_fn(nbd_states) * 0.5)
+#     states_indices = np.searchsorted(nbd_states, states)
+#     abs_psi_states = abs_psi_nbd[states_indices]
+#     return nbd_matrix_w_signs @ abs_psi_nbd / abs_psi_states
 
 
 class LogProbDenseNet(nn.Module):

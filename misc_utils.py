@@ -1,8 +1,11 @@
+import os
 from collections.abc import Callable, Iterable
+from functools import singledispatch
 from math import ceil, sqrt
 from pathlib import Path
 from typing import overload
 
+import git
 import jsonlines
 import lattice_symmetries as ls
 import numpy as np
@@ -10,9 +13,7 @@ import numpy.typing as npt
 import pandas as pd
 import torch
 from loguru import logger
-from functools import singledispatch
-import git
-import os
+from scipy.sparse import csr_matrix, diags, tril, triu
 
 ### BASED ON: https://github.com/amitport/hadamard-transform
 ### MIT LICENSE
@@ -322,3 +323,59 @@ def get_git_revision_hash() -> str:
 
 
 ### END FROM
+
+
+### BASED ON: https://stackoverflow.com/a/72005790/3025981
+def unique_with_first_indices(
+    values: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    unique_values, indices, counts = torch.unique(
+        values, return_inverse=True, return_counts=True
+    )
+
+    _, ind_sorted = torch.sort(indices, stable=True)
+    cum_sum = counts.cumsum(0)
+    cum_sum = torch.cat((torch.tensor([0]), cum_sum[:-1]))
+    first_indicies = ind_sorted[cum_sum]
+    return unique_values, indices, counts, first_indicies
+
+
+### END BASED
+
+
+def smooth(column, window, groupby=None):
+    def wrapper(df):
+        if groupby is not None:
+            return (
+                df.groupby(groupby)
+                .apply(
+                    lambda group_df: group_df.assign(
+                        **{
+                            column: lambda df: df[column]
+                            .rolling(window, center=True)
+                            .mean()
+                        }
+                    )
+                )
+                .dropna(subset=[column])
+                .reset_index(level=0, drop=True)
+            )
+        else:
+            return df.assign(
+                **{column: lambda df: df[column].rolling(window, center=True).mean()}
+            ).dropna(subset=[column])
+
+    return wrapper
+
+
+def force_csr_symmetric(matrix: csr_matrix) -> csr_matrix:
+    # Get the upper triangular part of the matrix
+    upper_triangular = triu(matrix)
+
+    # Transpose the upper triangular part
+    upper_triangular_transposed = tril(upper_triangular.T, k=-1)
+
+    # Replace the lower triangular part with the transposed upper triangular
+    symmetric_matrix = upper_triangular + upper_triangular_transposed
+
+    return symmetric_matrix

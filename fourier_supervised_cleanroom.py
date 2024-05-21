@@ -286,9 +286,11 @@ def mk_train_test(
     return train_states, test_states
 
 
-def sign_signal(system: SpinSystem, tol=0.0):
+def sign_signal(system: SpinSystem, tol=0.0, apply_symmetries=True):
     def wrapper(s):
-        ground_state = system.get_ground_state_coeffs(s)
+        ground_state = system.get_ground_state_coeffs(
+            s, apply_symmetries=apply_symmetries
+        )
         return thresholded_sign(ground_state, tol=tol)
 
     return wrapper

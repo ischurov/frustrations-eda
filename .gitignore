@@ -54,3 +54,4 @@ nn_supervised_reproduction_dilations_triangular6x6.png
 *.so.*
 *.so
 libnvrtc*
+figures/*.png

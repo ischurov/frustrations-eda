@@ -1,20 +1,21 @@
 import itertools
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import fire
+import jsonlines
 import numpy as np
 import torch
 from loguru import logger
+from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
-from spin_systems import (
-    SpinSystem,
-    spin_system,
-    heisenberg,
-    zero_sector_basis,
-    no_symmetries_basis,
-)
+from conv2d_circular import InvariantSpinCNNRegression, InvariantSpinCNNResRegression
+from dilated_nns_xors import resolve_config_inheritance
+from fourier_supervised_cleanroom_2023_09_27 import get_lattice
+from gcnn_naive import SplitGroupResConvNet
+from kagome_round import get_kagome27, get_kagome36
 from misc_utils import differentiable_safe_exp
 from misc_utils import torch_overlap as find_overlap
 from my_stopwatch import Stopwatch, stopwatch
@@ -26,22 +27,19 @@ from nqs_playground_helpers import (
     split_into_batches,
 )
 from spin_lattices import KagomeLattice, ParallelogramSpinLattice
+from spin_systems import (
+    SpinSystem,
+    heisenberg,
+    no_symmetries_basis,
+    spin_system,
+    zero_sector_basis,
+)
 from vmc_amplitude import (
     LogProbDenseNetPairwiseXor,
+    LogProbFn,
     almost_true_relsigns,
     compute_log_local_energies,
-    LogProbFn,
 )
-from dilated_nns_xors import resolve_config_inheritance
-from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from typing import Any
-import torch
-from torch import nn
-import jsonlines
-from conv2d_circular import InvariantSpinCNNRegression, InvariantSpinCNNResRegression
-from kagome_round import get_kagome36, get_kagome27
-from gcnn_naive import SplitGroupResConvNet
-
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -135,45 +133,84 @@ def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
         )
         return LogProbDenseNetPairwiseXor(
             system,
-            n_hidden=config["n_hidden"],
-            hidden_layers=config["hidden_layers"],
+            n_hidden=config.get(
+                "n_hidden", config.get("log_prob_fn.dense_pairwise_xor.n_hidden")
+            ),
+            hidden_layers=config.get(
+                "hidden_layers",
+                config.get("log_prob_fn.dense_pairwise_xor.hidden_layers"),
+            ),
             xor_pairs=pairs,
         )
     if config["log_prob_fn"] == "invariant_cnn":
         assert isinstance(system.lattice, ParallelogramSpinLattice)
         return InvariantSpinCNNRegression(
             lattice=system.lattice,
-            hidden_channels=config["hidden_channels"],
-            dilations=config["dilations"],
-            kernel_size=config["kernel_size"],
+            hidden_channels=config.get(
+                "hidden_channels",
+                config.get("log_prob_fn.invariant_cnn.hidden_channels"),
+            ),
+            dilations=config.get(
+                "dilations", config.get("log_prob_fn.invariant_cnn.dilations")
+            ),
+            kernel_size=config.get(
+                "kernel_size", config.get("log_prob_fn.invariant_cnn.kernel_size")
+            ),
         )
     if config["log_prob_fn"] == "invariant_res_cnn":
         assert isinstance(system.lattice, ParallelogramSpinLattice)
         return InvariantSpinCNNResRegression(
             lattice=system.lattice,
-            hidden_channels=config["hidden_channels"],
-            kernel_size=config["kernel_size"],
-            resnet_blocks=config["resnet_blocks"],
-            resnet_block_depth=config["resnet_block_depth"],
+            hidden_channels=config.get(
+                "hidden_channels",
+                config.get("log_prob_fn.invariant_res_cnn.hidden_channels"),
+            ),
+            kernel_size=config.get(
+                "kernel_size", config.get("log_prob_fn.invariant_res_cnn.kernel_size")
+            ),
+            resnet_blocks=config.get(
+                "resnet_blocks",
+                config.get("log_prob_fn.invariant_res_cnn.resnet_blocks"),
+            ),
+            resnet_block_depth=config.get(
+                "resnet_block_depth",
+                config.get("log_prob_fn.invariant_res_cnn.resnet_block_depth"),
+            ),
         )
     if config["log_prob_fn"] == "split_group_res_conv_net":
-        if config["lattice"] == "kagome36round":
+        lattice_name = config.get("lattice", config.get("system.lattice"))
+        if lattice_name == "kagome36round":
             lattice, generators = get_kagome36()
             filter1_sites = [10, 19, 20, 21, 22, 12, 13, 11, 9, 18, 31, 23]
-        elif config["lattice"] == "kagome27round":
+        elif lattice_name == "kagome27round":
             lattice, generators = get_kagome27()
             filter1_sites = [14, 15, 16, 17, 8, 6, 13, 24, 18, 9, 7, 5]
         else:
             raise ValueError(
-                f"Lattice {config['lattice']} not supported with split_group_res_conv_net"
+                f"Lattice {lattice_name} not supported with split_group_res_conv_net"
             )
         assert lattice.edges_to_kind == system.lattice.edges_to_kind
 
-        additional_generators = config["gcnn_additional_generators"]
-        extend_filter1 = config["gcnn_extend_filter1"]
-        filter_size = config["gcnn_filter_size"]
-        channels = config["gcnn_channels"]
-        blocks = config["gcnn_res_blocks"]
+        additional_generators = config.get(
+            "gcnn_additional_generators",
+            config.get("log_prob_fn.split_group_res_conv_net.additional_generators"),
+        )
+        extend_filter1 = config.get(
+            "gcnn_extend_filter1",
+            config.get("log_prob_fn.split_group_res_conv_net.extend_filter1"),
+        )
+        filter_size = config.get(
+            "gcnn_filter_size",
+            config.get("log_prob_fn.split_group_res_conv_net.filter_size"),
+        )
+        channels = config.get(
+            "gcnn_channels",
+            config.get("log_prob_fn.split_group_res_conv_net.channels"),
+        )
+        blocks = config.get(
+            "gcnn_res_blocks",
+            config.get("log_prob_fn.split_group_res_conv_net.res_blocks"),
+        )
 
         return LogProbFn(
             system,
@@ -192,7 +229,7 @@ def get_network(config: dict[str, Any], system: SpinSystem) -> nn.Module:
         )
 
     else:
-        raise ValueError(f"Unknown architecture {config['architecture']}")
+        raise ValueError(f"Unknown architecture {config['log_prob_fn']}")
 
 
 def get_device(config):

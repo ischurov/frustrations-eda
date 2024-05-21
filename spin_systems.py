@@ -1,7 +1,10 @@
+import json
+import operator
 import pickle
+from functools import reduce
 from hashlib import md5
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Iterable
 
 import lattice_symmetries as ls
 import numpy as np
@@ -9,15 +12,11 @@ import numpy.typing as npt
 import scipy
 import scipy.sparse.linalg
 from loguru import logger
+from sympy import Rational
+from sympy.combinatorics import Permutation
 from typing_extensions import Literal
-from functools import reduce
-import operator
-from typing import Callable, Iterable
 
 from spin_lattices import SpinLattice
-from sympy.combinatorics import Permutation
-from sympy import Rational
-import json
 
 
 class DictKeyedCache:
@@ -188,8 +187,7 @@ class SpinSystem:
                 additional_params={"up_to_eigenstate": eigenstate}
             ):
                 logger.debug(
-                    f"Using cached version of eigenvalues / eigenstates up to {eigenstate}, "
-                    f"cache params = {self.ground_state_cache.params}"
+                    f"Using cached version of eigenvalues / eigenstates up to {eigenstate}."
                 )
                 eigenvalues, eigenstates = cached_value
                 return eigenvalues, eigenstates
@@ -310,14 +308,16 @@ class LatticeExpr:
 heisenberg_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
 
 
-def heisenberg(lattice: SpinLattice, J1: float = 1.0, J2: float = 0.0) -> LatticeExpr:
+def heisenberg(
+    lattice: SpinLattice, J1: float = 1.0, J2: float | None = 0.0
+) -> LatticeExpr:
     """
     Two-parametric Heisenberg Hamiltonian
     """
     return LatticeExpr(
         lattice,
         expr_str=heisenberg_str,
-        params={1: J1, 2: J2},
+        params={1: J1, 2: J2} if J2 is not None else {1: J1},
     )
 
 

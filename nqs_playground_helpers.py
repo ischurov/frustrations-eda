@@ -195,10 +195,12 @@ def _determine_batch_size(options: SamplingOptions) -> int:
 
 
 def split_into_batches(
-    xs: Tensor
-    | npt.NDArray
-    | tuple[Tensor | npt.NDArray, ...]
-    | list[Tensor | npt.NDArray],
+    xs: (
+        Tensor
+        | npt.NDArray
+        | tuple[Tensor | npt.NDArray, ...]
+        | list[Tensor | npt.NDArray]
+    ),
     batch_size: int,
     device=None,
 ):
@@ -244,8 +246,7 @@ def forward_with_batches(
     xs: Tensor,
     batch_size: int,
     device=None,
-) -> Tensor:
-    ...
+) -> Tensor: ...
 
 
 @overload
@@ -254,8 +255,7 @@ def forward_with_batches(
     xs: npt.NDArray,
     batch_size: int,
     device=None,
-) -> npt.NDArray:
-    ...
+) -> npt.NDArray: ...
 
 
 def forward_with_batches(
@@ -346,8 +346,7 @@ def sample_exactly(
     basis: ls.SpinBasis,
     options: SamplingOptions,
     return_all_probs: Literal[False],
-) -> tuple[torch.Tensor, torch.Tensor]:
-    ...
+) -> tuple[torch.Tensor, torch.Tensor]: ...
 
 
 @overload
@@ -356,8 +355,7 @@ def sample_exactly(
     basis: ls.SpinBasis,
     options: SamplingOptions,
     return_all_probs: Literal[True],
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    ...
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]: ...
 
 
 @torch.no_grad()
@@ -424,3 +422,84 @@ def sample_exactly(
         prob /= torch.sum(prob)
         return states.view(*shape), log_prob.view(*shape), prob
     return states.view(*shape), log_prob.view(*shape)
+
+
+class SpinDataset(torch.utils.data.IterableDataset):
+    r"""Dataset wrapping spin configurations and corresponding values.
+
+    :param spins: either a ``numpy.ndarray`` of ``uint64`` or a
+        ``torch.Tensor`` of ``int64`` containing compact spin configurations.
+    :param values: a ``torch.Tensor``.
+    :param batch_size: batch size.
+    :param shuffle: whether to shuffle the samples.
+    :param device: device where the batches will be used.
+    """
+
+    def __init__(self, spins, values, batch_size, shuffle=False, device=None):
+        if isinstance(spins, np.ndarray):
+            if spins.dtype != np.uint64:
+                raise TypeError(
+                    "spins must be a numpy.ndarray of uint64; got numpy.ndarray "
+                    "of {}".format(spins.dtype.name)
+                )
+            # Use int64 because PyTorch doesn't support uint64
+            self.spins = torch.from_numpy(spins.view(np.int64))
+        elif isinstance(spins, torch.Tensor):
+            if spins.dtype != torch.int64:
+                raise TypeError(
+                    "spins must be a torch.Tensor of int64; got torch.Tensor "
+                    "of {}".format(spins.dtype)
+                )
+            self.spins = spins
+        else:
+            raise TypeError(
+                "spins must be either a numpy.ndarray of uint64 or a "
+                "torch.Tensor of int64; got {}".format(type(spins))
+            )
+
+        if isinstance(values, torch.Tensor):
+            self.values = values
+        else:
+            raise TypeError(
+                "values must be either a torch.Tensor; got {}".format(type(spins))
+            )
+
+        if self.spins.size(0) != self.values.size(0):
+            raise ValueError(
+                "spins and values must have the same size along the first "
+                "dimension, but spins.shape={} != values.shape={}"
+                "".format(spins.size(), values.size())
+            )
+
+        if batch_size <= 0:
+            raise ValueError(
+                "invalid batch_size: {}; expected a positive integer"
+                "".format(batch_size)
+            )
+        self.batch_size = batch_size
+
+        if device is None:
+            device = self.values.device
+        elif isinstance(device, str):
+            device = torch.device(device)
+
+        self.device = device
+        self.spins = self.spins.to(self.device)
+        self.values = self.values.to(self.device)
+        self.shuffle = shuffle
+
+    def __len__(self) -> int:
+        return (self.spins.size(0) + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        if self.shuffle:
+            indices = torch.randperm(self.spins.size(0), device=self.device)
+            spins = self.spins[indices]
+            values = self.values[indices]
+        else:
+            spins = self.spins
+            values = self.values
+        return zip(
+            torch.split(spins, self.batch_size),
+            torch.split(values, self.batch_size),
+        )

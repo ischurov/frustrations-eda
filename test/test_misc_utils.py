@@ -1,6 +1,9 @@
 import sys
 
+sys.path.append(".")
+
 from loguru import logger
+from scipy.sparse import csr_matrix
 
 logger.remove()
 logger.add(sys.stderr, level="DEBUG", colorize=False)
@@ -11,11 +14,12 @@ import numpy as np
 import torch
 
 from misc_utils import (
+    force_csr_symmetric,
+    groupby_shuffle,
     hadamard_transform,
     hadamard_transform_pytorch_inplace,
     make_packed_configurations,
     make_unpacked_configurations,
-    groupby_shuffle,
 )
 
 
@@ -118,3 +122,17 @@ class TestGroupByShuffle(TestCase):
         self.assertTrue(
             np.array_equal(groups, groups[np.argsort(np.argsort(shuffled_values))])
         )
+
+
+class TestForceCsrSymmetric(TestCase):
+    def test_force_csr_symmetric(self):
+        dense = np.random.uniform(-1, 1, size=(10, 10))
+        mask = np.random.choice([True, False, False], size=(10, 10))
+        noise = np.random.uniform(-1e-6, 1e-6, size=(10, 10))
+        dense[mask] = 0
+        noise[mask] = 0
+        dense = dense + dense.T + noise
+        sparse = csr_matrix(dense)
+        symmetric_sparse = force_csr_symmetric(sparse)
+        self.assertTrue((symmetric_sparse != symmetric_sparse.transpose()).nnz == 0)
+        self.assertTrue(np.abs(symmetric_sparse - sparse).max() < 1e-5)

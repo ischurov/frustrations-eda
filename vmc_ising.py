@@ -1,26 +1,24 @@
 import itertools
-from datetime import datetime
 import os
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 
 import fire
+import jsonlines
+import lattice_symmetries as ls
 import numpy as np
 import torch
 from loguru import logger
+from torch import nn
 from torch.utils.tensorboard import SummaryWriter
 
-from spin_systems import (
-    ground_state_basis,
-    heisenberg,
-    SpinSystem,
-    spin_system,
-    no_symmetries_basis,
-    zero_sector_basis,
-    LatticeExpr,
-)
-from typing import Callable
-from misc_utils import differentiable_safe_exp
-from misc_utils import torch_overlap as find_overlap, get_git_revision_hash
+from conv2d_circular import InvariantSpinCNNRegression
+from dilated_nns_xors import resolve_config_inheritance
+from fourier_supervised_cleanroom_2023_09_27 import get_lattice
+from ising_sign_reconstruction import custom_signs, find_sign_overlap, reconstruct_signs
+from misc_utils import differentiable_safe_exp, get_git_revision_hash
+from misc_utils import torch_overlap as find_overlap
 from my_stopwatch import Stopwatch, stopwatch
 from nqs_playground_helpers import (
     SamplingOptions,
@@ -30,25 +28,23 @@ from nqs_playground_helpers import (
     sample_full,
     split_into_batches,
 )
-from spin_lattices import KagomeLattice, ParallelogramSpinLattice
+from spin_lattices import AllToAllLattice, KagomeLattice, ParallelogramSpinLattice
+from spin_systems import (
+    LatticeExpr,
+    SpinSystem,
+    ground_state_basis,
+    heisenberg,
+    no_symmetries_basis,
+    spin_system,
+    zero_sector_basis,
+)
+from vmc_2024_02_28 import get_device, get_eval_set, get_network
 from vmc_amplitude import (
     LogProbDenseNetPairwiseXor,
     almost_true_relsigns,
     compute_log_local_energies,
     get_csr_hamiltonian,
 )
-from dilated_nns_xors import resolve_config_inheritance
-from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from typing import Any
-import torch
-from torch import nn
-import jsonlines
-from conv2d_circular import InvariantSpinCNNRegression
-from vmc_2024_02_28 import get_network, get_device, get_eval_set
-from ising_sign_reconstruction import find_sign_overlap, reconstruct_signs, custom_signs
-from nqs_playground_helpers import forward_with_batches
-import lattice_symmetries as ls
-from spin_lattices import AllToAllLattice
 
 self_name = Path(__file__).stem
 git_hash = get_git_revision_hash()
@@ -714,7 +710,7 @@ def main(task_id: int):
                         matrix = get_csr_hamiltonian(system)
 
                     reconstructed_signs = reconstruct_signs(
-                        system.basis,
+                        system.basis.states,
                         matrix,
                         log_prob_fn,
                         how=config["sign_reconstruction.method"],
@@ -753,7 +749,7 @@ def main(task_id: int):
                             )
 
                     relsigns_fn = custom_signs(
-                        system,
+                        system.basis,
                         true_signs if using_true_signs else reconstructed_signs,
                     )
                     if config["checkpoint_log_prob_fn_on_sign_update"]:

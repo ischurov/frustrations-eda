@@ -1,50 +1,37 @@
-from spin_systems import SpinSystem
-import numpy as np
-from vmc_amplitude import get_csr_hamiltonian, safe_exp_numpy
-from scipy.sparse import diags
 import ising_glass_annealer as ising
-from collections.abc import Callable
-import os
-import numpy.typing as npt
-import torch
 import lattice_symmetries as ls
-from scipy.sparse import csr_matrix
+import numpy as np
+import numpy.typing as npt
 from loguru import logger
+from scipy.sparse import csr_matrix, diags
+
+from misc_utils import force_csr_symmetric
+from spin_systems import SpinSystem
 
 
 def reconstruct_signs(
-    basis: ls.Basis,
+    predicted_amplitudes: npt.NDArray[np.floating],
     hamiltonian_matrix: csr_matrix,
-    log_prob_fn: Callable,
     how="annealing",
     number_sweeps: int | None = None,
     repetitions: int | None = None,
-    device=torch.device("cpu"),
-    force_symmetry=False,
 ):
-    predicted_amplitudes = safe_exp_numpy(
-        log_prob_fn(torch.from_numpy(basis.states.astype(np.int64)).to(device))
-        .detach()
-        .cpu()
-        .numpy()
-        .reshape(-1)
-        * 0.5,
-        normalise=False,
-    )
-    predicted_amplitudes /= np.linalg.norm(predicted_amplitudes)
-
+    logger.debug("Creating Ising Hamiltonian matrix")
     ising_hamiltonian_matrix = (
         diags(predicted_amplitudes) @ hamiltonian_matrix @ diags(predicted_amplitudes)
     )
-    if force_symmetry:
-        logger.debug("Forcing symmetry")
-        ising_hamiltonian_matrix = (
-            ising_hamiltonian_matrix + ising_hamiltonian_matrix.transpose()
-        ) / 2
-        mask = np.abs(ising_hamiltonian_matrix.data) <= 1e-14
-        ising_hamiltonian_matrix.data[mask] = 0
-        ising_hamiltonian_matrix.eliminate_zeros()
-        logger.debug("Forcing symmetry done")
+
+    if (ising_hamiltonian_matrix != ising_hamiltonian_matrix.transpose()).nnz != 0:
+        logger.debug("ising_hamiltonian_matrix is not symmetric, trying to fix it")
+        discrepancy = np.abs(
+            ising_hamiltonian_matrix - ising_hamiltonian_matrix.transpose()
+        ).max()
+        logger.debug(f"Discrepancy: {discrepancy}")
+        if discrepancy > 1e-10:
+            raise ValueError(
+                f"Non-symmetric discrepancy is too large ({discrepancy=}). Looks more like a bug rather than round-off error"
+            )
+        ising_hamiltonian_matrix = force_csr_symmetric(ising_hamiltonian_matrix)
 
     logger.debug("Creating ising Hamiltonian")
     ising_hamiltonian = ising.Hamiltonian(
@@ -77,19 +64,31 @@ def reconstruct_signs(
     return reconstructed_signs
 
 
-def custom_signs(system: SpinSystem, signs: npt.NDArray):
+def custom_signs(basis: ls.SpinBasis, signs: npt.NDArray):
     def get_signs(s: npt.NDArray[np.uint64]) -> npt.NDArray:
-        return signs[system.basis.index(s)]
+        return signs[basis.index(s)]
+
+    return get_signs
+
+
+def partial_custom_signs(signs: npt.NDArray, states: npt.NDArray[np.uint64]):
+
+    def get_signs(s: npt.NDArray[np.uint64]) -> npt.NDArray:
+        idxs = np.searchsorted(states, s)
+        assert np.all(states[idxs] == s)
+        return signs[idxs]
 
     return get_signs
 
 
 def find_sign_overlap(
-    system: SpinSystem, reconstructed_signs: npt.NDArray
+    system: SpinSystem, reconstructed_signs: npt.NDArray, states=None
 ) -> float | np.floating:
-    ground_state = system.ground_state
+    if states is None:
+        states = system.basis.states
+    ground_state_coeffs = system.get_ground_state_coeffs(states, apply_symmetries=False)
     reconstructed_sign_overlap = (
-        (reconstructed_signs * (np.sign(ground_state))) * ground_state**2
-    ).sum()
+        (reconstructed_signs * (np.sign(ground_state_coeffs))) * ground_state_coeffs**2
+    ).sum() / (ground_state_coeffs**2).sum()
 
     return np.abs(reconstructed_sign_overlap)

@@ -108,6 +108,30 @@ class GConvG(nn.Module):
         torch.nn.init.xavier_uniform_(self.filter)
         self.filter.requires_grad = True
 
+        # filter_extended = torch.zeros(
+        #     (self.out_channels, self.in_channels, len(self.group_elements)),
+        #     device=self.filter.device,
+        # )
+        # filter_extended[:, :, self.filter_idxs] = self.filter
+
+        # self.permuted_filters = filter_extended[
+        #     :, :, self.inv_group_elements_tensor.view(-1)
+        # ].view(
+        #     self.out_channels,
+        #     self.in_channels,
+        #     len(self.group_elements),
+        #     len(self.group_elements),
+        # )
+
+        # self.permuted_filters_matmul = (
+        #     self.permuted_filters.permute(1, 3, 0, 2)
+        #     .reshape(
+        #         self.in_channels * len(self.group_elements),
+        #         self.out_channels * len(self.group_elements),
+        #     )
+        #     .contiguous()
+        # )
+
     def _forward_reference(self, batch: torch.Tensor):
         """
         This is reference implementation, kept for testing purposes.
@@ -149,8 +173,26 @@ class GConvG(nn.Module):
         )
 
         return torch.einsum("big,oiag->boa", batch, permuted_filters)
+
+        # return torch.einsum(
+        #     "big,oiag->boa", batch, self.permuted_filters.to(batch.device)
+        # )
         # b: batch, i: input channels, g: group element (as domain coordinate)
         # o: output channel, a: group element (as action)
+
+    def forward_matmul(self, batch: torch.Tensor):
+        """
+        Experimental implementation with matmul instead of einsum
+
+        Expected to be faster, but in fact is not
+        """
+        batch_size = batch.size()[0]
+        batch = batch.reshape(
+            batch_size, self.in_channels * len(self.group_elements)
+        ).contiguous()
+        return torch.matmul(
+            batch, self.permuted_filters_matmul.to(batch.device)
+        ).reshape(batch_size, self.out_channels, len(self.group_elements))
 
 
 def mult_comb(elements, degrees):

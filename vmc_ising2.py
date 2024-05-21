@@ -1,62 +1,160 @@
 import itertools
-from datetime import datetime
 import os
+import sys
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 
 import fire
+import jsonlines
+import lattice_symmetries as ls
 import numpy as np
+import numpy.typing as npt
 import torch
 from loguru import logger
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import connected_components
+from torch import log_, nn
 from torch.utils.tensorboard import SummaryWriter
 
-from spin_systems import (
-    ground_state_basis,
-    heisenberg,
-    SpinSystem,
-    spin_system,
-    no_symmetries_basis,
-    zero_sector_basis,
-    LatticeExpr,
+from conv2d_circular import InvariantSpinCNNRegression
+from dilated_nns_xors import resolve_config_inheritance
+from fourier_supervised_cleanroom_2023_09_27 import get_lattice
+from ising_sign_reconstruction import (
+    find_sign_overlap,
+    partial_custom_signs,
+    reconstruct_signs,
 )
-from typing import Callable
-from misc_utils import differentiable_safe_exp
-from misc_utils import torch_overlap as find_overlap, get_git_revision_hash
-
+from misc_utils import differentiable_safe_exp, get_git_revision_hash
+from misc_utils import torch_overlap as find_overlap
 from nqs_playground_helpers import (
     SamplingOptions,
+    SpinDataset,
     forward_with_batches,
     safe_exp,
     sample_exactly,
     sample_full,
     split_into_batches,
 )
-from spin_lattices import KagomeLattice, ParallelogramSpinLattice
+from spin_lattices import AllToAllLattice, KagomeLattice, ParallelogramSpinLattice
+from spin_systems import (
+    LatticeExpr,
+    SpinSystem,
+    ground_state_basis,
+    heisenberg,
+    no_symmetries_basis,
+    spin_system,
+    zero_sector_basis,
+)
+from vmc_2024_02_28 import get_eval_set, get_network
 from vmc_amplitude import (
     LogProbDenseNetPairwiseXor,
     almost_true_relsigns,
     compute_log_local_energies,
     get_csr_hamiltonian,
+    safe_exp_numpy,
     true_relsigns,
 )
-from dilated_nns_xors import resolve_config_inheritance
-from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from typing import Any
-import torch
-from torch import nn
-import jsonlines
-from conv2d_circular import InvariantSpinCNNRegression
-from vmc_2024_02_28 import get_eval_set
-from ising_sign_reconstruction import find_sign_overlap, reconstruct_signs, custom_signs
-from nqs_playground_helpers import forward_with_batches
-import lattice_symmetries as ls
-from spin_lattices import AllToAllLattice
-from vmc_ising2_configs import default_config, configs
-from scipy.sparse import csr_matrix
+from vmc_ising2_configs import configs, default_config
 
 self_name = Path(__file__).stem
 git_hash = get_git_revision_hash()
 
 output_dir = Path("experiments") / self_name
+
+
+@dataclass
+class LearnableNetwork:
+    network: nn.Module
+    optimizer: torch.optim.Optimizer | None
+    device: torch.device
+
+
+class SpinOnlyDataset(torch.utils.data.IterableDataset):
+    r"""Dataset wrapping spin configurations and corresponding values.
+
+    :param spins: either a ``numpy.ndarray`` of ``uint64`` or a
+        ``torch.Tensor`` of ``int64`` containing compact spin configurations.
+    :param values: a ``torch.Tensor``.
+    :param batch_size: batch size.
+    :param shuffle: whether to shuffle the samples.
+    :param device: device where the batches will be used.
+    """
+
+    def __init__(self, spins, batch_size, shuffle=False, device=None):
+        if isinstance(spins, np.ndarray):
+            if spins.dtype != np.uint64:
+                raise TypeError(
+                    "spins must be a numpy.ndarray of uint64; got numpy.ndarray "
+                    "of {}".format(spins.dtype.name)
+                )
+            # Use int64 because PyTorch doesn't support uint64
+            self.spins = torch.from_numpy(spins.view(np.int64))
+        elif isinstance(spins, torch.Tensor):
+            if spins.dtype != torch.int64:
+                raise TypeError(
+                    "spins must be a torch.Tensor of int64; got torch.Tensor "
+                    "of {}".format(spins.dtype)
+                )
+            self.spins = spins
+        else:
+            raise TypeError(
+                "spins must be either a numpy.ndarray of uint64 or a "
+                "torch.Tensor of int64; got {}".format(type(spins))
+            )
+
+        if batch_size <= 0:
+            raise ValueError(
+                "invalid batch_size: {}; expected a positive integer"
+                "".format(batch_size)
+            )
+
+        self.batch_size = batch_size
+
+        if isinstance(device, str):
+            device = torch.device(device)
+
+        self.device = device
+        self.spins = self.spins.to(self.device)
+        self.shuffle = shuffle
+
+    def __len__(self) -> int:
+        return (self.spins.size(0) + self.batch_size - 1) // self.batch_size
+
+    def __iter__(self):
+        if self.shuffle:
+            indices = torch.randperm(self.spins.size(0), device=self.device)
+            spins = self.spins[indices]
+        else:
+            spins = self.spins
+        return iter(torch.split(spins, self.batch_size))
+
+
+def predict_amplitudes_numpy(
+    log_prob_network: LearnableNetwork,
+    states: npt.NDArray[np.uint64],
+    batch_size: int,
+    normalize=False,
+):
+    predicted_amplitudes = safe_exp_numpy(
+        forward_with_batches(
+            f=lambda batch: log_prob_network.network(
+                torch.from_numpy(batch).to(log_prob_network.device)
+            )
+            .detach()
+            .cpu()
+            .numpy(),
+            xs=states.astype(np.int64),
+            batch_size=batch_size,
+        ).reshape(-1)
+        * 0.5,
+        normalise=False,
+    )
+    if normalize:
+        predicted_amplitudes /= np.linalg.norm(predicted_amplitudes)
+    return predicted_amplitudes
 
 
 def get_device(config: dict[str, Any]):
@@ -67,19 +165,6 @@ def get_device(config: dict[str, Any]):
     return device
 
 
-def get_log_prob_fn(config: dict[str, Any], system: SpinSystem) -> nn.Module:
-    if config["log_prob_fn"] == "invariant_cnn":
-        assert isinstance(system.lattice, ParallelogramSpinLattice)
-        return InvariantSpinCNNRegression(
-            lattice=system.lattice,
-            hidden_channels=config["log_prob_fn.invariant_cnn.hidden_channels"],
-            dilations=config["log_prob_fn.invariant_cnn.dilations"],
-            kernel_size=config["log_prob_fn.invariant_cnn.kernel_size"],
-        )
-    else:
-        raise ValueError(f"Unknown architecture {config['architecture']}")
-
-
 def get_optimizer(config: dict[str, Any], log_prob_fn: nn.Module):
     return torch.optim.Adam(
         log_prob_fn.parameters(),
@@ -88,31 +173,36 @@ def get_optimizer(config: dict[str, Any], log_prob_fn: nn.Module):
     )
 
 
-def get_energy_full(
-    signs,
-    basis: ls.Basis,
-    hamiltonian: ls.Operator,
-    log_prob_fn,
-    device=torch.device("cpu"),
-):
-    probs = (
-        safe_exp(
-            (log_prob_fn(torch.from_numpy(basis.states.astype(np.int64)).to(device))),
-            normalise=True,
-        )
-        .cpu()
-        .view(-1)
-        .detach()
-        .numpy()
-    )
-    amplitudes = np.sqrt(probs)
+# def get_energy_full(
+#     signs,
+#     basis: ls.Basis,
+#     hamiltonian: ls.Operator,
+#     log_prob_fn,
+#     device=torch.device("cpu"),
+# ):
+#     probs = (
+#         safe_exp(
+#             (log_prob_fn(torch.from_numpy(basis.states.astype(np.int64)).to(device))),
+#             normalise=True,
+#         )
+#         .cpu()
+#         .view(-1)
+#         .detach()
+#         .numpy()
+#     )
+#     amplitudes = np.sqrt(probs)
 
-    wavefunction = signs * amplitudes
-    return (hamiltonian @ wavefunction) @ wavefunction
+#     wavefunction = signs * amplitudes
+#     return (hamiltonian @ wavefunction) @ wavefunction
 
 
 def get_config(task_id: int):
-    return default_config | resolve_config_inheritance(task_id, configs=configs)
+    current_config = resolve_config_inheritance(task_id, configs=configs)
+    if not set(current_config).issubset(set(default_config)):
+        raise ValueError(
+            f"Unknown keys in config: {set(current_config) - set(default_config)}"
+        )
+    return default_config | current_config
 
 
 def get_basis(config) -> Callable[[LatticeExpr], ls.Basis]:
@@ -122,7 +212,7 @@ def get_basis(config) -> Callable[[LatticeExpr], ls.Basis]:
         return zero_sector_basis(spin_inversion=config["system.spin_inversion"])
     if config["system.symmetry_basis"] == "ground_state":
         return ground_state_basis(spin_inversion=config["system.spin_inversion"])
-    raise ValueError(f"Unknown basis: {config['use_symmetries.basis']}")
+    raise ValueError(f"Unknown basis: {config['system.symmetry_basis']}")
 
 
 def get_system(
@@ -150,67 +240,161 @@ def evaluate_amplitude_overlap(
     return find_overlap(true_amplitudes, predicted_amplitudes).item()
 
 
+@dataclass
+class RunnerEnvironment:
+    run: int
+    start_timestamp: str
+    task_id: int
+    output_dir: Path
+    eval_set: torch.Tensor
+    true_amplitudes: torch.Tensor
+    system: SpinSystem
+
+    def __init__(
+        self,
+        config: dict[str, Any],
+        device: torch.device,
+        system: SpinSystem,
+        run: int,
+        task_id: int,
+        output_dir_task: Path,
+    ):
+        self.eval_set = torch.from_numpy(
+            get_eval_set(
+                system, config["vmc.eval_set_max_size"], canonical_basis=False
+            ).astype(np.int64)
+        ).to(device)
+
+        self.true_amplitudes = torch.from_numpy(
+            np.abs(
+                system.get_ground_state_coeffs(
+                    self.eval_set.cpu().numpy(), apply_symmetries=False
+                )
+            ).astype(np.float32)
+        ).to(device)
+
+        self.start_timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        self.system = system
+        self.output_dir = output_dir_task
+        self.task_id = task_id
+        self.run = run
+
+
 def do_warm_up(
     config: dict[str, Any],
-    system: SpinSystem,
     device: torch.device,
-    eval_set: torch.Tensor,
-    true_amplitudes: torch.Tensor,
-) -> nn.Module:
+    env: RunnerEnvironment,
+) -> LearnableNetwork:
+    system = env.system
     if config["warm_up"] != "vmc_true_signs":
         raise ValueError(f"Unknown warm_up: {config['warm_up']}")
 
-    log_prob_fn = get_log_prob_fn(config, system).to(device)
+    log_prob_fn = get_network(config, system).to(device)
     optimizer = get_optimizer(config, log_prob_fn)
-    relsigns_fn = true_relsigns(system, apply_symmetries=False)
 
-    for step in range(config["max_iter"]):
-        vmc_step(log_prob_fn, optimizer, relsigns_fn)
-        if (
-            evaluate_amplitude_overlap(log_prob_fn, eval_set, true_amplitudes)
-            > config["warm_up.vmc_true_signs.overlap"]
-        ):
-            return log_prob_fn
+    log_prob_network = LearnableNetwork(log_prob_fn, optimizer, device)
 
-    raise ValueError("Warm-up did not converge")
+    for log_prob_fn, inner_states, grad, E_full_est, vmc_step_extra in vmc_step(
+        log_prob_network=log_prob_network,
+        get_relsigns=lambda states, log_prob_fn: (
+            true_relsigns(system, apply_symmetries=False),
+            {},
+        ),
+        system=system,
+        config=config,
+    ):
+        amplitude_overlap = evaluate_and_write(
+            log_prob_fn=log_prob_fn,
+            grad=grad,
+            E_full_est=E_full_est,
+            vmc_step_extra=vmc_step_extra,
+            config=config,
+            env=env,
+            additional_info={"warm_up": True},
+        )
+        if amplitude_overlap > config["warm_up.vmc_true_signs.overlap"]:
+            return log_prob_network
+
+        if config["warm_up.vmc_true_signs.max_steps"] is not None:
+            if vmc_step_extra["step"] > config["warm_up.vmc_true_signs.max_steps"]:
+                raise ValueError("Warm-up did not converge")
+
+    raise ValueError("vmc_step stopped prematurely")
 
 
 def get_relsigns_fn(
+    states: torch.Tensor,
+    hamiltonian: ls.Operator,
+    log_prob_network: LearnableNetwork,
     config: dict[str, Any],
-    system: SpinSystem,
-    log_prob_fn: nn.Module,
-    device: torch.device,
-    full_spin_matrix,
 ):
-    if config["sign_reconstruction.full_spin_regularization"] is not None:
-        logger.debug("Using full spin regularization")
-        matrix = (
-            get_csr_hamiltonian(system)
-            + config["sign_reconstruction.full_spin_regularization"] * full_spin_matrix
+    nbd_states: npt.NDArray[np.uint64]
+    matrix, nbd_states = hamiltonian.to_partial_csr(states.view(-1).cpu().numpy())  # type: ignore
+    extension_states = states.view(-1).cpu().numpy().sort()
+    extension_states_nbd: npt.NDArray[np.uint64] = nbd_states
+    if config["sign_reconstruction.extension_steps"] is None:
+        raise ValueError("Sign reconstruction of full basis not implemented")
+    logger.debug(f"{states.shape=}, {nbd_states.shape=}")
+    for _ in range(config["sign_reconstruction.extension_steps"]):
+        extension_states: npt.NDArray[np.uint64] = extension_states_nbd
+        matrix, extension_states_nbd = hamiltonian.to_partial_csr(
+            extension_states
+        )  # type: ignore
+        logger.debug(f"{extension_states.shape=}, {extension_states_nbd.shape=}")
+
+    matrix = matrix[:, np.searchsorted(extension_states_nbd, extension_states)]
+    assert np.abs(matrix - matrix.transpose()).max() < 1e-10
+
+    graph_matrix = (matrix != 0).astype(np.int8)
+    _, labels = connected_components(graph_matrix, directed=False)
+
+    relsigns = np.empty(len(extension_states), dtype=np.int8)
+    unique_labels = np.unique(labels)
+    logger.debug(f"Found {len(unique_labels)} connected components")
+    for component in unique_labels:
+        logger.debug(f"Processing component {component}")
+        component_mask = labels == component
+        cluster = extension_states[component_mask]
+        logger.debug(
+            f"Component size: {len(cluster)} ({len(cluster) / len(hamiltonian.basis.states)} of full basis)"
         )
-        assert (matrix != matrix.transpose()).nnz == 0
-    else:
-        matrix = get_csr_hamiltonian(system)
+        matrix_block = matrix[np.ix_(component_mask, component_mask)]
+        assert np.abs(matrix_block - matrix_block.transpose()).max() < 1e-10
+        amplitudes = predict_amplitudes_numpy(
+            log_prob_network=log_prob_network,
+            states=cluster,
+            batch_size=config["vmc.batch_size"],
+        )
+        relsigns[component_mask] = reconstruct_signs(
+            predicted_amplitudes=amplitudes,
+            hamiltonian_matrix=matrix_block,
+            how=config["sign_reconstruction"],
+            number_sweeps=config["sign_reconstruction.annealing.number_sweeps"],
+            repetitions=config["sign_reconstruction.annealing.repetitions"],
+        )
 
-    reconstructed_signs = reconstruct_signs(
-        system.basis,
-        matrix,
-        log_prob_fn,
-        how=config["sign_reconstruction.method"],
-        number_sweeps=config["sign_reconstruction.number_sweeps"],
-        repetitions=config["sign_reconstruction.repetitions"],
-        device=device,
-        force_symmetry=True,
+    nbd_states_indices = np.searchsorted(extension_states, nbd_states)
+
+    relsigns_fn = partial_custom_signs(
+        signs=relsigns[nbd_states_indices],
+        states=nbd_states,
+    )
+    return (
+        relsigns_fn,
+        {
+            "extension_size": len(extension_states),
+            "relative_extension_size": len(extension_states)
+            / len(hamiltonian.basis.states),
+            "n_connected_components": len(unique_labels),
+            "largest_connected_component_size": max(
+                len(extension_states[labels == component])
+                for component in unique_labels
+            ),
+        },
     )
 
-    relsigns_fn = custom_signs(
-        system,
-        reconstructed_signs,
-    )
-    return relsigns_fn
 
-
-def main(task_id: int):
+def prepare_main(task_id: int):
     config = get_config(task_id)
 
     output_dir_task = output_dir / str(task_id)
@@ -226,7 +410,7 @@ def main(task_id: int):
     device = get_device(config)
 
     logger.debug(f"Torch will use device: {device}")
-    lattice = get_lattice(config["lattice"])
+    lattice = get_lattice(config["system.lattice"])
     all_to_all_lattice = AllToAllLattice(lattice)
 
     system = get_system(config)
@@ -237,243 +421,323 @@ def main(task_id: int):
             basis=get_basis(config),
         )
         full_spin_matrix = get_csr_hamiltonian(full_spin_system)
+    else:
+        full_spin_matrix = None
 
-    for run in range(config["runs"]):
-        do_run(
-            task_id=task_id,
-            output_dir_task=output_dir_task,
-            run=run,
-            config=config,
-            system=system,
-            device=device,
-            full_spin_matrix=full_spin_matrix,
-        )
-
-
-def do_run(
-    task_id: int,
-    output_dir_task: Path,
-    run: int,
-    config: dict[str, Any],
-    system: SpinSystem,
-    device: torch.device,
-    full_spin_matrix: csr_matrix,
-):
-    eval_set_numpy = get_eval_set(
-        system, config["eval_set_max_size"], canonical_basis=False
+    return (
+        config,
+        device,
+        system,
+        full_spin_matrix,
+        output_dir_task,
     )
 
-    eval_set_torch = torch.from_numpy(eval_set_numpy.astype(np.float32)).to(device)
 
-    true_amplitudes = torch.from_numpy(
-        np.abs(
-            system.get_ground_state_coeffs(eval_set_numpy, apply_symmetries=False)
-        ).astype(np.float32)
-    ).to(device)
+def repeat_epochs(it: Iterable, epochs: int):
+    for epoch in range(epochs):
+        for batch_index, x in enumerate(it):
+            yield (epoch, batch_index, x)
 
-    log_prob_fn = do_warm_up(config, system, device, eval_set_torch, true_amplitudes)
 
-    optimizer = get_optimizer(config, log_prob_fn)
+def vmc_step(
+    log_prob_network: LearnableNetwork,
+    get_relsigns: Callable[
+        [torch.Tensor, torch.nn.Module],
+        tuple[Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]], dict[str, Any]],
+    ],
+    system: SpinSystem,
+    config: dict[str, Any],
+):
+    for outer_step in itertools.count():
+        outer_states, outer_log_prob_fn = make_outer_sample(
+            config=config,
+            log_prob_network=log_prob_network,
+            system=system,
+        )
+        relsigns_fn, relsigns_extra = get_relsigns(
+            outer_states,
+            outer_log_prob_fn,
+        )
 
-    start_timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-    writer = SummaryWriter(log_dir=(f"{output_dir_task}/logs/{start_timestamp}"))
-
-    outer_steps = config["max_iter"] // config["importance_sampling_iterations"]
-
-    for outer_step in range(outer_steps):
-        if outer_step % config["sign_update_period"] == 0:
-
-            if config["checkpoint_log_prob_fn_on_sign_update"]:
-                torch.save(
-                    log_prob_fn.state_dict(),
-                    output_dir_task / f"log_prob_fn_{outer_step-1}.pt",
-                )
-            if config["checkpoint_signs_greedy"]:
-                reconstructed_signs_greedy = reconstruct_signs(
-                    system.basis,
-                    get_csr_hamiltonian(system),
-                    log_prob_fn,
-                    how="greedy_solve",
-                    device=device,
-                    force_symmetry=True,
-                )
-                torch.save(
-                    reconstructed_signs_greedy,
-                    output_dir_task / f"reconstructed_signs_greedy_{outer_step-1}.pt",
-                )
-            if config["checkpoint_signs"]:
-                torch.save(
-                    reconstructed_signs,
-                    output_dir_task / f"reconstructed_signs_{outer_step-1}.pt",
-                )
-            signs_updated = True
-            signs_updated_at = outer_step
-        else:
-            signs_updated = False
-
-        with local_sw("sampling"):
-            other_options = {}
-            if config["random_seed"]:
-                other_options["force_numpy_sampling"] = True
-
-            other_options["prob_to_float64"] = True
-
-            states, log_probs, all_probs = sample_exactly(
-                log_prob_fn,
-                system.basis,
-                SamplingOptions(
-                    number_samples=n_samples,
-                    number_chains=1,
-                    mode="exact",
-                    sweep_size=1,
-                    number_discarded=0,
-                    device=device,
-                    other=other_options,
-                ),
-                return_all_probs=True,
+        sign_overlap = abs(
+            find_sign_overlap(
+                system,
+                relsigns_fn(outer_states.view(-1).cpu().numpy()),
+                states=outer_states.view(-1).cpu().numpy(),
             )
-            states, weights = torch.unique(states.view(-1), return_counts=True)
-            weights: torch.Tensor = weights.float() / torch.sum(weights)
+        )
+        logger.info(f"{sign_overlap=}")
 
-            ipr = torch.sum(all_probs**2)
-            # writer.add_scalar("loss/ipr", ipr, step)
+        spin_dataset = SpinOnlyDataset(
+            spins=outer_states,
+            batch_size=config["vmc.inner_sample_size"],
+            device=log_prob_network.device,
+            shuffle=True,
+        )
 
-            with torch.no_grad():
-                initial_log_probs = log_prob_fn(states).to(torch.float64).view(-1)
-                initial_weights = weights.to(torch.float64).view(-1)
-                initial_log_weights = torch.log(initial_weights)
+        for inner_step, (epoch, batch_index, inner_states) in enumerate(
+            repeat_epochs(spin_dataset, config["vmc.inner_epochs"])
+        ):
+            step: int = (
+                outer_step * config["vmc.inner_epochs"] * len(spin_dataset) + inner_step
+            )
+            inner_step_results = do_inner_step(
+                batch_size=config["vmc.batch_size"],
+                log_prob_network=log_prob_network,
+                inner_states=inner_states,
+                outer_log_prob_fn=outer_log_prob_fn,
+                relsigns_fn=relsigns_fn,
+                hamiltonian=system.hamiltonian,
+            )
 
-        for inner_step in range(config["importance_sampling_iterations"]):
-            step = outer_step * config["importance_sampling_iterations"] + inner_step
+            yield (
+                *inner_step_results,
+                {
+                    "outer_step": outer_step,
+                    "epoch": epoch,
+                    "batch_index": batch_index,
+                    "step": step,
+                    "inner_step": inner_step,
+                    "sign_overlap": sign_overlap,
+                }
+                | relsigns_extra,
+            )
 
-            with local_sw("local energies"):
-                log_E_loc, *_ = compute_log_local_energies(
-                    system.hamiltonian,
-                    states.cpu().detach().numpy(),
-                    relsigns_fn=relsigns_fn,
-                    log_prob_fn=lambda s: log_prob_fn(
-                        torch.from_numpy(s.astype(np.int64)).to(device)
-                    )
-                    .view(-1)
-                    .cpu()
-                    .detach()
-                    .numpy(),
-                )
 
-                log_E_loc = torch.from_numpy(log_E_loc).to(
-                    device=device, dtype=torch.complex64
-                )
+def main(task_id: int):
+    (
+        config,
+        device,
+        system,
+        full_spin_matrix,
+        output_dir_task,
+    ) = prepare_main(task_id)
 
-            with local_sw("energy gradient"):
-                with torch.no_grad():
-                    weighted_E_loc = torch.exp(log_E_loc + torch.log(weights)).real
-                    grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
+    for run in range(config["runs"]):
+        runner_env = RunnerEnvironment(
+            config=config,
+            device=device,
+            system=system,
+            output_dir_task=output_dir_task,
+            run=run,
+            task_id=task_id,
+        )
 
-                    # coeff 4 is due to: 2 from formula, 2 due to we are working with log probs
-                    # instead of log amplitudes
+        log_prob_network = do_warm_up(
+            config=config,
+            device=device,
+            env=runner_env,
+        )
 
-                    # grad = 4 * (E - E @ weights) * weights
+        for log_prob_fn, inner_states, grad, E_full_est, vmc_step_extra in vmc_step(
+            log_prob_network=log_prob_network,
+            get_relsigns=lambda states, log_prob_fn: get_relsigns_fn(
+                config=config,
+                hamiltonian=system.hamiltonian,
+                log_prob_network=LearnableNetwork(
+                    network=log_prob_fn, optimizer=None, device=device
+                ),
+                states=states,
+            ),
+            system=system,
+            config=config,
+        ):
+            evaluate_and_write(
+                log_prob_fn=log_prob_fn,
+                grad=grad,
+                E_full_est=E_full_est,
+                vmc_step_extra=vmc_step_extra,
+                config=config,
+                env=runner_env,
+                additional_info={"warm_up": False},
+            )
+            if vmc_step_extra["step"] > config["vmc.max_steps"]:
+                break
 
-                    grad = grad.view(-1, 1)
-                    grad_norm: torch.Tensor = torch.linalg.norm(grad)
-                    #    logger.info("‖∇E‖₂ = {}", grad_norm)
-                    writer.add_scalar("loss/‖∇E‖₂", grad_norm, step)
-                    E_variance = grad_norm / n_samples
-                    writer.add_scalar("loss/E_variance", E_variance, step)
 
-                    # Calculate full energy
-                    # if sampling_mode == "exact":
-                    E = torch.exp(log_E_loc).real
-                    if config["use_correct_E_full"]:
-                        E_full = E.mean()
-                    else:
-                        E_full = E @ safe_exp(
-                            log_prob_fn(states).view(-1), normalise=True
-                        )
-                    E_full_delta = E_full - torch.tensor(true_energy)
-                    writer.add_scalar("loss/E_full_delta", E_full_delta, step)
-                    logger.info("E_full_delta = {}", E_full_delta)
+def evaluate_and_write(
+    log_prob_fn: torch.nn.Module,
+    grad: torch.Tensor,
+    E_full_est: float,
+    vmc_step_extra: dict[str, Any],
+    config: dict[str, Any],
+    env: RunnerEnvironment,
+    additional_info: dict[str, Any] = {},
+):
+    amplitude_overlap = evaluate_log_prob_fn(
+        log_prob_fn, env.eval_set, env.true_amplitudes
+    )
+    logger.info(f"{amplitude_overlap=}")
 
-            with local_sw("forward_and_backward"):
-                optimizer.zero_grad()
+    current_timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
-                for states_chunk, grad_chunk in split_into_batches(
-                    (states.view(-1, 1), grad), batch_size
-                ):
-                    output = log_prob_fn(states_chunk.view(-1))
-                    output.backward(grad_chunk, retain_graph=False)
+    with jsonlines.open(env.output_dir / f"results.jsonl", mode="a") as json_writer:
+        json_writer.write(
+            config
+            | {
+                "run": env.run,
+                "amplitude_overlap": amplitude_overlap,
+                "start_timestamp": env.start_timestamp,
+                "current_timestamp": current_timestamp,
+                "task_id": env.task_id,
+                "git_hash": git_hash,
+                "energy_delta": E_full_est - env.system.ground_energy,
+                "true_energy": env.system.ground_energy,
+                "estimated_energy": E_full_est,
+                "grad_norm": torch.norm(grad).item(),
+            }
+            | vmc_step_extra
+            | additional_info
+        )
+    return amplitude_overlap
 
-                # full_gradient_norm = get_gradient_norm(forward_fn.parameters())
-                # writer.add_scalar("loss/full_gradient_norm", full_gradient_norm, step)
 
-                optimizer.step()
+@torch.no_grad()
+def evaluate_log_prob_fn(
+    log_prob_fn: torch.nn.Module, eval_set: torch.Tensor, true_amplitudes: torch.Tensor
+):
+    predictions = log_prob_fn(eval_set)
+    predicted_amplitudes = safe_exp(predictions * 0.5)
 
-            with local_sw("evaluation"):
-                predictions = log_prob_fn(
-                    torch.from_numpy(eval_set.astype(np.float32)).to(device)
-                )
-                predicted_amplitudes = safe_exp(predictions * 0.5)
+    amplitude_overlap = find_overlap(true_amplitudes, predicted_amplitudes.view(-1))
+    return amplitude_overlap.item()
 
-                amplitude_overlap = find_overlap(
-                    true_amplitudes, predicted_amplitudes.view(-1)
-                )
-                sign_overlap = find_sign_overlap(
-                    system, relsigns_fn(system.basis.states)
-                )
 
-                writer.add_scalar("overlap", amplitude_overlap, step)
-                logger.info(
-                    f"{step}: amplitude_overlap = {amplitude_overlap:.3f}, sign_overlap = {sign_overlap:.3f},  ‖∇E‖₂ = {grad_norm:.3f}"
-                )
+def make_outer_sample(
+    config: dict[str, Any],
+    log_prob_network: LearnableNetwork,
+    system: SpinSystem,
+):
+    log_prob_fn = log_prob_network.network
+    device = log_prob_network.device
 
-            if (
-                config["checkpoint_log_prob_fn_each"]
-                and step % config["checkpoint_log_prob_fn_each"] == 0
-            ):
-                torch.save(
-                    log_prob_fn.state_dict(),
-                    output_dir_task / f"log_prob_fn_{step}.pt",
-                )
+    other_options = {}
+    other_options["prob_to_float64"] = True
+    other_options["batch_size"] = config["vmc.batch_size"]
 
-            with jsonlines.open(
-                output_dir_task / f"results.jsonl", mode="a"
-            ) as json_writer:
-                json_writer.write(
-                    {"config_" + key: value for key, value in config.items()}
-                    | {
-                        "amplitude_overlap": amplitude_overlap.item(),
-                        "‖∇E‖₂": grad_norm.item(),
-                        "E_full_delta": E_full_delta.item(),
-                        "ipr": ipr.item(),
-                        "step": step,
-                        "E_variance": E_variance.item(),
-                        "start_timestamp": start_timestamp,
-                        "task_id": task_id,
-                        "device": str(device),
-                        "warm_up": warm_up,
-                        "sign_overlap": sign_overlap,
-                        "step_since_warm_up": (
-                            step - warm_up_finished_at if not warm_up else np.nan
-                        ),
-                        "signs_updated": signs_updated,
-                        "signs_updated_at": signs_updated_at,
-                        "step_since_signs_updated": step - signs_updated_at,
-                        "git_hash": git_hash,
-                        "using_true_signs": using_true_signs,
-                        "energy_with_true_signs": energy_with_true_signs,
-                        "energy_with_reconstructed_signs": energy_with_reconstructed_signs,
-                        "E_full": E_full.item(),
-                        "true_energy": true_energy,
-                        "run": run,
-                    }
-                )
+    outer_states, log_probs = sample_exactly(
+        log_prob_fn,
+        system.basis,
+        SamplingOptions(
+            number_samples=config["vmc.outer_sample_size"],
+            number_chains=1,
+            mode="exact",
+            sweep_size=1,
+            number_discarded=0,
+            device=device,
+            other=other_options,
+        ),
+        return_all_probs=False,
+    )
+    outer_states = outer_states.to(device)
+    outer_log_prob_fn = get_network(config, system)
+    outer_log_prob_fn.load_state_dict(log_prob_fn.state_dict())
+    outer_log_prob_fn.to(device)
 
-            if warm_up and amplitude_overlap > warm_up_overlap:
-                warm_up = False
-                warm_up_finished_at = step + 1
+    return outer_states, outer_log_prob_fn
 
-            if step % 20 == 0:
-                logger.info(str(local_sw))
+
+@torch.no_grad()
+def get_grad(
+    inner_states_all: torch.Tensor,
+    batch_size: int,
+    device: torch.device,
+    log_prob_fn: nn.Module,
+    outer_log_prob_fn: nn.Module,
+    relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
+    hamiltonian: ls.Operator,
+) -> tuple[torch.Tensor, torch.Tensor, float]:
+    (
+        inner_states,
+        counts,
+    ) = torch.unique(
+        inner_states_all.view(-1),
+        return_counts=True,
+    )
+    inner_weights = counts.float() / torch.sum(counts)
+    inner_log_probs = forward_with_batches(
+        outer_log_prob_fn, inner_states, batch_size=batch_size
+    ).view(-1)
+
+    log_E_loc, *_ = compute_log_local_energies(
+        hamiltonian,
+        inner_states.cpu().detach().numpy(),
+        relsigns_fn=relsigns_fn,
+        log_prob_fn=lambda s: forward_with_batches(
+            log_prob_fn,
+            torch.from_numpy(s.astype(np.int64)).to(device),
+            batch_size=batch_size,
+        )
+        .view(-1)
+        .cpu()
+        .detach()
+        .numpy(),
+    )
+
+    log_E_loc = torch.from_numpy(log_E_loc).to(device).to(torch.complex64)
+    new_log_probs = (
+        forward_with_batches(log_prob_fn, inner_states, batch_size=batch_size)
+        .view(-1)
+        .to(torch.float64)
+    )
+    weights = safe_exp(torch.log(inner_weights) + new_log_probs - inner_log_probs).to(
+        torch.float32
+    )
+
+    weighted_E_loc = torch.exp(log_E_loc + torch.log(weights)).real
+    grad = 4 * (weighted_E_loc - weighted_E_loc.sum() * weights)
+
+    grad = grad.view(-1, 1)
+
+    E = torch.exp(log_E_loc).real
+    E_full_est = E @ safe_exp(new_log_probs.to(torch.float32).view(-1), normalise=True)
+    return inner_states, grad, E_full_est.item()
+
+
+def do_inner_step(
+    log_prob_network: LearnableNetwork,
+    inner_states: torch.Tensor,
+    outer_log_prob_fn: nn.Module,
+    relsigns_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]],
+    hamiltonian: ls.Operator,
+    batch_size: int,
+) -> tuple[torch.nn.Module, torch.Tensor, torch.Tensor, float]:
+
+    log_prob_fn = log_prob_network.network
+    device = log_prob_network.device
+    optimizer = log_prob_network.optimizer
+
+    inner_states, grad, E_full_est = get_grad(
+        inner_states_all=inner_states,
+        batch_size=batch_size,
+        device=device,
+        log_prob_fn=log_prob_fn,
+        outer_log_prob_fn=outer_log_prob_fn,
+        relsigns_fn=relsigns_fn,
+        hamiltonian=hamiltonian,
+    )
+
+    optimizer.zero_grad()
+
+    for states_chunk, grad_chunk in split_into_batches(
+        (inner_states.view(-1, 1), grad), batch_size
+    ):
+
+        output = log_prob_fn(states_chunk.view(-1))  # type: ignore
+        output.backward(grad_chunk, retain_graph=False)
+
+        # if step < annealing_steps:
+        #     temp = initial_temp * (1 - step / annealing_steps)
+        #     probs = differentiable_safe_exp(output, normalise=True)
+        #     entropy = -torch.sum(probs * torch.log(probs))
+        #     entropy_loss = -temp * entropy
+        #     entropy_loss.backward()
+
+    # full_gradient_norm = get_gradient_norm(forward_fn.parameters())
+    # writer.add_scalar("loss/full_gradient_norm", full_gradient_norm, step)
+
+    optimizer.step()
+    return log_prob_fn, inner_states, grad, E_full_est
 
 
 if __name__ == "__main__":
