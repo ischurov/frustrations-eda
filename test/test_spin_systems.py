@@ -10,15 +10,7 @@ from unittest import TestCase
 import lattice_symmetries as ls
 import numpy as np
 from sympy import Rational
-from spin_systems import (
-    SpinSystem,
-    basis_factory,
-    spin_system,
-    zero_sector_basis,
-    no_symmetries_basis,
-    heisenberg,
-    ground_state_basis,
-)
+
 from spin_lattices import (
     ChainLattice,
     KagomeLattice,
@@ -26,6 +18,15 @@ from spin_lattices import (
     SpinLattice,
     SquareLattice,
     TriangularLattice,
+)
+from spin_systems import (
+    SpinSystem,
+    basis_factory,
+    ground_state_basis,
+    heisenberg,
+    no_symmetries_basis,
+    spin_system,
+    zero_sector_basis,
 )
 
 
@@ -227,6 +228,13 @@ class TestDiagonalization(TestCase):
             system_nosym.ground_energy,
             system_ground_state_basis.ground_energy,
         )
+
+        states = system_nosym.basis.states
+        gs_nosym = system_nosym.get_ground_state_coeffs(states, apply_symmetries=False)
+        gs_sym = system_ground_state_basis.get_ground_state_coeffs(
+            states, apply_symmetries=True
+        )
+        self.assertTrue(np.allclose(gs_nosym, gs_sym) or np.allclose(gs_nosym, -gs_sym))
 
     # def test_get_eigenstate_in_full_basis(self):
     #     J2 = 0.5

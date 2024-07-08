@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass
+from functools import singledispatchmethod
 from itertools import product
 from tkinter import font
 from turtle import color
@@ -13,24 +14,17 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 import seaborn as sns
+import torch
 from loguru import logger
-from sympy.combinatorics import Permutation, PermutationGroup
 from sympy import Rational
+from sympy.combinatorics import Permutation, PermutationGroup
 
 from misc_utils import (
     batched_state_info_df,
-    make_unpacked_configurations,
     make_packed_configurations,
+    make_unpacked_configurations,
 )
 from parity import parity, popcount
-import torch
-from functools import singledispatchmethod
-
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 
 # BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
 
@@ -841,7 +835,7 @@ class SquareLattice(ParallelogramSpinLattice):
         )
 
         t_frame = self.sites_df.query("is_canonical").set_index("num").reset_index()
-
+        # print(t_frame)
         # TODO: refactor as a test
         assert t_frame["ix"].nunique() == self.width
         assert t_frame["iy"].nunique() == self.height

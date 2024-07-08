@@ -11,11 +11,13 @@ import numpy as np
 import numpy.typing as npt
 import scipy
 import scipy.sparse.linalg
+import sympy as sp
 from loguru import logger
 from sympy import Rational
 from sympy.combinatorics import Permutation
 from typing_extensions import Literal
 
+from misc_utils import spin_inv
 from spin_lattices import SpinLattice
 
 
@@ -139,14 +141,14 @@ class SpinSystem:
     def get_ground_state_coeffs(
         self, states, apply_symmetries=True
     ) -> npt.NDArray[np.float64 | np.complex128]:
-        if apply_symmetries:
-            raise NotImplementedError
-            # corresp_reprs, characters, norms = self.basis.state_info(states)
-            # corresp_repr_indices = self.basis.index(corresp_reprs)
-            # return np.real_if_close(
-            #     self.ground_state[corresp_repr_indices] * characters * norms
-            # )
-        return np.real_if_close(self.ground_state[self.basis.index(states)])
+        if not apply_symmetries:
+            return np.real_if_close(self.ground_state[self.basis.index(states)])
+
+        corresp_reprs, characters, norms = self.state_info(states)
+        corresp_repr_indices = self.basis.index(corresp_reprs)
+        return np.real_if_close(
+            self.ground_state[corresp_repr_indices] * characters * norms
+        )
 
     def get_cache_params(self) -> dict[str, Any]:
         return {
@@ -238,6 +240,59 @@ class SpinSystem:
         self.eigenstates = eigenstates
 
         return eigenvalues, eigenstates
+
+    def state_info(
+        self, states: npt.NDArray[np.uint64]
+    ) -> tuple[
+        npt.NDArray[np.uint64], npt.NDArray[np.complex128], npt.NDArray[np.float64]
+    ]:
+        states_unpacked = self.lattice.unpack_configurations(states)
+        perm_group_size = len(self.basis.symmetries)
+        orbit = np.empty((perm_group_size, len(states)), dtype=np.uint64)
+        spin_inversion = self.basis.spin_inversion
+        for i, (permutation, _) in enumerate(self.basis.symmetries):
+            orbit[i] = self.lattice.pack_configurations(
+                states_unpacked[:, (permutation).array_form]
+            )
+        if spin_inversion is not None:
+            orbit = np.concatenate([orbit, spin_inv(orbit, self.lattice.number_spins)])
+
+        fix_size = (orbit[0] == orbit).sum(axis=0)
+        n_orb = orbit.shape[0] // fix_size
+
+        reprs = orbit.min(axis=0)
+        is_repr = orbit == reprs
+
+        g_idxs = np.argmin(orbit, axis=0)
+        all_characters = np.array(
+            [
+                sp.exp(2 * sp.pi * sp.I * self.basis.symmetries[idx][1]).evalf()
+                for idx in range(perm_group_size)
+            ],
+            dtype=np.complex128,
+        )
+
+        if spin_inversion is not None:
+            all_characters = np.concatenate(
+                [all_characters, spin_inversion * all_characters]
+            )
+
+        all_characters = all_characters.reshape(-1, 1)
+
+        characters_matrix = np.where(
+            is_repr, np.broadcast_to(all_characters, is_repr.shape), np.nan
+        )
+
+        if spin_inversion is not None:
+            spin_invs, g_idxs = np.divmod(g_idxs, len(self.basis.symmetries))
+
+        characters = np.nanmean(characters_matrix, axis=0)
+        if spin_inversion is not None:
+            characters *= np.where(spin_invs, spin_inversion, 1)
+
+        norms = 1 / np.sqrt(n_orb)
+
+        return reprs, characters, norms
 
     def to_ground_state_sector(self) -> "SpinSystem":
         """
@@ -397,7 +452,7 @@ def zero_sector_basis(
 
 
 def no_symmetries_basis(
-    hamming_weight: int | Literal["half"] = "half",
+    hamming_weight: int | Literal["half"] | None = "half",
     spin_inversion: int | None = None,
 ) -> Callable[[LatticeExpr], ls.Basis]:
     """
@@ -410,7 +465,7 @@ def no_symmetries_basis(
 
 
 def ground_state_basis(
-    hamming_weight: int | Literal["half"] = "half",
+    hamming_weight: int | Literal["half"] | None = "half",
     spin_inversion: int | None = None,
     ground_state_cache_dir: Path | None | Literal[False] = None,
 ) -> Callable[[LatticeExpr], ls.Basis]:
@@ -419,7 +474,7 @@ def ground_state_basis(
 
     Parameters
     ----------
-    hamming_weight : int | Literal["half"]
+    hamming_weight : int | Literal["half"] | None
         Hamming weight
 
     spin_inversion : int | None
