@@ -25,6 +25,7 @@ from fourier_supervised_cleanroom_2023_09_27 import get_lattice
 from ising_sign_reconstruction import (
     find_sign_overlap,
     partial_custom_signs,
+    custom_signs_hadamard_spread,
     reconstruct_signs,
 )
 from misc_utils import differentiable_safe_exp, get_git_revision_hash
@@ -374,11 +375,16 @@ def get_relsigns_fn(
         )
 
     nbd_states_indices = np.searchsorted(extension_states, nbd_states)
+    if config["sign_reconstruction.hadamard_spread"]:
+        custom_signs = custom_signs_hadamard_spread
+    else:
+        custom_signs = partial_custom_signs
 
-    relsigns_fn = partial_custom_signs(
+    relsigns_fn = custom_signs(
         signs=relsigns[nbd_states_indices],
         states=nbd_states,
     )
+
     return (
         relsigns_fn,
         {
@@ -454,10 +460,15 @@ def vmc_step(
             log_prob_network=log_prob_network,
             system=system,
         )
-        relsigns_fn, relsigns_extra = get_relsigns(
-            outer_states,
-            outer_log_prob_fn,
-        )
+
+        signs_update = False
+
+        if outer_step % config["sign_reconstruction.update_each_outer_steps"] == 0:
+            relsigns_fn, relsigns_extra = get_relsigns(
+                outer_states,
+                outer_log_prob_fn,
+            )
+            signs_updated = True
 
         sign_overlap = abs(
             find_sign_overlap(
@@ -499,6 +510,7 @@ def vmc_step(
                     "step": step,
                     "inner_step": inner_step,
                     "sign_overlap": sign_overlap,
+                    "signs_updated": signs_updated,
                 }
                 | relsigns_extra,
             )
@@ -639,7 +651,7 @@ def make_outer_sample(
 
 @torch.no_grad()
 def get_grad(
-    inner_states_all: torch.Tensor,
+    inner_states_with_repetitions: torch.Tensor,
     batch_size: int,
     device: torch.device,
     log_prob_fn: nn.Module,
@@ -651,7 +663,7 @@ def get_grad(
         inner_states,
         counts,
     ) = torch.unique(
-        inner_states_all.view(-1),
+        inner_states_with_repetitions.view(-1),
         return_counts=True,
     )
     inner_weights = counts.float() / torch.sum(counts)
@@ -708,7 +720,7 @@ def do_inner_step(
     optimizer = log_prob_network.optimizer
 
     inner_states, grad, E_full_est = get_grad(
-        inner_states_all=inner_states,
+        inner_states_with_repetitions=inner_states,
         batch_size=batch_size,
         device=device,
         log_prob_fn=log_prob_fn,

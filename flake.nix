@@ -72,6 +72,7 @@
           loguru
           matplotlib
           more-itertools
+	  (numba.overrideAttrs (attrs: { doCheck = false; installCheckPhase = ""; }))
           numpy
           pandas
           plotly
@@ -108,7 +109,7 @@
               # LSP support for Python
               python3Packages.black
               py-spy
-              nodePackages.pyright
+              # nodePackages.pyright
               # Nix stuff
               nil
               nixpkgs-fmt

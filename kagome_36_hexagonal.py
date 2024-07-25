@@ -10,3 +10,6 @@ system_spin_inv = spin_system(heisenberg(kagome36), zero_sector_basis(spin_inver
 system_spin_inv.get_eigenstates(1)
 
 assert np.isclose(system_spin_inv.ground_energy, system.ground_energy)
+
+print(f"{system.get_eigenstates(2)=}")
+print(f"{system_spin_inv.get_eigenstates(2)=}")

@@ -7,11 +7,14 @@ import sys
 
 import numba
 import numpy as np
+import numpy.typing as npt
 import scipy.special
 from numba import float32, float64, uint64
 
 
-def index_to_spin(index, number_spins):
+def index_to_spin(
+    index: npt.NDArray[np.uint64], number_spins: int
+) -> npt.NDArray[np.bool_]:
     return (
         (
             index.reshape(-1, 1).astype(np.int64)
@@ -20,7 +23,9 @@ def index_to_spin(index, number_spins):
     ) > 0
 
 
-def spin_to_index(spin, number_spins):
+def spin_to_index(
+    spin: npt.NDArray[np.bool_ | np.int_ | np.uint], number_spins: int
+) -> npt.NDArray[np.uint64]:
     a = 2 ** np.arange(number_spins, dtype=np.int64)
     return spin.dot(a)
 
@@ -69,7 +74,7 @@ def _hamming_weight(n: int):
 
 
 @numba.jit("uint64[:](uint64, uint64)", nogil=True, nopython=True)
-def generate_binaries(length: int, hamming: int):
+def generate_binaries(length: int, hamming: int) -> npt.NDArray[np.uint64]:
     assert length > 0
     assert hamming >= 0 and hamming <= length
     if hamming == 0:
@@ -87,12 +92,28 @@ def generate_binaries(length: int, hamming: int):
 
 
 @numba.jit("uint64(uint64, uint64, uint64)", nogil=True, nopython=True)
-def _merge(vec1, vec2, dim2):
+def _merge(vec1: int, vec2: int, dim2: int) -> int:
+    """
+    (vec1 << dim2) | vec2
+    """
     return (vec1 << dim2) | vec2
 
 
 @numba.jit("uint64(uint64, uint64, uint64[:, :])", nogil=True, nopython=True)
-def _get_index(x, dim, binom_cache):
+def _get_index(x: int, dim: int, binom_cache: npt.NDArray[np.uint64]) -> int:
+    r"""Compute the lexicographic index of a binary number among those with
+    the same Hamming weight.
+
+    :param x: the binary number to find the index for
+    :param dim: the number of bits in the binary number
+    :param binom_cache: a 2D array of precomputed binomial coefficients
+    :return: the lexicographic index of the input binary number
+
+    This function uses a precomputed binomial coefficient cache for efficiency.
+    It is optimized with Numba's just-in-time compilation and assumes x is a
+    valid binary number with dim bits.
+    """
+
     n = 0
     h = 0
     if x & 1 == 1:
@@ -111,13 +132,23 @@ def _get_index(x, dim, binom_cache):
     nogil=True,
     nopython=True,
 )
-def _density_matrix_element(dim1, dim, hamming, vec1, vec2, amplitudes, binom_cache):
-    hamming1 = _hamming_weight(vec1)
-    smallest_number = 2 ** (hamming - hamming1) - 1
-    k = dim - dim1
+def _density_matrix_element(
+    sector_dim: int,
+    dim: int,
+    hamming: int,
+    vec1: int,
+    vec2: int,
+    amplitudes: npt.NDArray[np.complex128],
+    binom_cache: npt.NDArray[np.uint64],
+) -> complex:
+    sector_hamming = _hamming_weight(vec1)
+    assert sector_hamming == _hamming_weight(vec2)
+
+    smallest_number = 2 ** (hamming - sector_hamming) - 1
+    k = dim - sector_dim
     index1 = _get_index(_merge(vec1, smallest_number, k), dim, binom_cache)
     index2 = _get_index(_merge(vec2, smallest_number, k), dim, binom_cache)
-    size_of_traced = _binom(k, hamming - hamming1)
+    size_of_traced = _binom(k, hamming - sector_hamming)
     matrix_element = np.dot(
         amplitudes[index1 : index1 + size_of_traced].conj(),
         amplitudes[index2 : index2 + size_of_traced],
@@ -127,12 +158,18 @@ def _density_matrix_element(dim1, dim, hamming, vec1, vec2, amplitudes, binom_ca
 
 
 @numba.jit(
-    "complex128[:, :](uint64, uint64, uint64, uint64, complex128[::1])",
+    "Tuple((complex128[:, :], uint64[:]))(uint64, uint64, uint64, uint64, complex128[::1])",
     nogil=True,
     nopython=True,
     parallel=False,
 )
-def sector_density_matrix(sector_dim, dim, sector_hamming, hamming, amplitudes):
+def sector_density_matrix(
+    sector_dim: int,
+    dim: int,
+    sector_hamming: int,
+    hamming: int,
+    amplitudes: npt.NDArray[np.complex128],
+) -> tuple[npt.NDArray[np.complex128], npt.NDArray[np.uint64]]:
     assert sector_hamming <= hamming and sector_dim <= dim
     assert hamming - sector_hamming <= dim - sector_dim
 
@@ -153,16 +190,24 @@ def sector_density_matrix(sector_dim, dim, sector_hamming, hamming, amplitudes):
             )
             matrix[j, i] = np.conj(matrix[i, j])
 
-    return matrix
+    return matrix, sector_basis
 
 
-def density_matrix(sub_dim, dim, hamming, amplitudes):
-    return [
-        sector_density_matrix(sub_dim, dim, sub_hamming, hamming, amplitudes)
-        for sub_hamming in range(
-            max(0, hamming - (dim - sub_dim)), min(hamming, sub_dim) + 1
+def density_matrix(
+    sub_dim: int, dim: int, hamming: int, amplitudes: npt.NDArray[np.complex128]
+) -> tuple[list[npt.NDArray[np.complex128]], list[npt.NDArray[np.uint64]]]:
+    matrices = []
+    sector_basis_states = []
+    for sub_hamming in range(
+        max(0, hamming - (dim - sub_dim)), min(hamming, sub_dim) + 1
+    ):
+        matrix, sector_basis = sector_density_matrix(
+            sub_dim, dim, sub_hamming, hamming, amplitudes
         )
-    ]
+        matrices.append(matrix)
+        sector_basis_states.append(sector_basis)
+
+    return matrices, sector_basis_states
 
 
 if __name__ == "__main__":

@@ -362,6 +362,10 @@ class SplitGroupConvNet(nn.Module):
         return x
 
 
+# TODO: several conv layers in a block
+# + batchnorm ?
+
+
 class SplitGroupResConvNet(nn.Module):
     def __init__(
         self,

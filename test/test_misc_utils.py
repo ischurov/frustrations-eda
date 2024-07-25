@@ -20,6 +20,9 @@ from misc_utils import (
     hadamard_transform_pytorch_inplace,
     make_packed_configurations,
     make_unpacked_configurations,
+    kronecker_power,
+    kronecker_power_pytorch,
+    rotation_matrix,
 )
 
 
@@ -136,3 +139,54 @@ class TestForceCsrSymmetric(TestCase):
         symmetric_sparse = force_csr_symmetric(sparse)
         self.assertTrue((symmetric_sparse != symmetric_sparse.transpose()).nnz == 0)
         self.assertTrue(np.abs(symmetric_sparse - sparse).max() < 1e-5)
+
+
+class TestKroneckerPower(TestCase):
+    def test_hadamard_transform_is_kronecker_power(self):
+        x = np.random.rand(2**8)
+        matrix = rotation_matrix(np.pi / 4)[[1, 0], :]
+        obtained = kronecker_power(x, matrix)
+        expected = hadamard_transform(x)
+        self.assertTrue(
+            np.allclose(
+                obtained,
+                expected,
+            )
+        )
+
+    def test_kronecker_power_torch(self):
+        # Set random seed for reproducibility
+        np.random.seed(42)
+        torch.manual_seed(42)
+
+        # Test cases with different input sizes
+        input_sizes = [2, 4, 8, 16, 32]
+
+        for size in input_sizes:
+            # Generate random input vector
+            x_np = np.random.rand(size)
+            x_torch = torch.from_numpy(x_np)
+
+            # Generate random 2x2 transform matrix
+            transform_np = np.random.rand(2, 2)
+            transform_torch = torch.from_numpy(transform_np)
+
+            # Compute results using both functions
+            result_np = kronecker_power(x_np, transform_np)
+            result_torch = kronecker_power_pytorch(x_torch, transform_torch)
+
+            # Convert PyTorch result to NumPy for comparison
+            result_torch_np = result_torch.numpy()
+
+            # Compare results
+            self.assertTrue(
+                np.allclose(
+                    result_np,
+                    result_torch_np,
+                    rtol=1e-5,
+                    atol=1e-8,
+                    # err_msg=f"Results don't match for input size {size}",
+                )
+            )
+
+            print(f"Test passed for input size {size}")

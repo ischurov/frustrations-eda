@@ -21,10 +21,13 @@ default_config = {
     "warm_up.vmc_true_signs.overlap": 0.7,
     "warm_up.vmc_true_signs.max_steps": None,
     "sign_reconstruction": "annealing",
+    "sign_reconstruction.update_each_outer_steps": 1,  # should be 1
+    #                                                    unless sign_reconstruction.hadamard_spread is True
     "sign_reconstruction.annealing.number_sweeps": 100,
     "sign_reconstruction.annealing.repetitions": 18,
     "sign_reconstruction.extension_steps": None,
     "sign_reconstruction.full_spin_regularization": None,
+    "sign_reconstruction.hadamard_spread": False,
     "runs": 1,
     "log_prob_fn.split_group_res_conv_net.extend_filter1": None,
     "log_prob_fn.split_group_res_conv_net.filter_size": None,
@@ -97,4 +100,30 @@ configs = {
     },
     7: {"_inherit": 4, "sign_reconstruction.extension_steps": 2},
     8: {"_inherit": 7, "vmc.outer_sample_size": 10_000, "vmc.inner_sample_size": 1000},
+    9: {
+        "system.lattice": "kagome2x4",
+        "system.J2": 0.99,
+        "system.symmetry_basis": "zero_sector",
+        "log_prob_fn.invariant_cnn.hidden_channels": [32, 32, 32],
+        "log_prob_fn.invariant_cnn.kernel_size": 2,
+        "warm_up.vmc_true_signs.overlap": 0.7,
+        "sign_reconstruction.extension_steps": 1,
+        "sign_reconstruction": "greedy_solve",
+        "vmc.outer_sample_size": 10_000,
+        "vmc.inner_sample_size": 10_000,
+        "vmc.inner_epochs": 1,
+    },
+    10: {
+        "_inherit": 9,
+        "sign_reconstruction.extension_steps": 2,
+    },
+    11: {
+        "_inherit": 10,
+        "sign_reconstruction.update_each_outer_steps": 10,
+        "sign_reconstruction.hadamard_spread": True,
+    },
+    12: {
+        "_inherit": 11,
+        "sign_reconstruction.update_each_outer_steps": 100,
+    },
 }

@@ -1500,8 +1500,6 @@ def accuracy(system: SpinSystem):
     return wrapper
 
 
-
-
 def main(task_id: int):
     config = get_config(task_id)
     lattice = get_lattice(config["lattice"])

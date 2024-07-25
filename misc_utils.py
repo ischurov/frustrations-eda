@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import Callable, Iterable
 from functools import singledispatch
@@ -379,3 +380,123 @@ def force_csr_symmetric(matrix: csr_matrix) -> csr_matrix:
     symmetric_matrix = upper_triangular + upper_triangular_transposed
 
     return symmetric_matrix
+
+
+def get_json_for_basis(basis: ls.Basis):
+    return json.dumps(
+        {
+            "particle": "spin-1/2",
+            "number_sites": basis.number_sites,
+            "hamming_weight": basis.hamming_weight,
+            "spin_inversion": basis.spin_inversion,
+            "symmetries": json.loads(
+                ls.LatticeSymmetriesEncoder().encode(basis.symmetries)
+            ),
+        }
+    )
+
+
+def spin_inv(x: npt.NDArray[np.uint64], number_spins: int) -> npt.NDArray[np.uint64]:
+    return (2**number_spins - 1) ^ x
+
+
+def rotation_matrix(phi):
+    return np.array([[np.cos(phi), -np.sin(phi)], [np.sin(phi), np.cos(phi)]])
+
+
+def kronecker_power(x: npt.NDArray[np.float64], transform):
+    """Fast Kronecker power of 2×2 matrix
+
+    This is generalization of fast Hadamard transform to arbitrary 2×2 matrix
+
+    It is recommended to use with float64 when possible
+
+    :param x: Input vector of length 2**n
+    :param transform: 2×2 matrix to take the Kronecker power
+
+    :return: transform ⊗ transform ⊗ ... ⊗ transform @ x
+    """
+    assert len(x.shape) == 1
+    d = x.shape[0]
+    h = 2
+    while h <= d:
+
+        hf = h // 2
+
+        x = x.view()
+        x.shape = (d // h, h)
+
+        half_1, half_2 = x[:, :hf].reshape(-1), x[:, hf:].reshape(-1)
+
+        x_reshaped = np.array([half_1, half_2])
+        x_transformed = transform @ x_reshaped
+        half_1, half_2 = x_transformed[0].reshape(d // h, hf), x_transformed[1].reshape(
+            d // h, hf
+        )
+
+        x = np.concatenate((half_1, half_2), axis=-1)
+
+        h *= 2
+
+    return x.reshape(-1)
+
+
+def kronecker_power_pytorch(x: torch.Tensor, transform: torch.Tensor) -> torch.Tensor:
+    """Fast Kronecker power of 2×2 matrix using PyTorch
+
+    This is generalization of fast Hadamard transform to arbitrary 2×2 matrix
+
+    It is recommended to use with float64 when possible
+
+    :param x: Input vector of length 2**n
+    :param transform: 2×2 matrix to take the Kronecker power
+
+    :return: transform ⊗ transform ⊗ ... ⊗ transform @ x
+    """
+    assert x.dim() == 1
+    d = x.shape[0]
+    h = 2
+    while h <= d:
+        hf = h // 2
+
+        x = x.view(d // h, h)
+
+        half_1, half_2 = x[:, :hf].reshape(-1), x[:, hf:].reshape(-1)
+
+        x_reshaped = torch.stack([half_1, half_2])
+        x_transformed = torch.matmul(transform, x_reshaped)
+        half_1, half_2 = x_transformed[0].reshape(d // h, hf), x_transformed[1].reshape(
+            d // h, hf
+        )
+
+        x = torch.cat((half_1, half_2), dim=-1)
+
+        h *= 2
+
+    return x.reshape(-1)
+
+
+@overload
+def eigenstate_in_full_basis(
+    eigenstate: npt.NDArray[np.float64], basis: ls.SpinBasis
+) -> npt.NDArray[np.float64]: ...
+
+
+@overload
+def eigenstate_in_full_basis(
+    eigenstate: torch.Tensor, basis: ls.SpinBasis
+) -> torch.Tensor: ...
+
+
+def eigenstate_in_full_basis(
+    eigenstate: npt.NDArray[np.float64] | torch.Tensor, basis: ls.SpinBasis
+) -> npt.NDArray[np.float64] | torch.Tensor:
+    number_spins = basis.number_sites
+    if isinstance(eigenstate, torch.Tensor):
+        full_state = torch.zeros(
+            2**number_spins, device=eigenstate.device, dtype=eigenstate.dtype
+        )
+    else:
+        full_state = np.zeros(2**number_spins)
+    full_state[basis.states] = eigenstate
+    return full_state

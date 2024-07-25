@@ -7,6 +7,7 @@ from scipy.sparse import csr_matrix, diags
 
 from misc_utils import force_csr_symmetric
 from spin_systems import SpinSystem
+from parity import calculate_fourier_transform_matrix
 
 
 def reconstruct_signs(
@@ -75,8 +76,41 @@ def partial_custom_signs(signs: npt.NDArray, states: npt.NDArray[np.uint64]):
 
     def get_signs(s: npt.NDArray[np.uint64]) -> npt.NDArray:
         idxs = np.searchsorted(states, s)
-        assert np.all(states[idxs] == s)
+        if not np.all(states[idxs] == s):
+            raise ValueError(
+                "Asked for a sign of a state that was not in the original set. "
+                "You may want to try custom_signs_hadamard_spread to make predictions outside of the original set"
+            )
         return signs[idxs]
+
+    return get_signs
+
+
+def custom_signs_hadamard_spread(signs: npt.NDArray, states: npt.NDArray[np.uint64]):
+    states_order = np.argsort(states)
+    signs = signs[states_order]
+    states = states[states_order]
+
+    def get_signs(s: npt.NDArray[np.uint64]) -> npt.NDArray:
+        mask = np.isin(s, states)
+        contained = s[mask]
+        not_contained = s[~mask]
+
+        # Assign signs to the contained states
+        contained_signs = signs[np.searchsorted(states, contained)]
+
+        transform_matrix = calculate_fourier_transform_matrix(
+            not_contained, states, out_dtype="float64"
+        )
+
+        # Assign random signs to the not contained states
+        not_contained_signs = np.sign(transform_matrix @ signs.astype(np.float64))
+
+        # Combine the signs and return
+        result = np.empty(s.shape, dtype=np.float64)
+        result[mask] = contained_signs
+        result[~mask] = not_contained_signs
+        return result
 
     return get_signs
 
