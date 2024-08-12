@@ -17,6 +17,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "lattice-symmetries/flake-utils";
     };
+    poetry2nix = {
+      url = "github:nix-community/poetry2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = inputs:
@@ -37,6 +41,7 @@
             combinadics = py-final.callPackage ./nix/combinadics.nix { };
             HolisticTraceAnalysis =
               py-final.callPackage ./nix/holistic-trace-analysis.nix { };
+            neptune = py-final.callPackage ./nix/neptune.nix { };
           })
         ];
       });
@@ -72,7 +77,9 @@
           loguru
           matplotlib
           more-itertools
-	  (numba.overrideAttrs (attrs: { doCheck = false; installCheckPhase = ""; }))
+          (numba.overrideAttrs (attrs: { doCheck = false; installCheckPhase = ""; }))
+          nanoid
+          neptune
           numpy
           pandas
           plotly
@@ -90,7 +97,8 @@
           torchvision
           tqdm
         ];
-    in {
+    in
+    {
       packages = inputs.flake-utils.lib.eachDefaultSystemMap (system:
         with (pkgs-for system); {
           default = singularity-tools.buildImage {
