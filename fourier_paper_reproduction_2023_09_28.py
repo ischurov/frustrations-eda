@@ -25,7 +25,8 @@ from fourier_supervised_cleanroom import (
     sign_signal as thresholded_sign_signal,
 )
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
-from spin_systems import HeisenbergJ1J2, SpinSystem
+
+# from spin_systems import HeisenbergJ1J2, SpinSystem
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -34,15 +35,15 @@ output_dir.mkdir(exist_ok=True)
 tol = 1e-14
 
 
-def sign_signal(system: SpinSystem):
+def sign_signal(system):
     return thresholded_sign_signal(system, tol=tol)
 
 
-def amplitude_median_bin_signal(system: SpinSystem):
+def amplitude_median_bin_signal(system):
     return thresholded_amplitude_median_bin_signal(system, tol=tol)
 
 
-def accuracy(system: SpinSystem, signal_fn, states=None):
+def accuracy(system, signal_fn, states=None):
     return thresholded_accuracy(system, signal_fn, states=states, tol=tol)
 
 
@@ -98,9 +99,18 @@ configs = {
     },
     18: {"lattice": "kagome3x2"},
     19: {"lattice": "kagome4x2"},
-    20: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)[:10]}, # the same as 13
-    21: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)[10:20]}, # the same as 13
-    22: {"lattice": "triangular6x4", "J2s": np.linspace(0, 1.4, 29)[20:]}, # the same as 13
+    20: {
+        "lattice": "triangular6x4",
+        "J2s": np.linspace(0, 1.4, 29)[:10],
+    },  # the same as 13
+    21: {
+        "lattice": "triangular6x4",
+        "J2s": np.linspace(0, 1.4, 29)[10:20],
+    },  # the same as 13
+    22: {
+        "lattice": "triangular6x4",
+        "J2s": np.linspace(0, 1.4, 29)[20:],
+    },  # the same as 13
 }
 
 

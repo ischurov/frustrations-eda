@@ -33,6 +33,7 @@ default_config = {
     "expr": heisenberg_str,
     "signal_train": "sign",
     "signal_test": "sign",
+    "transveral_field": None,
 }
 
 configs = {
@@ -75,6 +76,38 @@ configs = {
         "runs": 10,
         "signal_train": "groundstate",
         "signal_test": "sign",
+    },
+    19: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 2,
+        "signal_train": "groundstate",
+        "signal_test": "sign",
+        "hamming_weight": None,
+        "node_str": "0.05 σˣ₀",
+    },
+    20: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 2,
+        "signal_train": "groundstate",
+        "signal_test": "sign",
+        "hamming_weight": None,
+        "node_str": "0.1 σˣ₀",
+    },
+    21: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 2,
+        "signal_train": "groundstate",
+        "signal_test": "sign",
+        "hamming_weight": None,
+        "node_str": "0.15 σˣ₀",
+    },
+    22: {
+        "lattice": "kagome2x4",
+        "sampling_power_train": 2,
+        "signal_train": "groundstate",
+        "signal_test": "sign",
+        "hamming_weight": None,
+        "node_str": "0.2 σˣ₀",
     },
 }
 
@@ -130,7 +163,10 @@ def main(task_id: int):
             logger.debug(f"Running {task_id=} {J2=}. Creating system...")
             system = spin_system(
                 LatticeExpr(
-                    lattice=lattice, expr_str=config["expr"], params={1: 1.0, 2: J2}
+                    lattice=lattice,
+                    edge_str=config["expr"],
+                    edge_params={1: 1.0, 2: J2},
+                    node_str=(config["node_str"]),
                 ),
                 basis=no_symmetries_basis(hamming_weight=config["hamming_weight"]),
             )

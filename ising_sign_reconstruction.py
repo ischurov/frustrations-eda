@@ -16,8 +16,12 @@ def reconstruct_signs(
     how="annealing",
     number_sweeps: int | None = None,
     repetitions: int | None = None,
+    field: npt.NDArray[np.floating] | None = None,
 ):
     logger.debug("Creating Ising Hamiltonian matrix")
+    if field is None:
+        field = np.zeros(hamiltonian_matrix.shape[0])
+
     ising_hamiltonian_matrix = (
         diags(predicted_amplitudes) @ hamiltonian_matrix @ diags(predicted_amplitudes)
     )
@@ -37,7 +41,7 @@ def reconstruct_signs(
     logger.debug("Creating ising Hamiltonian")
     ising_hamiltonian = ising.Hamiltonian(
         exchange=ising_hamiltonian_matrix,
-        field=np.zeros(ising_hamiltonian_matrix.shape[0]),
+        field=field,
     )
     if how == "annealing":
         logger.debug("Using annealing")

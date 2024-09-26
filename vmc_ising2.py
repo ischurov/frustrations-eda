@@ -59,6 +59,8 @@ from vmc_amplitude import (
     true_relsigns,
 )
 from vmc_ising2_configs import configs, default_config
+from scipy.sparse import diags
+from parity import calculate_fourier_transform_matrix
 
 self_name = Path(__file__).stem
 git_hash = get_git_revision_hash()
@@ -302,7 +304,16 @@ def do_warm_up(
             {},
         ),
         system=system,
-        config=config,
+        sign_reconstruction_update_each_outer_steps=1,
+        outer_sample_size=config["warm_up.vmc_true_signs.outer_sample_size"]
+        or config["vmc.outer_sample_size"],
+        inner_sample_size=config["warm_up.vmc_true_signs.inner_sample_size"]
+        or config["vmc.inner_sample_size"],
+        inner_epochs=config["warm_up.vmc_true_signs.inner_epochs"]
+        or config["vmc.inner_epochs"],
+        batch_size=config["warm_up.vmc_true_signs.batch_size"]
+        or config["vmc.batch_size"],
+        outer_log_prob_fn_factory=lambda: get_network(config, system).to(device),
     ):
         amplitude_overlap = evaluate_and_write(
             log_prob_fn=log_prob_fn,
@@ -361,18 +372,60 @@ def get_relsigns_fn(
         )
         matrix_block = matrix[np.ix_(component_mask, component_mask)]
         assert np.abs(matrix_block - matrix_block.transpose()).max() < 1e-10
-        amplitudes = predict_amplitudes_numpy(
+        cluster_amplitudes = predict_amplitudes_numpy(
             log_prob_network=log_prob_network,
             states=cluster,
             batch_size=config["vmc.batch_size"],
         )
-        relsigns[component_mask] = reconstruct_signs(
-            predicted_amplitudes=amplitudes,
-            hamiltonian_matrix=matrix_block,
-            how=config["sign_reconstruction"],
-            number_sweeps=config["sign_reconstruction.annealing.number_sweeps"],
-            repetitions=config["sign_reconstruction.annealing.repetitions"],
-        )
+
+        if config["sign_reconstruction.hadamard_external_field.iterations"] > 1:
+            cluster_nbd: npt.NDArray[np.uint64]
+            extended_matrix, cluster_nbd = hamiltonian.to_partial_csr(cluster)  # type: ignore
+            cluster_border = np.setdiff1d(cluster_nbd, cluster, assume_unique=True)
+            cluster_border_amplitudes = predict_amplitudes_numpy(
+                log_prob_network=log_prob_network,
+                states=cluster_border,
+                batch_size=config["vmc.batch_size"],
+            )
+            external_field_matrix = (
+                diags(cluster_amplitudes)
+                @ extended_matrix[:, np.searchsorted(cluster_nbd, cluster_border)]
+                @ diags(cluster_border_amplitudes)
+            )
+
+        external_field = np.zeros(cluster.shape[0])
+        for hadamard_external_field_iteration in range(
+            config["sign_reconstruction.hadamard_external_field.iterations"]
+        ):
+            relsigns[component_mask] = reconstruct_signs(
+                predicted_amplitudes=cluster_amplitudes,
+                hamiltonian_matrix=matrix_block,
+                how=config["sign_reconstruction"],
+                number_sweeps=config["sign_reconstruction.annealing.number_sweeps"],
+                repetitions=config["sign_reconstruction.annealing.repetitions"],
+                field=external_field
+                * config["sign_reconstruction.hadamard_external_field.coeff"],
+            )
+            if (
+                hadamard_external_field_iteration
+                != config["sign_reconstruction.hadamard_external_field.iterations"] - 1
+            ):
+                transform_matrix = calculate_fourier_transform_matrix(
+                    cluster_border, cluster, out_dtype="float64"
+                )
+                sign_predictions = np.sign(
+                    transform_matrix
+                    @ (
+                        relsigns[component_mask]
+                        * (
+                            cluster_amplitudes
+                            ** config[
+                                "sign_reconstruction.hadamard_external_field.amplitude_power"
+                            ]
+                        )
+                    )
+                )
+                external_field = external_field_matrix @ sign_predictions
 
     nbd_states_indices = np.searchsorted(extension_states, nbd_states)
     if config["sign_reconstruction.hadamard_spread"]:
@@ -452,18 +505,25 @@ def vmc_step(
         tuple[Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.int8]], dict[str, Any]],
     ],
     system: SpinSystem,
-    config: dict[str, Any],
+    sign_reconstruction_update_each_outer_steps: int,
+    outer_sample_size: int,
+    inner_sample_size: int,
+    inner_epochs: int,
+    batch_size: int,
+    outer_log_prob_fn_factory: Callable[[], nn.Module],
 ):
     for outer_step in itertools.count():
         outer_states, outer_log_prob_fn = make_outer_sample(
-            config=config,
             log_prob_network=log_prob_network,
             system=system,
+            batch_size=batch_size,
+            outer_sample_size=outer_sample_size,
+            log_prob_fn_factory=outer_log_prob_fn_factory,
         )
 
-        signs_update = False
+        signs_updated = False
 
-        if outer_step % config["sign_reconstruction.update_each_outer_steps"] == 0:
+        if outer_step % sign_reconstruction_update_each_outer_steps == 0:
             relsigns_fn, relsigns_extra = get_relsigns(
                 outer_states,
                 outer_log_prob_fn,
@@ -481,19 +541,17 @@ def vmc_step(
 
         spin_dataset = SpinOnlyDataset(
             spins=outer_states,
-            batch_size=config["vmc.inner_sample_size"],
+            batch_size=inner_sample_size,
             device=log_prob_network.device,
             shuffle=True,
         )
 
         for inner_step, (epoch, batch_index, inner_states) in enumerate(
-            repeat_epochs(spin_dataset, config["vmc.inner_epochs"])
+            repeat_epochs(spin_dataset, inner_epochs)
         ):
-            step: int = (
-                outer_step * config["vmc.inner_epochs"] * len(spin_dataset) + inner_step
-            )
+            step: int = outer_step * inner_epochs * len(spin_dataset) + inner_step
             inner_step_results = do_inner_step(
-                batch_size=config["vmc.batch_size"],
+                batch_size=batch_size,
                 log_prob_network=log_prob_network,
                 inner_states=inner_states,
                 outer_log_prob_fn=outer_log_prob_fn,
@@ -552,7 +610,14 @@ def main(task_id: int):
                 states=states,
             ),
             system=system,
-            config=config,
+            sign_reconstruction_update_each_outer_steps=config[
+                "sign_reconstruction.update_each_outer_steps"
+            ],
+            outer_sample_size=config["vmc.outer_sample_size"],
+            inner_sample_size=config["vmc.inner_sample_size"],
+            inner_epochs=config["vmc.inner_epochs"],
+            batch_size=config["vmc.batch_size"],
+            outer_log_prob_fn_factory=lambda: get_network(config, system).to(device),
         ):
             evaluate_and_write(
                 log_prob_fn=log_prob_fn,
@@ -616,22 +681,24 @@ def evaluate_log_prob_fn(
 
 
 def make_outer_sample(
-    config: dict[str, Any],
     log_prob_network: LearnableNetwork,
     system: SpinSystem,
+    batch_size: int,
+    outer_sample_size: int,
+    log_prob_fn_factory: Callable[[], nn.Module],
 ):
     log_prob_fn = log_prob_network.network
     device = log_prob_network.device
 
     other_options = {}
     other_options["prob_to_float64"] = True
-    other_options["batch_size"] = config["vmc.batch_size"]
+    other_options["batch_size"] = batch_size
 
     outer_states, log_probs = sample_exactly(
         log_prob_fn,
         system.basis,
         SamplingOptions(
-            number_samples=config["vmc.outer_sample_size"],
+            number_samples=outer_sample_size,
             number_chains=1,
             mode="exact",
             sweep_size=1,
@@ -642,7 +709,7 @@ def make_outer_sample(
         return_all_probs=False,
     )
     outer_states = outer_states.to(device)
-    outer_log_prob_fn = get_network(config, system)
+    outer_log_prob_fn = log_prob_fn_factory()
     outer_log_prob_fn.load_state_dict(log_prob_fn.state_dict())
     outer_log_prob_fn.to(device)
 

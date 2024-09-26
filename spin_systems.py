@@ -347,17 +347,35 @@ class SpinSystem:
 
 
 class LatticeExpr:
-    def __init__(self, lattice: SpinLattice, expr_str: str, params: dict[int, float]):
+    def __init__(
+        self,
+        lattice: SpinLattice,
+        edge_str: str,
+        edge_params: dict[int, float],
+        node_str: str | None = None,
+    ):
         self.lattice = lattice
-        self.expr_str = expr_str
-        self.params = params
-        self.expr: ls.Expr = reduce(
-            operator.add,
-            (
-                j_value * ls.Expr(expr_str, sites=lattice.kind_to_edges[i])
-                for i, j_value in params.items()
-            ),
-        )
+        self.edge_str = edge_str
+        self.edge_params = edge_params
+
+        if node_str is not None:
+            node_terms = [ls.Expr(node_str, sites=[[x] for x in lattice.sites])]
+        else:
+            node_terms = []
+
+        edge_terms = [
+            j_value * ls.Expr(edge_str, sites=lattice.kind_to_edges[i])
+            for i, j_value in edge_params.items()
+        ]
+        self.expr = reduce(operator.add, edge_terms + node_terms)
+
+        # self.expr: ls.Expr = reduce(
+        #     operator.add,
+        #     (
+        #         j_value * ls.Expr(edge_str, sites=lattice.kind_to_edges[i])
+        #         for i, j_value in edge_params.items()
+        #     ),
+        # )
 
 
 heisenberg_str = "2 (σ⁺₀ σ⁻₁ + σ⁺₁ σ⁻₀) + σᶻ₀ σᶻ₁"
@@ -367,12 +385,26 @@ def heisenberg(
     lattice: SpinLattice, J1: float = 1.0, J2: float | None = 0.0
 ) -> LatticeExpr:
     """
-    Two-parametric Heisenberg Hamiltonian
+    Two-parameter Heisenberg Hamiltonian
     """
     return LatticeExpr(
         lattice,
-        expr_str=heisenberg_str,
-        params={1: J1, 2: J2} if J2 is not None else {1: J1},
+        edge_str=heisenberg_str,
+        edge_params={1: J1, 2: J2} if J2 is not None else {1: J1},
+    )
+
+
+def heisenberg_transversal_field(
+    lattice: SpinLattice, J1: float = 1.0, J2: float = 0.0, h: float = 1.0
+) -> LatticeExpr:
+    """
+    Heisenberg Hamiltonian with transversal field
+    """
+    return LatticeExpr(
+        lattice,
+        edge_str=heisenberg_str,
+        edge_params={1: J1, 2: J2} if J2 is not None else {1: J1},
+        node_str=f"{h} σˣ₀" if h != 0 else None,
     )
 
 

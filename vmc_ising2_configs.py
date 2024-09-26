@@ -20,6 +20,13 @@ default_config = {
     "warm_up": "vmc_true_signs",
     "warm_up.vmc_true_signs.overlap": 0.7,
     "warm_up.vmc_true_signs.max_steps": None,
+    "warm_up.vmc_true_signs.outer_sample_size": None,
+    "warm_up.vmc_true_signs.inner_sample_size": None,
+    "warm_up.vmc_true_signs.inner_epochs": None,
+    "warm_up.vmc_true_signs.lr": None,
+    "warm_up.vmc_true_signs.batch_size": None,
+    "warm_up.vmc_true_signs.weight_decay": None,
+    "warm_up.vmc_true_signs.eval_set_max_size": None,
     "sign_reconstruction": "annealing",
     "sign_reconstruction.update_each_outer_steps": 1,  # should be 1
     #                                                    unless sign_reconstruction.hadamard_spread is True
@@ -28,6 +35,9 @@ default_config = {
     "sign_reconstruction.extension_steps": None,
     "sign_reconstruction.full_spin_regularization": None,
     "sign_reconstruction.hadamard_spread": False,
+    "sign_reconstruction.hadamard_external_field.iterations": 1,
+    "sign_reconstruction.hadamard_external_field.coeff": 1,
+    "sign_reconstruction.hadamard_external_field.amplitude_power": 0,
     "runs": 1,
     "log_prob_fn.split_group_res_conv_net.extend_filter1": None,
     "log_prob_fn.split_group_res_conv_net.filter_size": None,
@@ -125,5 +135,24 @@ configs = {
     12: {
         "_inherit": 11,
         "sign_reconstruction.update_each_outer_steps": 100,
+    },
+    13: {
+        "_inherit": 4,
+        "sign_reconstruction.extension_steps": 2,
+        "vmc.outer_sample_size": 10_000,
+        "vmc.inner_sample_size": 10_000,
+        "vmc.inner_epochs": 1,
+        "sign_reconstruction.hadamard_spread": True,
+        "sign_reconstruction.update_each_outer_steps": 50,  # equivalent to 4
+    },
+    14: {
+        "_inherit": 11,
+        "warm_up.vmc_true_signs.outer_sample_size": 100_000,
+        "warm_up.vmc_true_signs.inner_sample_size": 10_000,
+        "warm_up.vmc_true_signs.inner_epochs": 10,
+    },
+    15: {
+        "_inherit": 9,
+        "sign_reconstruction.hadamard_external_field.iterations": 5,
     },
 }
