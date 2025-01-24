@@ -16,7 +16,7 @@ import torch
 from loguru import logger
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
-from torch import log_, nn
+from torch import Value, log_, nn
 from torch.utils.tensorboard import SummaryWriter
 
 from conv2d_circular import InvariantSpinCNNRegression
@@ -592,12 +592,15 @@ def main(task_id: int):
             run=run,
             task_id=task_id,
         )
-
-        log_prob_network = do_warm_up(
-            config=config,
-            device=device,
-            env=runner_env,
-        )
+        try:
+            log_prob_network = do_warm_up(
+                config=config,
+                device=device,
+                env=runner_env,
+            )
+        except ValueError as e:
+            logger.error(f"Error during warm-up: {e}")
+            continue
 
         for log_prob_fn, inner_states, grad, E_full_est, vmc_step_extra in vmc_step(
             log_prob_network=log_prob_network,

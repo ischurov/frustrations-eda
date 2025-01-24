@@ -57,6 +57,7 @@
             inputs.ising-glass-annealer.overlays.default
             inputs.nix-on-the-cluster.overlays.lilo
             torch-bin-overlay
+#            inputs.poetry2nix.overlays.default
           ];
         };
 
@@ -79,7 +80,7 @@
           more-itertools
           (numba.overrideAttrs (attrs: { doCheck = false; installCheckPhase = ""; }))
           nanoid
-          neptune
+          # neptune
           numpy
           pandas
           plotly

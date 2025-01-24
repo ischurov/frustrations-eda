@@ -15,6 +15,7 @@ import sympy as sp
 from loguru import logger
 from sympy import Rational
 from sympy.combinatorics import Permutation
+from tqdm.auto import tqdm
 from typing_extensions import Literal
 
 from misc_utils import spin_inv
@@ -247,10 +248,15 @@ class SpinSystem:
         npt.NDArray[np.uint64], npt.NDArray[np.complex128], npt.NDArray[np.float64]
     ]:
         states_unpacked = self.lattice.unpack_configurations(states)
-        perm_group_size = len(self.basis.symmetries)
+        symmetries = (
+            self.basis.symmetries
+            if self.basis.symmetries
+            else [(Permutation(range(self.number_spins)), Rational(1))]
+        )
+        perm_group_size = len(symmetries)
         orbit = np.empty((perm_group_size, len(states)), dtype=np.uint64)
         spin_inversion = self.basis.spin_inversion
-        for i, (permutation, _) in enumerate(self.basis.symmetries):
+        for i, (permutation, _) in enumerate(tqdm(symmetries, desc="Calculating orbit")):
             orbit[i] = self.lattice.pack_configurations(
                 states_unpacked[:, (permutation).array_form]
             )
@@ -266,7 +272,7 @@ class SpinSystem:
         g_idxs = np.argmin(orbit, axis=0)
         all_characters = np.array(
             [
-                sp.exp(2 * sp.pi * sp.I * self.basis.symmetries[idx][1]).evalf()
+                sp.exp(2 * sp.pi * sp.I * symmetries[idx][1]).evalf()
                 for idx in range(perm_group_size)
             ],
             dtype=np.complex128,
@@ -284,7 +290,7 @@ class SpinSystem:
         )
 
         if spin_inversion is not None:
-            spin_invs, g_idxs = np.divmod(g_idxs, len(self.basis.symmetries))
+            spin_invs, g_idxs = np.divmod(g_idxs, len(symmetries))
 
         characters = np.nanmean(characters_matrix, axis=0)
         if spin_inversion is not None:
@@ -338,6 +344,8 @@ class SpinSystem:
                 ),
             )
             if smallest_energy is None or new_system.ground_energy < smallest_energy:
+                logger.debug(f"Found sector with smaller energy: {new_system.ground_energy} < {smallest_energy}")
+                logger.debug(f"{new_system.hamiltonian.basis.symmetries=}")
                 smallest_energy = new_system.ground_energy
                 ground_state_system = new_system
 

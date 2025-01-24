@@ -236,6 +236,32 @@ class TestDiagonalization(TestCase):
         )
         self.assertTrue(np.allclose(gs_nosym, gs_sym) or np.allclose(gs_nosym, -gs_sym))
 
+    def test_ground_state_no_symmetries(self):
+        lattice = KagomeLattice(2, 2)
+        system_nosym = spin_system(
+            heisenberg(lattice, J1=1, J2=1),
+            basis=no_symmetries_basis(hamming_weight=None),
+            ground_state_cache_dir=None,
+        )
+        self.assertTrue(
+            (
+                system_nosym.ground_state
+                == system_nosym.get_ground_state_coeffs(
+                    system_nosym.basis.states, apply_symmetries=True
+                )
+            ).all()
+        )
+        self.assertTrue(
+            (
+                system_nosym.get_ground_state_coeffs(
+                    system_nosym.basis.states, apply_symmetries=False
+                )
+                == system_nosym.get_ground_state_coeffs(
+                    system_nosym.basis.states, apply_symmetries=True
+                )
+            ).all()
+        )
+
     # def test_get_eigenstate_in_full_basis(self):
     #     J2 = 0.5
     #     for lattice in [SquareLattice(4, 4), SquareLattice(2, 4)]:

@@ -5,6 +5,7 @@ from time import perf_counter
 from typing import Any
 
 import fire
+import lattice_symmetries as ls
 import numpy as np
 import numpy.typing as npt
 import torch
@@ -14,6 +15,7 @@ from scipy.special import comb
 from torch import Tensor, nn
 
 from conv2d_circular import InvariantSpinCNNRegression
+from find_ground_state_triangular_lattice_parse_symmetries import parsed_symmetries
 from fourier_supervised_cleanroom import fit_fourier_series, mk_train_test, sign_signal
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
 from misc_utils import keep_serializable, make_unpacked_configurations
@@ -57,6 +59,7 @@ default_config = {
     "n_train_from_full_space": True,
     "one_dimensonal_output": False,
     "last_layer_bias": True,
+    "special_triangular_6x6_symmetries": False,
 }
 
 # System without symmetries, any network -> usual sampling
@@ -1241,6 +1244,71 @@ configs = {
         "write_each": 1,
         "dilations": [3, 3, 2, 1],  # !
     },
+    91: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,  # !
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "special_triangular_6x6_symmetries": True,
+    },
+    92: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [1, 2, 3],
+        "special_triangular_6x6_symmetries": True,
+    },
+    93: {
+        "lattice": "triangular6x6",
+        "J2s": [1.3],
+        "architecture": "invariant_cnn",
+        "hidden_channels": [32, 32, 32],
+        "kernel_size": 2,
+        "use_symmetries": True,
+        "spin_inversion": None,
+        "runs": 10,
+        "eps_train": [0.001, 0.005, 0.01],
+        "skip_symmetries_whitelist": True,
+        "epochs": 500,
+        "n_test": 10000,
+        "sample_with_replacement": True,
+        "sample_repr_then_apply_random_symmetry": True,
+        "n_train_from_full_space": False,
+        "last_layer_bias": False,
+        "batch_size": 8192,
+        "write_each": 1,
+        "dilations": [3, 2, 1],
+        "special_triangular_6x6_symmetries": True,
+    },
 }
 
 
@@ -1395,9 +1463,9 @@ def get_network(config: dict[str, Any], system: SpinSystem, signal) -> nn.Module
         )
         return net
     elif config["architecture"] == "invariant_cnn":
-        assert config[
-            "use_symmetries"
-        ], "CNNs require symmetries for correct evaluation"
+        assert config["use_symmetries"], (
+            "CNNs require symmetries for correct evaluation"
+        )
         return InvariantSpinCNNRegression(
             lattice=get_lattice(config["lattice"]),
             hidden_channels=config["hidden_channels"],
@@ -1511,6 +1579,9 @@ def main(task_id: int):
         )
 
     (output_dir / str(task_id)).mkdir(parents=True, exist_ok=True)
+    
+    logger.add(output_dir / str(task_id) / "log.txt", level="DEBUG")
+
     signal_factory = sign_signal
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -1521,14 +1592,37 @@ def main(task_id: int):
 
         for J2 in J2s:
             logger.debug(f"Running {task_id=} {J2=}. Creating system...")
-            system = spin_system(
-                heisenberg(lattice=lattice, J1=1, J2=J2),
-                basis=(
-                    no_symmetries_basis(spin_inversion=config["spin_inversion"])
-                    if config["use_symmetries"]
-                    else zero_sector_basis(spin_inversion=config["spin_inversion"])
-                ),
-            )
+            if config["special_triangular_6x6_symmetries"]:
+                # This is known to be a sector that contains the ground state
+                # For trinagular 6x6 lattice
+                logger.debug("Using special symmetries for triangular 6x6 lattice")
+                assert config["lattice"] == "triangular6x6"
+                lattice = TriangularLattice(6, 6)
+                basis = ls.SpinBasis(
+                    lattice.number_spins,
+                    hamming_weight=lattice.number_spins // 2,
+                    spin_inversion=1,
+                    symmetries=parsed_symmetries,
+                )
+                hamiltonian = ls.Operator(
+                    expression=heisenberg(lattice, J2=1.3).expr, basis=basis
+                )
+                system = SpinSystem(
+                    lattice,
+                    hamiltonian,
+                    ground_state_cache_dir=Path("groundstates_cache"),
+                )
+            else:
+                system = spin_system(
+                    heisenberg(lattice=lattice, J1=1, J2=J2),
+                    basis=(
+                        zero_sector_basis(spin_inversion=config["spin_inversion"])
+                        if config["use_symmetries"]
+                        else no_symmetries_basis(
+                            spin_inversion=config["spin_inversion"]
+                        )
+                    ),
+                )
             system.get_eigenstates(1)
 
             signal_fn = signal_factory(system)
@@ -1615,25 +1709,29 @@ def main(task_id: int):
                     #     with_stack=True,
                     # ) as p:
                     train_loss = train(
-                        net, dataset, criterion, optimizer, device  # , profiler=p
+                        net,
+                        dataset,
+                        criterion,
+                        optimizer,
+                        device,  # , profiler=p
                     )
                     if epoch % config["write_each_epoch"] == 0:
                         current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S.%f")
                         logger.info(f"Epoch {epoch}, train loss: {train_loss:.8f}")
-                        logger.info("Writing test predictions")
-                        np.save(
-                            output_dir
-                            / str(task_id)
-                            / f"prediction_{run}_{J2}_{eps_train}_{epoch}.npy",
-                            net(
-                                torch.from_numpy(test_states.astype(np.int64)).to(
-                                    device
-                                )
-                            )
-                            .detach()
-                            .cpu()
-                            .numpy(),
-                        )
+                        # logger.info("Writing test predictions")
+                        # np.save(
+                        #     output_dir
+                        #     / str(task_id)
+                        #     / f"prediction_{run}_{J2}_{eps_train}_{epoch}.npy",
+                        #     net(
+                        #         torch.from_numpy(test_states.astype(np.int64)).to(
+                        #             device
+                        #         )
+                        #     )
+                        #     .detach()
+                        #     .cpu()
+                        #     .numpy(),
+                        # )
                         logger.info("Evaluating test overlap and accuracy")
                         test_overlap = sign_overlap_fn(test_states, net, device)
                         test_accuracy = accuracy_fn(test_states, net, device)

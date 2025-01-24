@@ -66,10 +66,8 @@ def rel_fourier_weight_in_largest_terms(series: npt.NDArray, terms: int) -> floa
 def sign_overlap(
     system: SpinSystem,
     signal_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
-    states: npt.NDArray[np.uint64] | None = None,
+    states: npt.NDArray[np.uint64],
 ):
-    if states is None:
-        states = system.canonical_basis.states
 
     ground_truth = np.sign(signal_fn(states))
     probs = system.get_ground_state_coeffs(states) ** 2
@@ -84,12 +82,9 @@ def sign_overlap(
 def accuracy(
     system: SpinSystem,
     signal_fn: Callable[[npt.NDArray[np.uint64]], npt.NDArray[np.float64]],
-    states: npt.NDArray[np.uint64] | None = None,
+    states: npt.NDArray[np.uint64],
     tol=0.0,
 ):
-    if states is None:
-        states = system.canonical_basis.states
-
     ground_truth = np.sign(signal_fn(states))
 
     def wrapper(fourier_series: npt.NDArray[np.float64]):

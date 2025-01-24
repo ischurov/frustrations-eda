@@ -29,7 +29,9 @@ def generate_training_set_lanczos(
     _, nbd_states = find_nbd(hamiltonian, states)
     nbd_matrix2, nbd_states2 = find_nbd(hamiltonian, nbd_states)
 
-    nbd_matrix2_w_signs = transfer_signs_to_H(nbd_states, nbd_matrix2, nbd_states2, relsigns_fn)
+    nbd_matrix2_w_signs = transfer_signs_to_H(
+        nbd_states, nbd_matrix2, nbd_states2, relsigns_fn
+    )
 
     states_indices_in_nbd_states = np.searchsorted(nbd_states, states)
     nbd_states_indices_in_nbd_states2 = np.searchsorted(nbd_states2, nbd_states)
@@ -90,7 +92,9 @@ def generate_training_set(
     """
     M, nbd_states = find_nbd(hamiltonian, states, energy_baseline=energy_baseline)
     M_with_signs = -transfer_signs_to_H(states, M, nbd_states, relsigns_fn)
-    current_log_probs = forward_with_batches(log_prob_fn, nbd_states, batch_size=batch_size)
+    current_log_probs = forward_with_batches(
+        log_prob_fn, nbd_states, batch_size=batch_size
+    )
     current_amplitudes = safe_exp_numpy(current_log_probs * 0.5)
 
     new_psi = (M_with_signs @ current_amplitudes).real

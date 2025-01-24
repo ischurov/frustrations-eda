@@ -5,12 +5,12 @@ import numpy.typing as npt
 import torch
 from loguru import logger
 
-from spin_systems import SpinSystem
 from misc_utils import (
     hadamard_transform_pytorch_inplace,
     make_packed_configurations,
     make_unpacked_configurations,
 )
+from spin_systems import SpinSystem
 
 
 ### FROM: GPT-4
@@ -128,6 +128,7 @@ def sample_from_system(
     if states_to_sample_from is None:
         states_to_sample_from = system.basis.states
     logger.debug("Finding probs")
+
     if sampling_power == 0:
         probs = np.ones(len(states_to_sample_from)) / len(states_to_sample_from)
     else:
@@ -137,7 +138,15 @@ def sample_from_system(
             )
         )
         probs = amplitudes**sampling_power
-        probs /= probs.sum()
+
+    if sampling_power != 2:
+        # correcting probs to take into account that different
+        # representatives have different orbit sizes
+        _, _, norms = system.state_info(states_to_sample_from)
+        probs *= norms ** (sampling_power - 2)
+
+    probs /= probs.sum()
+
     logger.debug("Doing np.random.choice")
     sampled_states = np.random.choice(
         states_to_sample_from,
@@ -260,18 +269,11 @@ def mk_train_test(
         sampling_power=sampling_power_train,
         replace=replace,
     )
-    logger.debug("Finding rest states")
-    rest_states = np.setdiff1d(
-        system.basis.states,
-        train_states,
-    )
-
     logger.debug("Sampling test")
 
     test_states = sample_from_system(
         system,
         n_test,
-        states_to_sample_from=rest_states,
         sampling_power=sampling_power_test,
         replace=replace,
     )
@@ -282,6 +284,8 @@ def mk_train_test(
 
         logger.debug("Applying random symmetries to test")
         test_states = do_apply_random_symmetries(test_states, system)
+
+    test_states = np.setdiff1d(test_states, train_states)
 
     return train_states, test_states
 

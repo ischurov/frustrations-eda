@@ -25,8 +25,10 @@ from fourier_supervised_cleanroom import (
     sign_signal as thresholded_sign_signal,
 )
 from fourier_supervised_cleanroom_2023_09_27 import get_lattice
+import numpy.typing as npt
 
 # from spin_systems import HeisenbergJ1J2, SpinSystem
+from spin_systems import heisenberg, spin_system, no_symmetries_basis
 
 self_name = Path(__file__).stem
 output_dir = Path("experiments") / self_name
@@ -43,7 +45,7 @@ def amplitude_median_bin_signal(system):
     return thresholded_amplitude_median_bin_signal(system, tol=tol)
 
 
-def accuracy(system, signal_fn, states=None):
+def accuracy(system, signal_fn, states: npt.NDArray[np.uint64], tol=tol):
     return thresholded_accuracy(system, signal_fn, states=states, tol=tol)
 
 
@@ -141,23 +143,21 @@ def main(task_id: int, run_id: int | str | None = None):
             f"scorer={scorer_factory.__name__}, "
             f"threshold={threshold}"
         )
-        system = HeisenbergJ1J2(
-            lattice, J1=1, J2=J2, use_symmetries=False, spin_inversion=None
-        )
+        system = spin_system(heisenberg(lattice, J2=J2), no_symmetries_basis())
         system.get_eigenstates(1)
 
         signal_fn = signal_factory(system)
         scorer_fn = scorer_factory(system, signal_fn=signal_fn)
 
         series_coeffs = fit_fourier_series(
-            system.canonical_basis.states,
+            system.basis.states,
             signal_fn=signal_fn,
             n_bits=system.number_spins,
         )
 
         terms_score = how_many_terms_to_achieve(series_coeffs, threshold, scorer_fn)
         achieved_sign_overlap_for_terms_score = sign_overlap(
-            system, signal_fn=signal_fn
+            system, signal_fn=signal_fn, states=system.basis.states
         )(keep_largest_n(series_coeffs, terms_score))
 
         with jsonlines.open(output_dir / str(task_id) / f"results.jsonl", "a") as f:

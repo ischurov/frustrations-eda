@@ -12,17 +12,18 @@ def evaluate_hadamard_learning_test_set(
     sample_size: int | None = None,
     eps_train: float | None = None,
 ):
-    wavefunction_tolerance = 1e-12
+    wavefunction_tolerance = 1e-14
 
-    non_zero_terms = (np.abs(wavefunction) > wavefunction_tolerance).sum()
+    non_zero_terms_mask = np.abs(wavefunction) > wavefunction_tolerance
+    n_non_zero_terms = non_zero_terms_mask.sum()
 
     if (sample_size is None) + (eps_train is None) != 1:
         raise ValueError("Exactly one of sample_size and eps_train must be provided")
 
     if sample_size is None:
-        sample_size = int(eps_train * non_zero_terms)
+        sample_size = int(eps_train * n_non_zero_terms)
     else:
-        eps_train = sample_size / non_zero_terms
+        eps_train = sample_size / n_non_zero_terms
 
     assert sample_size >= 1
 
@@ -38,7 +39,7 @@ def evaluate_hadamard_learning_test_set(
         )
 
     test_sample = np.random.choice(
-        np.setdiff1d(np.where(non_zero_terms), sample),
+        np.setdiff1d(non_zero_terms_mask.nonzero()[0], sample),
         size=test_size,
         replace=False,
     )

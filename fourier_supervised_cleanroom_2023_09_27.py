@@ -34,6 +34,7 @@ default_config = {
     "signal_train": "sign",
     "signal_test": "sign",
     "transveral_field": None,
+    "node_str": None,
 }
 
 configs = {
@@ -79,33 +80,21 @@ configs = {
     },
     19: {
         "lattice": "kagome2x4",
-        "sampling_power_train": 2,
-        "signal_train": "groundstate",
-        "signal_test": "sign",
         "hamming_weight": None,
-        "node_str": "0.05 σˣ₀",
+        "node_str": "0.01 σˣ₀",
     },
     20: {
         "lattice": "kagome2x4",
-        "sampling_power_train": 2,
-        "signal_train": "groundstate",
-        "signal_test": "sign",
         "hamming_weight": None,
-        "node_str": "0.1 σˣ₀",
+        "node_str": "0.05 σˣ₀",
     },
     21: {
         "lattice": "kagome2x4",
-        "sampling_power_train": 2,
-        "signal_train": "groundstate",
-        "signal_test": "sign",
         "hamming_weight": None,
-        "node_str": "0.15 σˣ₀",
+        "node_str": "0.1 σˣ₀",
     },
     22: {
         "lattice": "kagome2x4",
-        "sampling_power_train": 2,
-        "signal_train": "groundstate",
-        "signal_test": "sign",
         "hamming_weight": None,
         "node_str": "0.2 σˣ₀",
     },
@@ -166,7 +155,7 @@ def main(task_id: int):
                     lattice=lattice,
                     edge_str=config["expr"],
                     edge_params={1: 1.0, 2: J2},
-                    node_str=(config["node_str"]),
+                    node_str=config["node_str"],
                 ),
                 basis=no_symmetries_basis(hamming_weight=config["hamming_weight"]),
             )
@@ -303,6 +292,7 @@ def main(task_id: int):
                                 "eps_train": float(eps_train),
                                 "J2": float(J2),
                                 "n_spins": int(system.number_spins),
+                                "ground_energy": system.ground_energy,
                                 "task_id": int(task_id),
                                 "accuracy_predicted_vs_previous": float(
                                     accuracy_predicted_vs_previous
