@@ -13,7 +13,8 @@ set -x
 cd /home/ishchurov/frustrations-eda
 
 # nix develop .#default --repair --command echo OK
-nix develop .#default --builders 'ssh://cn71?remote-program=/home/ischurov/.local/bin/nix-store - - 64 2 kvm,big-parallel' --max-jobs 0 --command echo OK
+# nix develop .#default --builders 'ssh://cn71?remote-program=/home/ischurov/.local/bin/nix-store - - 64 2 kvm,big-parallel' --max-jobs 0 --command echo OK
+nix develop .#default --command echo OK
 nix build
 
 
