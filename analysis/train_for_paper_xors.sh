@@ -2,6 +2,8 @@
 
 PYTHON=python
 
+mkdir paper_final_xors
+
 ${PYTHON} train_for_paper_xors.py triangle truncated
 ${PYTHON} train_for_paper_xors.py square truncated
 ${PYTHON} train_for_paper_xors.py kagome truncated
