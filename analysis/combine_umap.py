@@ -36,7 +36,7 @@ for t in ['10', '100']:
 	i2="artificial_scale_impact_"+t+".png"
 	images_all.append(i2)
 '''
-results_path="results_polished_umap"
+results_path="umap"
 
 #N_COMPONENTS=30000
 

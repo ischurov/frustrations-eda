@@ -1,19 +1,6 @@
-#!/bin/bash
-#
-#SBATCH --job-name='xors'
-#SBATCH -N1
-#SBATCH --mem 0
-#SBATCH -p tcm
-#SBATCH --time=2-0:00:00
-#SBATCH --output=/vol/tcm11/kravchenko/to_scratch/frustrations-eda-main/results_polished_umap/logs/slurm-%j.out
-#SBATCH --error=/vol/tcm11/kravchenko/to_scratch/frustrations-eda-main/results_polished_umap/logs/slurm-%j.err
-
-export PATH="/vol/tcm11/kravchenko/miniconda3/bin:$PATH"
-export LD_LIBRARY_PATH=/vol/tcm11/kravchenko/miniconda3/envs/ls/lib
-source /vol/tcm11/kravchenko/miniconda3/bin/activate ls
 
 
-PYTHON="/vol/tcm11/kravchenko/miniconda3/envs/ls/bin/python"
+PYTHON=python
 
 ${PYTHON} plot_for_paper_components_umap.py 50
 ${PYTHON} combine_umap.py 50
