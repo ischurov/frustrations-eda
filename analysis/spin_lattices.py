@@ -1,0 +1,700 @@
+from collections import defaultdict
+from dataclasses import dataclass
+from itertools import product
+from typing import Union
+
+import igraph as ig
+import lattice_symmetries as ls
+import matplotlib.pyplot as plt
+import numpy as np
+import numpy.typing as npt
+import pandas as pd
+import seaborn as sns
+from loguru import logger
+
+from parity import parity, popcount
+from utils import batched_state_info_df, make_unpacked_configurations
+
+# BASED ON: https://kanoki.org/2020/08/30/matplotlib-scatter-plot-color-by-category-in-python/
+
+
+def scatter_plot(data, x, y, color, ax=None, scatter_kws=None):
+    if scatter_kws is None:
+        scatter_kws = {}
+
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    color_labels = sorted(data[color].unique())
+
+    # List of colors in the color palettes
+    rgb_values = sns.color_palette("Set2", len(color_labels))
+    # Map continents to the colors
+    assert isinstance(rgb_values, list)
+
+    color_map = dict(zip(color_labels, rgb_values))
+
+    for key, group in data.groupby(color):
+        group.plot(
+            ax=ax,
+            kind="scatter",
+            x=x,
+            y=y,
+            label=key,
+            color=color_map[key],
+            **scatter_kws,
+        )
+
+    return ax
+
+
+# END BASED
+
+
+@dataclass
+class BasisData:
+    reprs: npt.NDArray[np.uint64]
+    bits_to_repr: npt.NDArray[np.uint64]
+    bits_to_repr_index: npt.NDArray[np.uint64]
+
+
+class SpinLattice:
+    def __init__(
+        self,
+        u,
+        v,
+        named_sites,
+        named_edges,
+        fundamental_domain_size: Union[int, npt.NDArray[np.int_]] = 1,
+        width=1,
+        height=1,
+    ):
+        """
+        Generic class to generate lattices with different kinds of edges (i.e. for J1-J2 systems)
+
+        Parameters
+        ----------
+
+        u, v : np.array([x, y])
+            lattice generators
+
+        named_sites : dict[str, np.array]
+            dictionary name_of_site -> site_coordinates, like {"A": np.array([0, 0]), ...}
+
+        named_edges : list[tuple[str, int]]
+            list of two-tuples (name, kind), e.g. [("AB", 1), ("BC", 2), ...]
+
+        fundamental_domain_size: int | np.array
+            the size of fundamental domain, can be integer number or np.array([w, h])
+
+        width, height: int
+            weight and height of the lattice (in factors of width and height of the fundamental domain)
+        """
+
+        self.lattice_basis = np.c_[u, v]
+        self.height = height
+        self.width = width
+        self.fundamental_domain_size = fundamental_domain_size
+        self.fourier_basis_state_info: tuple[np.ndarray, pd.DataFrame]
+        frame = fundamental_domain_size * np.array([width, height])
+        self.frame = frame
+
+        edges = [
+            ((named_sites[start], named_sites[end]), kind) for (start, end), kind in named_edges
+        ]
+
+        sites = []
+        self.edges = []
+
+        for i, j in product(range(width), range(height)):
+            shift = fundamental_domain_size * np.array([i, j])
+            for site in named_sites.values():
+                sites.append(site + shift)
+            for (start, end), kind in edges:
+                self.edges.append(
+                    (
+                        (start + shift, end + shift),
+                        kind,
+                    )
+                )
+
+        self.site_to_num = {}
+        new_num = 0
+
+        for site in sites:
+            canonical_coords = tuple(site % frame)
+            if canonical_coords in self.site_to_num:
+                self.site_to_num[tuple(site)] = self.site_to_num[canonical_coords]
+            else:
+                self.site_to_num[canonical_coords] = new_num
+                self.site_to_num[tuple(site)] = new_num
+                new_num += 1
+
+        self.bases: dict[tuple[bool, int | None, int | None], ls.SpinBasis] = {}
+        self.state_info_dfs: dict[tuple[bool, int | None, int | None], pd.DataFrame] = {}
+        self.fourier_repr: BasisData
+        self.fourier_basis: ls.SpinBasis
+
+    @property
+    def sites_df(self):
+        sites_df = pd.DataFrame(
+            [
+                [num, *coords, (np.array(coords) == np.array(coords) % self.frame).all()]
+                for coords, num in self.site_to_num.items()
+            ],
+            columns=["num", "ix", "iy", "is_canonical"],
+        )
+
+        sites_df[["emb_x", "emb_y"]] = (self.lattice_basis @ sites_df[["ix", "iy"]].T.values).T
+        return sites_df
+
+    @property
+    def edges_to_kind(self):
+        edges_to_kind = {}
+        for (start, end), kind in self.edges:
+            edges_to_kind[(self.site_to_num[tuple(start)], self.site_to_num[tuple(end)])] = kind
+        return edges_to_kind
+
+    @property
+    def sites(self) -> list[int]:
+        """
+        Returns a list of sites: [0, 1, 2, ..., n]
+        """
+        return sorted(set(self.site_to_num.values()))
+
+    @property
+    def kind_to_edges(self) -> dict[int, list[tuple[tuple[int, int], tuple[int, int]]]]:
+        """
+        Returns a dictionary from kind (usually integer numbers 1, 2) to the list of the edges
+        (two-tuples of points, each point is two-tuple of ints)
+        """
+
+        k_to_e = defaultdict(list)
+        for edge, kind in self.edges_to_kind.items():
+            k_to_e[kind].append(edge)
+        return k_to_e
+
+    def get_cache_id(self):
+        return f"{self.__class__.__name__}{self.width}x{self.height}"
+
+    def as_igraph(self) -> ig.Graph:
+        edges, kinds = zip(*self.edges_to_kind.items())
+        return ig.Graph(edges=edges, edge_attrs={"kind": kinds})
+
+    def get_automorphisms(self) -> list[list[int]]:
+        g = self.as_igraph()
+        return g.get_automorphisms_vf2(edge_color=g.es["kind"])
+
+    def make_fourier_basis(self):
+        if hasattr(self, "fourier_basis"):
+            logger.debug("Using cached fourier_basis")
+            return self.fourier_basis
+
+        logger.debug("Cached fourier_basis not found, building...")
+
+        symmetries = ls.Symmetries(
+            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+        )
+
+        number_spins = self.number_spins
+
+        self.fourier_basis = ls.SpinBasis(
+            symmetries=symmetries,
+            number_spins=number_spins,
+            hamming_weight=None,
+            spin_inversion=None,
+        )
+        self.fourier_basis.build()
+
+        return self.fourier_basis
+
+    def get_fourier_repr(self) -> BasisData:
+        """
+        Fourier basis consists of subsets factored by symmetries and spin inversion.
+        Subsets are encoded as unsigned integers (uint64).
+
+        If the orbit consists of subsets of different hamming weights,
+        the representative is chosen to be the one with the smallest hamming weight, and
+        the of the smallest value among those with the smallest hamming weight.
+
+        Here we compute a dictionary with the following keys:
+        - "reprs": all unique representatives of the subsets.
+        - "subset_to_repr": an array whose i-th element is the representative
+            of the i-th subset.
+        - "repr_to_subsets": an array whose i-th element is the index of the i-th representative
+            in the array of all representatives.
+
+        """
+        if hasattr(self, "fourier_repr"):
+            logger.debug("Using cached fourier_repr")
+            return self.fourier_repr
+
+        basis = self.make_fourier_basis()
+        all_subsets = np.arange(2**self.number_spins, dtype=np.uint64)
+        subset_to_repr, _, _ = basis.state_info(all_subsets)
+        assert isinstance(subset_to_repr, np.ndarray)
+
+        hamming_weights = popcount(subset_to_repr)
+
+        inverted = np.bitwise_xor(all_subsets, 2**self.number_spins - 1)
+        subset_to_repr_inverted, _, _ = basis.state_info(inverted)
+
+        subset_to_repr = np.where(
+            hamming_weights < self.number_spins / 2,
+            subset_to_repr,
+            np.where(
+                hamming_weights > self.number_spins / 2,
+                subset_to_repr_inverted,
+                np.where(
+                    subset_to_repr < subset_to_repr_inverted,
+                    subset_to_repr,
+                    subset_to_repr_inverted,
+                ),
+            ),
+        )
+
+        reprs = np.sort(np.unique(subset_to_repr))
+
+        subset_to_repr_index = np.asarray(np.searchsorted(reprs, subset_to_repr), dtype=np.uint64)
+        # TODO: replace with basis.index (?)
+
+        self.fourier_repr = BasisData(
+            reprs=reprs, bits_to_repr=subset_to_repr, bits_to_repr_index=subset_to_repr_index
+        )
+
+        return self.fourier_repr
+
+    def make_fourier_basis_state_info_sym_df(
+        self, show_progress: bool = False
+    ) -> tuple[npt.NDArray[np.uint64], pd.DataFrame]:
+        """
+        This function returns a tuple (subsets, df) where subsets is a list of subsets of sites
+        and df is a dataframe similar to what is returned by `batched_state_info_df` function.
+
+        Is used by boolean fourier analysis.
+        """
+
+        def find_fourier_character(x: pd.DataFrame, n_spins: int) -> np.ndarray:
+            if (n_spins // 2) % 2 == 0:
+                return np.ones_like(x["representative"])
+            return np.where(
+                x["representative"] != x["representative_x"],
+                -1,
+                np.where(x["representative"] != x["representative_y"], 1, 0),
+            )
+
+        if hasattr(self, "fourier_basis_state_info"):
+            return self.fourier_basis_state_info
+
+        symmetries = ls.Symmetries(
+            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+        )
+        number_spins = self.number_spins
+
+        fourier_basis = ls.SpinBasis(
+            symmetries=symmetries,
+            number_spins=number_spins,
+            hamming_weight=None,
+            spin_inversion=None,
+        )
+        if show_progress:
+            print("MFBSIS: Building Fourier basis...")
+        fourier_basis.build()
+
+        all_subsets = np.arange(2**number_spins, dtype="uint64")
+        mask = 2**number_spins - 1
+
+        if show_progress:
+            print("MFBSIS: Computing state info...")
+
+        fourier_basis_state_info = batched_state_info_df(fourier_basis, all_subsets).drop(
+            "norm", axis=1
+        )
+
+        if show_progress:
+            print("MFBSIS: Computing sign flip basis correspondence...")
+
+        sign_flip_basis_correspondence = (
+            batched_state_info_df(fourier_basis, fourier_basis.states ^ mask)
+            .assign(initial_representative=fourier_basis.states)
+            .drop(["character", "norm"], axis=1)
+        )
+
+        if show_progress:
+            print("MFBSIS: Computing fourier_basis_state_info_df...")
+
+        fourier_basis_state_info_df = (
+            fourier_basis_state_info.reset_index()
+            .rename(columns={"index": "state"})
+            .merge(
+                sign_flip_basis_correspondence,
+                left_on="representative",
+                right_on="initial_representative",
+                how="left",
+            )
+            .assign(
+                hamming_weight_x=lambda x: popcount(x["representative_x"]),
+                hamming_weight_y=lambda x: popcount(x["representative_y"]),
+            )
+            .assign(
+                representative=lambda x: np.where(  # if
+                    x["hamming_weight_x"] < x["hamming_weight_y"],  # then
+                    x["representative_x"],  # else
+                    np.where(  # if
+                        x["hamming_weight_x"] > x["hamming_weight_y"],  # then
+                        x["representative_y"],  # else
+                        np.minimum(x["representative_x"], x["representative_y"]),
+                    ),
+                )
+            )
+            .assign(character=lambda x: find_fourier_character(x, number_spins))
+            .loc[:, ["state", "representative", "character"]]
+            .set_index("state")
+            .reindex(columns=["representative", "character"])
+        )
+
+        subsets = fourier_basis_state_info_df["representative"].unique()
+        subsets = subsets[parity(subsets) == 0]
+        # for any system invariant under spin inversion, all subsets with odd parity
+        # have coefficient 0, so we can ignore them
+
+        self.fourier_basis_state_info = (subsets, fourier_basis_state_info_df)
+
+        return subsets, fourier_basis_state_info_df
+
+    def get_heisenberg_symmetries(self) -> ls.Symmetries:
+        return ls.Symmetries(
+            [ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()]
+        )
+
+    @property
+    def number_spins(self) -> int:
+        return len(self.sites)
+
+    def get_basis(
+        self,
+        use_symmetries: bool = True,
+        hamming_weight: int | None = None,
+        spin_inversion: int | None = None,
+    ) -> ls.SpinBasis:
+        """
+        Returns a spin basis for the lattice.
+        If use_symmetries is True, the basis will contain only the representatives of the
+        symmetry-equivalent states.
+
+        It currently supports only sector=0 symmetries (i.e. suitable for Heisenberg hamiltonians)
+
+        If hamming_weight is not None, the basis will contain only states with the given
+        hamming weight.
+
+        If spin_inversion is not None, the spin inversion symmetry will be used to reduce the
+        number of states in the basis. In this case, spin_inversion is a character of the
+        spin inversion representation. I.e. spin_inversion=1 means that the ground state
+        is invariant under the spin inversion.
+
+        For Heisenberg models, it is usually hamming_weight=number_spins // 2 and
+        spin_inversion=1.
+        """
+
+        basis = self.bases.get((use_symmetries, hamming_weight, spin_inversion))
+        if basis is not None:
+            return basis
+        number_spins = self.number_spins
+        if use_symmetries:
+            symmetries = self.get_heisenberg_symmetries()
+        else:
+            symmetries = ls.Symmetries([])
+
+        basis = ls.SpinBasis(
+            symmetries=symmetries,
+            number_spins=number_spins,
+            hamming_weight=hamming_weight,
+            spin_inversion=spin_inversion,
+        )
+        basis.build()
+        self.bases[(use_symmetries, hamming_weight, spin_inversion)] = basis
+        return basis
+
+    def get_state_info_df(
+        self,
+        use_symmetries: bool = True,
+        hamming_weight: int | None = None,
+        spin_inversion: int | None = None,
+    ) -> pd.DataFrame:
+        """
+        Returns state_info_df for the given basis with respect to the canonical basis.
+        The canonical basis is the basis with the following parameters:
+        use_symmetries=False, hamming_weight=number_spins // 2, spin_inversion=None.
+        """
+        state_info_df = self.state_info_dfs.get((use_symmetries, hamming_weight, spin_inversion))
+        if state_info_df is not None:
+            return state_info_df
+
+        basis = self.get_basis(use_symmetries, hamming_weight, spin_inversion)
+        canonical_basis = self.get_basis(
+            use_symmetries=False, hamming_weight=self.number_spins // 2, spin_inversion=None
+        )
+        state_info_df = batched_state_info_df(basis, canonical_basis.states)
+        self.state_info_dfs[(use_symmetries, hamming_weight, spin_inversion)] = state_info_df
+        return state_info_df
+
+    # def get_canonical_heisenberg_basis(self):
+    #     """
+    #     This function builds a canonical basis for the Heisenberg model on the lattice.
+    #     No symmetries, hamming_weight = number_spins // 2, spin_inversion = None.
+    #     """
+
+    #     if hasattr(self, "canonical_heisenberg_basis"):
+    #         return self.canonical_heisenberg_basis
+    #     number_spins = len(self.sites)
+    #     self.canonical_heisenberg_basis = ls.SpinBasis(
+    #         symmetries=ls.Symmetries([]),
+    #         number_spins=number_spins,
+    #         hamming_weight=number_spins // 2,
+    #         spin_inversion=None,
+    #     )
+    #     self.canonical_heisenberg_basis.build()
+    #     return self.canonical_heisenberg_basis
+
+    # def get_heisenberg_basis_sym(self):
+    #     """
+    #     This function builds a basis with symmetries for the Heisenberg model
+    #     on the lattice.
+
+    #     The symmetries are the automorphisms of the lattice.
+    #     hamming_weight = number_spins // 2, spin_inversion = 1.
+    #     """
+    #     if hasattr(self, "heisenberg_basis"):
+    #         return self.heisenberg_basis
+
+    #     number_spins = len(self.sites)
+    #     symmetries_lst = [
+    #         ls.Symmetry(automorphism, sector=0) for automorphism in self.get_automorphisms()
+    #     ]
+    #     symmetries = ls.Symmetries(symmetries_lst)
+    #     self.heisenberg_basis = ls.SpinBasis(
+    #         symmetries=symmetries,
+    #         number_spins=number_spins,
+    #         hamming_weight=number_spins // 2,
+    #         spin_inversion=1,
+    #     )
+    #     self.heisenberg_basis.build()
+    #     return self.heisenberg_basis
+
+    def plot(self, spins=None, show_edges=True, ax=None):
+        """Plots the lattice and optionally visualizes some spin configuration"""
+        if spins is None:
+            spins = 0
+
+        if isinstance(spins, (int, np.uint64)):  # type: ignore
+            # see https://github.com/numpy/numpy/issues/23007
+
+            spins = np.array(
+                make_unpacked_configurations(np.array(spins, dtype="uint64"), self.number_spins)
+            )
+        spins_df = pd.DataFrame(dict(spin=spins))
+        sites_df = self.sites_df.merge(spins_df, left_on="num", right_index=True)
+
+        if ax is None:
+            _, ax = plt.subplots()
+
+        scatter_plot(
+            sites_df,
+            x="emb_x",
+            y="emb_y",
+            color="spin" if spins is not None else None,
+            ax=ax,
+            scatter_kws={"s": 100, "zorder": 10},
+        )
+
+        if show_edges:
+            for (start, end), kind in self.edges:
+                ax.plot(
+                    *zip(self.lattice_basis @ start, self.lattice_basis @ end),
+                    color="gray",
+                    linestyle=["solid", "dashed", "dotted", "dashdot"][kind - 1],
+                )
+
+        for site, num in self.site_to_num.items():
+            ax.annotate("  " + str(num), self.lattice_basis @ site)
+
+        ax.axis("equal")
+        return ax
+
+    def plot_subsets(self, subsets: npt.NDArray[np.uint64], titles: list[str]):
+        fig, axes = plt.subplots(1, len(subsets), figsize=(len(subsets) * 3, 3), squeeze=False)
+        for ax, subset, title in zip(axes[0], subsets, titles):
+            self.plot(spins=subset, ax=ax)
+            ax.axis("off")
+            ax.set_title(title)
+        return fig
+
+
+
+class ChainLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        """
+        Generates chain lattice.
+
+        ```
+        A ----- B
+        ```
+        Size of the fundamentail domain is 1×0
+        """
+        u = np.array([1, 0])
+        v = np.array([0, 1])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+        }
+
+        named_edges = [
+            ("AB", 1),
+        ]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=np.array([1, 1]),
+            width=width,
+            height=height,
+        )
+
+
+class SquareLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        r"""
+        Generates square J1-J2 lattice.
+
+        The fundamental domain:
+
+        ```
+        C ----- D
+        | \\ // |
+        |  \V/  |
+        |  /Ʌ\  |
+        | // \\ |
+        A ----- B
+        ```
+
+        Size of the fundamentail domain is 1×1
+        """
+        u = np.array([1, 0])
+        v = np.array([0, 1])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([0, 1]),
+            "D": np.array([1, 1]),
+        }
+
+        named_edges = [("AB", 1), ("AC", 1), ("CD", 1), ("BD", 1), ("CB", 2), ("AD", 2)]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=1,
+            width=width,
+            height=height,
+        )
+
+
+class TriangleLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        r"""
+        Generates triangular lattice.
+
+        The fundamental domain:
+
+        ```
+             C
+            /\\
+           /  \\
+          /    \\
+         A ----- B                    
+        ```
+        Size of the fundamentail domain is 1×1
+        """
+        theta = np.pi / 3
+        u = np.array([1, 0])
+        v = np.array([np.cos(theta), np.sin(theta)])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([0, 1]),
+        }
+
+        named_edges = [("AB", 1), ("AC", 1), ("BC", 2)]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=1,
+            width=width,
+            height=height,
+        )
+
+
+class KagomeLattice(SpinLattice):
+    def __init__(self, width=1, height=1):
+        """
+        Generates Kagome lattice.
+
+        The fundamental domain:
+        ```
+             F -- G -- H
+            /      \\ /
+           D         E
+         /  \\      /
+        A -- B -- C
+        ```
+        Size of the fundamental domain is 2×2
+        """
+        theta = np.pi / 3
+        u = np.array([1, 0])
+        v = np.array([np.cos(theta), np.sin(theta)])
+
+        named_sites = {
+            "A": np.array([0, 0]),
+            "B": np.array([1, 0]),
+            "C": np.array([2, 0]),
+            "D": np.array([0, 1]),
+            "E": np.array([2, 1]),
+            "F": np.array([0, 2]),
+            "G": np.array([1, 2]),
+            "H": np.array([2, 2]),
+        }
+
+        named_edges = [
+            ("AB", 1),
+            ("BC", 1),
+            ("AD", 1),
+            ("BD", 2),
+            ("DF", 1),
+            ("FG", 1),
+            ("GE", 2),
+            ("GH", 1),
+            ("EH", 1),
+            ("CE", 1),
+        ]
+
+        super().__init__(
+            u=u,
+            v=v,
+            named_sites=named_sites,
+            named_edges=named_edges,
+            fundamental_domain_size=2,
+            width=width,
+            height=height,
+        )

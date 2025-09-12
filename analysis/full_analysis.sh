@@ -1,0 +1,24 @@
+./train_for_paper_epochs.sh
+./train_for_paper_xors.sh
+
+./plot_for_paper_coef_distribution.sh
+
+./plot_for_paper_epochs.sh
+./plot_for_paper_xors.sh
+
+python kagome_triangle_nonweighted_comparison.py
+
+python combine_images_epochs.py
+python combine_images_xors.py
+
+./plot_for_paper_components_umap.sh
+./plot_for_paper_umap_lattice.sh
+
+python combine_umap.py
+python combine_umap_all.py
+python combine_umap_histograms.py
+python combine_umap_lattice.py
+
+
+
+
