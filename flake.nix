@@ -42,6 +42,10 @@
             HolisticTraceAnalysis =
               py-final.callPackage ./nix/holistic-trace-analysis.nix { };
             neptune = py-final.callPackage ./nix/neptune.nix { };
+            lattice-symmetries = py-prev.lattice-symmetries.overridePythonAttrs (attrs: {
+              doCheck = false;
+              checkPhase = "true";
+            });
           })
         ];
       });
