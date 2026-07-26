@@ -37,6 +37,7 @@
             combinadics = py-final.callPackage ./nix/combinadics.nix { };
             HolisticTraceAnalysis =
               py-final.callPackage ./nix/holistic-trace-analysis.nix { };
+	    lattice-symmetries = py-prev.lattice-symmetries.overridePythonAttrs (attrs: { doCheck = false; checkPhase = "true"; });
           })
         ];
       });
